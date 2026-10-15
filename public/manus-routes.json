@@ -1,0 +1,6 @@
+{
+  "routes": [
+    { "path": "/", "title": "CFTEC — Tecnologia que simplifica" },
+    { "path": "/admin", "title": "CFTEC — Painel Admin" }
+  ]
+}
