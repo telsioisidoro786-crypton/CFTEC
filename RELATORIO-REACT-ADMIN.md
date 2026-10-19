@@ -142,6 +142,7 @@ Necessário decidir: (a) **React passa a ser o site oficial** (porting do conte�
 - UI: sidebar filtrada por nível; badge de nível junto ao perfil no topo; secção Definições mostra **"Utilizadores do painel"** (só Super Admin): criar utilizador, mudar nível (select em linha), activar/desactivar, **redefinir password** (modal) e eliminar (confirmação).
 - Token sem `level` (sessões antigas) = tratado como Super Admin para transição suave.
 - **Dashboard** — cartão "CATÁLOGO" ganhou o gráfico de barras da actividade de downloads dos últimos 30 dias (`dl-metrics--panel`, 14 dias) e o **health** passa a avisar sobre candidaturas de sub-parceiros pendentes e licenças a expirar em 30 dias.
+- **Fix** — modal "Adicionar Software" remontava o `<form>` a cada tecla (`SoftwareModal` definido dentro do componente; React re-criava o tipo a cada render). Agora é invocado como função no ponto de uso, o JSX fica inlined e o foco/ficheiro seleccionados sobrevivem à escrita. Verificado no browser (nó do input identidade estável + foco mantido) e E2E: criação com upload → 201 → listagem.
 
 ## 6. Estado do repo Git
 - Modificações não commitadas na parte React: `App.tsx`, `AdminDashboard.tsx`, `components/sections/ITServices.tsx`, `components/sections/SystemsSoftware.tsx`, `components/ui/MediaTile.tsx`, `supabase-schema.sql`, `vite.config.ts`; não seguidos: `src/lucide-fix.d.ts` + lixo (`server.log`, `cookies.txt`, `test-*`).

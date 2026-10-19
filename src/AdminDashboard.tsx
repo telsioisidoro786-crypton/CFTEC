@@ -1299,13 +1299,14 @@ export default function AdminDashboard() {
       </main>
     </div>
 
-    {showSoftwareForm && (
-    <SoftwareModal
-      isOpen={showSoftwareForm}
-      onClose={() => setShowSoftwareForm(false)}
-      onSubmit={handleSoftwareSubmit}
-    />
-  )}
+    {/* SoftwareModal é INVOCADO como função (não <SoftwareModal/>): assim o JSX fica
+        inlined na árvore do AdminDashboard e o React não remonta o form a cada tecla
+        (o bug fazia o modal "sair e voltar" enquanto o utilizador escrevia). */}
+    {showSoftwareForm && SoftwareModal({
+      isOpen: true,
+      onClose: () => setShowSoftwareForm(false),
+      onSubmit: handleSoftwareSubmit,
+    })}
 
     {showServiceForm !== false && <div className="admin-modal-backdrop" onMouseDown={() => setShowServiceForm(false)}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">NOVO REGISTO</span><h2>{showServiceForm ? 'Editar serviço' : 'Novo serviço'}</h2></div><button onClick={() => setShowServiceForm(false)}><X size={18} /></button></div><form onSubmit={(e) => handleServiceSubmit(e, showServiceForm)}><div className="admin-form-grid"><label>Título<input name="title" placeholder="Ex.: Desenvolvimento à medida" defaultValue={showServiceForm?.title || ''} required /></label><label>Slug (URL)<input name="slug" placeholder="Gerado automaticamente" defaultValue={showServiceForm?.slug || ''} disabled /></label><label>Ícone<select name="icon" defaultValue={showServiceForm?.icon || 'Code2'}>{Object.keys(serviceIcons).map((key) => <option key={key} value={key}>{key}</option>)}</select></label><label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={showServiceForm?.is_active !== false} /> Activo no site público</label></div><label>Descrição curta<input name="short_description" placeholder="Descrição breve para listagens" defaultValue={showServiceForm?.short_description || ''} required /></label><label>Descrição completa<textarea name="full_description" rows={4} placeholder="Descrição detalhada para a página do serviço" defaultValue={showServiceForm?.full_description || ''} /></label><div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowServiceForm(false)}>Cancelar</Button><Button type="submit"><Check size={15} /> {showServiceForm ? 'Actualizar serviço' : 'Criar serviço'}</Button></div></form></div></div>}
 
