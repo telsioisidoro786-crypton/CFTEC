@@ -30,7 +30,8 @@ index.html (+ <div id="root">)
 | Serviços | ✓ vem da BD via `GET /api/services`; fallback local se a API falhar |
 | Softwares | ✓ da BD via `GET /api/software` (produtos fictícios: CFTEC Flow/Insight/Desk) |
 | Contacto | ✓ `POST /api/contact` grava em Supabase; fallback para localStorage se a API cair; opções de interesse vêm de `/api/contact-options` (dinâmicas: serviços + softwares activos) |
-| "Área do Cliente" (botão) | ✗ placeholder — só toast "em preparação" |
+| Destaques & Novidades | ✓ carrossel/banner do site alimentado por `novidades_destaques` (gestão no painel admin, upload p/ bucket `media`) |
+| "Área do Cliente" | removido a pedido do cliente (era só placeholder "em preparação") |
 
 ---
 
