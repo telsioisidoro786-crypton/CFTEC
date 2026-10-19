@@ -78,6 +78,35 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .hero-visual { height: 500px; position: relative; display: grid; place-items: center; }
 .hero-scene { width: 100%; height: 100%; position: relative; z-index: 1; }
 .hero-scene canvas { display: block; width: 100%; height: 100%; }
+
+/* Fallback estático quando o WebGL não está disponível (GPU desactivada, RDP, sandbox) */
+.hero-scene--static::before {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  background:
+    radial-gradient(42% 38% at 30% 42%, rgba(0, 229, 255, 0.28), transparent 70%),
+    radial-gradient(38% 34% at 68% 30%, rgba(59, 130, 246, 0.32), transparent 72%),
+    radial-gradient(30% 28% at 55% 72%, rgba(30, 58, 138, 0.45), transparent 75%);
+  animation: heroGlow 9s ease-in-out infinite alternate;
+}
+.hero-scene--static::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 22% 30%, rgba(125, 211, 252, 0.85), transparent 60%),
+    radial-gradient(1.2px 1.2px at 68% 22%, rgba(125, 211, 252, 0.7), transparent 60%),
+    radial-gradient(1.6px 1.6px at 46% 62%, rgba(255, 255, 255, 0.65), transparent 60%),
+    radial-gradient(1.1px 1.1px at 82% 58%, rgba(125, 211, 252, 0.6), transparent 60%),
+    radial-gradient(1.3px 1.3px at 14% 72%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1.2px 1.2px at 58% 40%, rgba(125, 211, 252, 0.75), transparent 60%);
+  animation: heroGlow 11s ease-in-out infinite alternate-reverse;
+}
+@keyframes heroGlow {
+  from { opacity: 0.65; transform: scale(1); }
+  to { opacity: 1; transform: scale(1.05); }
+}
 .visual-orbit { position: absolute; border: 1px solid rgba(0, 229, 255, .27); border-radius: 50%; transform: rotate(-28deg); pointer-events: none; }
 .visual-orbit--one { width: 390px; height: 160px; }
 .visual-orbit--two { width: 295px; height: 420px; transform: rotate(50deg); border-color: rgba(59, 130, 246, .21); }
@@ -124,6 +153,21 @@ button, a { -webkit-tap-highlight-color: transparent; }
 
 .site-footer { color: #cbd5e1; background: var(--navy); }.footer-top { display: grid; grid-template-columns: 1fr 1.6fr; gap: 80px; padding: 68px 0 58px; }.footer-top .brand { color: white; }.footer-top p { margin: 19px 0 0; color: #64748b; font-size: .75rem; line-height: 1.65; }.footer-links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 25px; }.footer-links div { display: flex; flex-direction: column; align-items: flex-start; gap: 11px; }.footer-links span { margin-bottom: 5px; color: #64748b; font: 500 .6rem 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .12em; }.footer-links a { display: inline-flex; align-items: center; gap: 7px; color: #cbd5e1; font-size: .7rem; transition: color .2s ease; }.footer-links a:hover { color: var(--cyan); }.footer-bottom { display: flex; justify-content: space-between; gap: 20px; padding: 19px 0 23px; border-top: 1px solid rgba(148,163,184,.14); color: #64748b; font: 500 .59rem 'DM Mono', monospace; }.footer-bottom div { display: flex; gap: 21px; }.footer-bottom a { transition: color .2s ease; }.footer-bottom a:hover { color: white; }.footer-bottom span:last-child { display: inline-flex; align-items: center; gap: 4px; color: #94a3b8; }.footer-bottom svg { color: var(--cyan); }
 .toast { position: fixed; z-index: 50; top: 89px; right: 24px; max-width: min(380px, calc(100% - 48px)); display: flex; align-items: center; gap: 9px; padding: 13px 15px; color: var(--navy); background: white; border: 1px solid #dbeafe; border-left: 3px solid var(--cyan); border-radius: 11px; box-shadow: 0 18px 45px rgba(15,23,42,.15); font-size: .7rem; font-weight: 700; animation: toast-in .35s ease both; }.toast svg { color: #22c55e; flex: 0 0 auto; }
+
+/* Banner de avisos (gerido nas Definições do admin) */
+.site-banner { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 20px; background: linear-gradient(90deg, #0b1220, #17325e); color: #e2edff; font: 600 .68rem 'Manrope', sans-serif; letter-spacing: .04em; }
+.site-banner svg { color: #7dd3fc; flex: 0 0 auto; }
+.site-shell--banner .site-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 25; }
+.site-shell--banner .site-header { top: 33px; }
+@media (max-width: 720px){ .site-shell--banner .site-header { top: 45px; } }
+
+/* Download real no card de software */
+.product-download { background: none; border: 0; padding: 0; cursor: pointer; }
+.product-download:hover { text-decoration: underline; }
+.product-changelog { display: block; margin-top: 6px; color: rgba(11,18,32,.55); font-size: .62rem; line-height: 1.5; }
+
+/* Secção Parcerias (Revenda Negomil) */
+.section-partners .contact-details > div svg { color: #22c55e; }
 @keyframes toast-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
 .reveal { opacity: 0; }
 

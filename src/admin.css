@@ -132,11 +132,11 @@
 .row-more{display:grid;place-items:center;color:#94a3b8;background:none;border:0;cursor:pointer}
 
 .health-score{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
-.health-ring{width:80px;height:80px;border-radius:50%;background:conic-gradient(#22c55e 0%,#22c55e 98%,#e2e8f0 98%,#e2e8f0 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
+.health-ring{flex:0 0 auto;width:80px;height:80px;border-radius:50%;background:conic-gradient(#22c55e 0%,#22c55e 98%,#e2e8f0 98%,#e2e8f0 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative}
 .health-ring::before{content:'';position:absolute;width:64px;height:64px;border-radius:50%;background:#fff}
 .health-ring strong{position:relative;font:700 1.5rem 'Space Grotesk',sans-serif;color:#0f172a}
 .health-ring span{position:relative;font-size:.65rem;color:#64748b}
-.health-score>div{flex:1;padding-left:16px}
+.health-score>div:not(.health-ring){flex:1;padding-left:16px}
 .health-score strong{display:block;color:#0f172a;font:700 1rem 'Space Grotesk',sans-serif}
 .health-score p{margin:4px 0 0;color:#64748b;font-size:.7rem}
 .health-lines{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
@@ -403,3 +403,122 @@
 @media (max-width: 760px){
   .media-preview-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr))}
 }
+
+/* Secção de Contactos */
+.contact-status--archived{background:#fef3c7;color:#92400e}
+.contact-item{border:1px solid #eef0f2;border-radius:10px;overflow:hidden;transition:all .15s ease}
+.contact-item:hover{border-color:#dbe4ef}
+.contact-item--open{border-color:#93c5fd}
+.contact-item-head{display:grid;grid-template-columns:36px 1fr auto auto auto 32px;align-items:center;gap:12px;padding:12px;width:100%;background:transparent;border:0;cursor:pointer;text-align:left;font:inherit;color:inherit}
+.contact-item-head time{color:#94a3b8;font:500 .6rem 'DM Mono',monospace}
+.contact-item .contact-main{display:block;min-width:0}
+.contact-main small{color:#64748b;font-size:.65rem}
+.contact-chevron{color:#94a3b8;justify-self:center;transition:transform .2s ease}
+.contact-item--open .contact-chevron{transform:rotate(90deg)}
+.contact-detail{padding:4px 14px 14px;border-top:1px dashed #eef0f2;background:#fafbfc}
+.contact-detail p{margin:12px 0;color:#334155;font-size:.8rem;line-height:1.6;white-space:pre-wrap}
+.contact-detail-actions{display:flex;gap:8px;flex-wrap:wrap}
+.btn-danger{background:#dc2626!important;border-color:#dc2626!important;color:#fff!important}
+.btn-danger:hover{background:#b91c1c!important}
+.row-actions{white-space:nowrap}
+.row-actions .icon-btn{display:inline-grid}
+
+@media (max-width: 760px){
+  .contact-item-head{grid-template-columns:36px 1fr 32px;grid-template-areas:"avatar main chevron""avatar status chevron""avatar time chevron";gap:8px}
+  .contact-item .contact-initials{grid-area:avatar}
+  .contact-item .contact-main{grid-area:main}
+  .contact-item .contact-interest{display:none}
+  .contact-item .contact-status{grid-area:status;justify-self:start}
+  .contact-item-head time{grid-area:time}
+  .contact-item .contact-chevron{grid-area:chevron}
+}
+
+/* Notificações (sino) */
+.admin-notif{position:relative}
+.admin-notif-popover{position:absolute;top:48px;right:0;width:300px;padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 16px 40px rgba(15,23,42,.16);z-index:60;display:flex;flex-direction:column;gap:8px;animation:notifIn .16s ease}
+@keyframes notifIn{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:translateY(0)}}
+.admin-notif-head{display:flex;align-items:center;justify-content:space-between;padding:2px 2px 8px;border-bottom:1px solid #f1f5f9}
+.admin-notif-head strong{text-transform:uppercase;letter-spacing:.08em;font-size:.62rem;color:#64748b}
+.admin-notif-head button{display:grid;place-items:center;width:26px;height:26px;border:0;background:transparent;border-radius:8px;color:#94a3b8;cursor:pointer}
+.admin-notif-head button:hover{background:#f1f5f9;color:#0f172a}
+.admin-notif-empty{margin:6px 2px;color:#94a3b8;font-size:.72rem}
+.admin-notif-item{display:flex;align-items:center;gap:8px;padding:8px;background:#fafbfc;border:1px solid #eef0f2;border-radius:10px}
+.admin-notif-item .contact-main{flex:1;min-width:0}
+.admin-notif-all{display:flex;align-items:center;gap:4px;justify-content:center;padding:10px;margin-top:2px;border:0;background:#f1f5f9;color:#0f172a;border-radius:10px;font:600 .72rem 'Space Grotesk',sans-serif;cursor:pointer;transition:background .15s ease}
+.admin-notif-all:hover{background:#e2e8f0}
+
+/* Definições — formulários */
+.settings-form{display:flex;flex-direction:column;gap:12px;flex:1;min-width:220px}
+.settings-field{display:flex;flex-direction:column;gap:6px;font:600 .68rem 'Space Grotesk',sans-serif;color:#475569}
+.settings-field input{padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;font:.8rem 'Manrope',sans-serif;color:#0f172a;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+.settings-field input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
+.settings-field input:disabled{background:#f8fafc;color:#94a3b8;cursor:not-allowed}
+.settings-hint{font:500 .6rem 'DM Mono',monospace;color:#94a3b8}
+.settings-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.settings-actions{display:flex;gap:8px;margin-top:2px}
+.settings-warn{color:#b45309;font-size:.68rem;font-weight:600;margin:0}
+@media (max-width: 760px){
+  .settings-row{grid-template-columns:1fr}
+}
+
+/* Saúde do workspace — detalhes reais */
+.health-actions{display:flex;align-items:center;gap:8px}
+.health-actions .icon-btn{border:1px solid #e2e8f0;background:#fff}
+.health-actions .icon-btn:hover{background:#f1f5f9;color:#0f172a}
+.status-warn{display:inline-block;width:6px;height:6px;border-radius:50%;background:#f59e0b;margin-right:6px}
+.health-lines em{font-style:normal;font:500 .55rem 'DM Mono',monospace;color:#94a3b8;margin-left:6px}
+.health-timestamp{display:block;margin-top:4px;font:500 .55rem 'DM Mono',monospace;color:#94a3b8}
+.health-warnings{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.health-warning{display:flex;gap:8px;padding:8px 10px;border-radius:10px;font-size:.7rem;line-height:1.45}
+.health-warning p{margin:0}
+.health-warning--warning{background:#fff7ed;border:1px solid #fed7aa;color:#9a3412}
+.health-warning--info{background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af}
+
+/* Licenças PalancaSoft e Revenda Negomil */
+.license-key{font:600 .68rem 'DM Mono',monospace;color:#0f172a;background:#f1f5f9;padding:4px 8px;border-radius:6px;white-space:nowrap}
+.license-key::selection{background:#bfdbfe}
+.contact-status--aprovado{background:#dcfce7;color:#166534}
+.contact-status--pendente{background:#fef3c7;color:#92400e}
+.contact-status--em_analise,.contact-status--em_contacto{background:#e0f2fe;color:#0c4a6e}
+.contact-status--rejeitado{background:#fee2e2;color:#991b1b}
+.contact-status--proposta{background:#ede9fe;color:#5b21b6}
+.contact-status--fechado{background:#f1f5f9;color:#475569}
+.partner-list{display:flex;flex-direction:column;gap:8px}
+.partner-row{display:flex;align-items:center;gap:12px;padding:12px;background:#fafbfc;border:1px solid #eef0f2;border-radius:10px;flex-wrap:wrap}
+.partner-row:hover{border-color:#dbe4ef}
+.partner-main{flex:1;min-width:220px}
+.partner-main strong{display:block;color:#0f172a;font:600 .75rem 'Space Grotesk',sans-serif}
+.partner-main small{color:#64748b;font-size:.65rem}
+.partner-note{margin:6px 0 0;color:#475569;font-size:.68rem;font-style:italic}
+.partner-metrics{display:flex;gap:10px}
+.partner-metrics label{display:flex;flex-direction:column;gap:3px;font:600 .55rem 'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:.06em;color:#94a3b8}
+.metric-input{width:72px;padding:6px 8px;border:1px solid #e2e8f0;border-radius:8px;font:.72rem 'Manrope',sans-serif;text-align:right;transition:border-color .15s ease}
+.metric-input:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
+@media (max-width: 760px){
+  .partner-row{align-items:flex-start}
+  .partner-metrics{width:100%}
+}
+.dl-metrics{margin-bottom:16px;padding:14px 16px;background:#f8fafc;border:1px solid #eef0f2;border-radius:12px}
+.dl-metrics-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.dl-metrics-head strong{display:block;font:600 .85rem 'Space Grotesk',sans-serif;color:#0f172a;margin-top:4px}
+.dl-metrics-head small{color:#64748b;font-size:.66rem;max-width:420px;text-align:right}
+.dl-bars{display:flex;align-items:flex-end;gap:4px;height:56px}
+.dl-bar{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px}
+.dl-bar i{display:block;width:100%;min-height:3px;background:linear-gradient(180deg,#3b82f6,#93c5fd);border-radius:4px 4px 2px 2px}
+.dl-bar span{font-size:.52rem;color:#94a3b8;line-height:1}
+.software-tag{margin-left:8px;padding:2px 8px;background:#eff6ff;color:#1d4ed8;font:600 .55rem 'Space Grotesk',sans-serif;text-transform:uppercase;letter-spacing:.05em;border-radius:20px;white-space:nowrap}
+.admin-category-select{width:100%;padding:9px 12px;border:1px solid #e2e8f0;border-radius:10px;font:.78rem 'Manrope',sans-serif;background:#fff;color:#0f172a;transition:border-color .15s ease}
+.admin-category-select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
+
+/* Gestão de acessos — utilizadores do painel */
+.user-admin-list{display:flex;flex-direction:column;gap:8px}
+.user-admin-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 12px;background:#fafbfc;border:1px solid #eef0f2;border-radius:10px}
+.user-admin-row:hover{border-color:#dbe4ef}
+.user-main{flex:1;min-width:180px}
+.user-main strong{display:block;font:600 .75rem 'Space Grotesk',sans-serif;color:#0f172a}
+.user-main strong small{color:#94a3b8;font-weight:500}
+.user-main span{font-size:.65rem;color:#64748b}
+.user-role-select{padding:6px 10px;border:1px solid #e2e8f0;border-radius:8px;font:.68rem 'Manrope',sans-serif;color:#0f172a;background:#fff;transition:border-color .15s ease}
+.user-role-select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
+.user-role-select:disabled{opacity:.55;cursor:not-allowed}
+.admin-modal-intro{margin:0 0 14px;color:#475569;font-size:.72rem;line-height:1.55}

@@ -21,12 +21,14 @@ import {
 import { Card, CardContent } from '../ui/card'
 import { Button } from '../ui/button'
 
+type LucideIcon = React.ComponentType<{ size?: number; className?: string; 'aria-hidden'?: string }>
+
 interface ITService {
   id: string
   title: string
   shortDescription: string
   longDescription: string
-  icon: React.ComponentType<{ size?: number }>
+  icon: LucideIcon
   features: string[]
   subServices: { name: string; description: string }[]
   certifications: string[]
@@ -35,13 +37,13 @@ interface ITService {
   ctaHref: string
 }
 
-const itServices: ITService[] = [
+const itServices: Array<ITService & { icon: typeof import('lucide-react').Shield }> = [
   {
     id: 'electronic-security',
     title: 'Segurança Eletrónica',
     shortDescription: 'Instalação e configuração de sistemas CCTV, controle de acesso e porteiros eletrónicos com monitoramento remoto.',
     longDescription: 'Proteja o seu património com soluções de videovigilância IP/Analógica, controle de acesso biométrico/cartão, porteiros de vídeo IP e alarmes inteligentes. Projetamos, instalamos, configuramos e damos suporte contínuo.',
-    icon: Shield,
+    icon: Shield as any,
     features: [
       'Câmeras IP 4K/8MP com IA (detecção de pessoas, veículos, perímetro)',
       'NVRs/DVRs com armazenamento redundante (RAID) e cloud backup',
@@ -69,7 +71,7 @@ const itServices: ITService[] = [
     title: 'Assistência Técnica & Hardware',
     shortDescription: 'Manutenção preventiva/corretiva, gestão de ativos, venda e locação de equipamentos com garantia estendida.',
     longDescription: 'Mantemos a sua operação a rodar. Suporte remoto e presencial para estações de trabalho, servidores, impressoras, rede e periféricos. Fornecimento de hardware corporativo (Dell, HP, Lenovo, ASUS) com imagem corporativa pré-carregada.',
-    icon: HardDrive,
+    icon: HardDrive as any,
     features: [
       'Helpdesk N1/N2/N3 com SLA contratual (remoto + presencial)',
       'Manutenção preventiva: limpeza, thermal paste, SMART, firmware',
@@ -97,7 +99,7 @@ const itServices: ITService[] = [
     title: 'Sistemas Operativos & Redes',
     shortDescription: 'Instalação, hardening, migração e suporte avançado para Windows Server, Linux, Active Directory, Azure AD, redes LAN/WAN/SD-WAN.',
     longDescription: 'A espinha dorsal da sua infraestrutura. Da configuração de domínio à migração para cloud híbrida, passando por hardening de segurança, PKI, VPN, firewall, balanceamento de carga e monitoramento proativo.',
-    icon: Network,
+    icon: Network as any,
     features: [
       'Active Directory / Entra ID: design, migração, hardening, Tier 0',
       'Windows Server: clustering, Hyper-V, failover, patch management',
@@ -125,7 +127,7 @@ const itServices: ITService[] = [
     title: 'Presença Digital & Web',
     shortDescription: 'Criação de sites institucionais, e-commerce, portais, landing pages de alta conversão — performance, SEO técnico e acessibilidade.',
     longDescription: 'A sua vitrina digital. Desenvolvemos experiências web modernas, rápidas (Core Web Vitals), acessíveis (WCAG 2.1 AA) e preparadas para conversão. Do site institucional ao e-commerce complexo, com CMS headless, PWA e integração ERP/CRM.',
-    icon: Globe,
+    icon: Globe as any,
     features: [
       'Sites institucionais: Next.js, Astro, WordPress Headless, Strapi',
       'E-commerce: Shopify Plus, WooCommerce, Medusa, custom (React/Node)',
@@ -274,19 +276,19 @@ export function ITServicesSection() {
           <div className="grid md:grid-cols-3 gap-6">
             {[
               {
-                icon: ShieldCheck,
+                icon: ShieldCheck as any,
                 title: 'SLA Contratual',
                 desc: 'Tempos de resposta e resolução definidos por escrito, com penalidades e relatórios mensais.',
                 color: 'cyan',
               },
               {
-                icon: Zap,
+                icon: Zap as any,
                 title: 'Proativo, não Reativo',
                 desc: 'Monitoramento 24/7, patch management automático, capacity planning — evitamos incidentes antes que aconteçam.',
                 color: 'blue',
               },
               {
-                icon: Database,
+                icon: Database as any,
                 title: 'Documentação Viva',
                 desc: 'CMDB atualizada, runbooks, diagramas de rede, inventário de ativos — tudo versionado e acessível ao cliente.',
                 color: 'emerald',

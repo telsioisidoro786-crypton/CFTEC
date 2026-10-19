@@ -15,6 +15,7 @@ import {
   Cpu,
   Database,
   DollarSign,
+  Download,
   Globe2,
   Headphones,
   Layers3,
@@ -49,13 +50,15 @@ const fallbackServices = [
   { id: '4', title: 'Suporte especializado', slug: 'suporte-especializado', short_description: 'Uma equipa técnica próxima para manter tudo a avançar.', full_description: 'Acompanhamento contínuo, resolução rápida e evolução sustentada da sua tecnologia.', icon: 'Headphones', is_active: true, created_at: '2025-04-05' },
 ]
 
-const fallbackProducts = [
+const fallbackProducts: SiteProduct[] = [
   { id: '1', name: 'CFTEC Flow', version: 'v2.4', file_size: '45 MB', downloads_count: 183, created_at: '2025-10-12', description: 'O centro de comando para pedidos, equipas e tarefas que não podem ficar para trás.', price: 0 },
   { id: '2', name: 'CFTEC Insight', version: 'v1.8', file_size: '32 MB', downloads_count: 97, created_at: '2025-10-07', description: 'Dashboards que transformam a complexidade dos seus dados em próximos passos claros.', price: 0 },
   { id: '3', name: 'CFTEC Desk', version: 'v3.1', file_size: '58 MB', downloads_count: 246, created_at: '2025-09-27', description: 'Uma experiência simples para organizar suporte, pedidos e relações com clientes.', price: 0 },
 ]
 
 // Icon mapping for services
+type SiteProduct = { id: string; name: string; version: string; file_size: string; downloads_count: number; created_at: string; description?: string | null; price?: number | null; category?: string | null; file_url?: string | null; changelog?: string | null }
+
 const serviceIcons: Record<string, typeof Code2> = {
   Code2,
   Network,
@@ -101,92 +104,102 @@ function HeroScene() {
     const mount = mountRef.current
     if (!mount) return
 
-    const scene = new THREE.Scene()
-    const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100)
-    camera.position.set(0, 0.2, 7.5)
-
-    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    renderer.setSize(mount.clientWidth, mount.clientHeight)
-    renderer.outputColorSpace = THREE.SRGBColorSpace
-    mount.appendChild(renderer.domElement)
-
-    const group = new THREE.Group()
-    scene.add(group)
-
-    const core = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(1.25, 2),
-      new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.72 }),
-    )
-    const inner = new THREE.Mesh(
-      new THREE.IcosahedronGeometry(0.82, 1),
-      new THREE.MeshBasicMaterial({ color: 0x1e3a8a, transparent: true, opacity: 0.45, wireframe: true }),
-    )
-    group.add(core, inner)
-
-    const rings = [1.7, 2.05, 2.42].map((radius, index) => {
-      const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(radius, index === 1 ? 0.012 : 0.018, 12, 120),
-        new THREE.MeshBasicMaterial({ color: index === 1 ? 0x3b82f6 : 0x00e5ff, transparent: true, opacity: index === 1 ? 0.55 : 0.32 }),
-      )
-      ring.rotation.set(index * 0.62, index * 0.8, index * 0.3)
-      group.add(ring)
-      return ring
-    })
-
-    const points = new THREE.BufferGeometry()
-    const pointPositions = new Float32Array(220 * 3)
-    for (let i = 0; i < pointPositions.length; i += 3) {
-      pointPositions[i] = (Math.random() - 0.5) * 7
-      pointPositions[i + 1] = (Math.random() - 0.5) * 5
-      pointPositions[i + 2] = (Math.random() - 0.5) * 4
+    let cleanup: (() => void) | null = null
+    try {
+      cleanup = setupHeroScene(mount)
+    } catch {
+      // WebGL indisponível (ex.: GPU desactivada, RDP, sandbox) — fundo estático sem quebrar a app
+      mount.classList.add('hero-scene--static')
     }
-    points.setAttribute('position', new THREE.BufferAttribute(pointPositions, 3))
-    const particleField = new THREE.Points(points, new THREE.PointsMaterial({ color: 0x7dd3fc, size: 0.018, transparent: true, opacity: 0.72 }))
-    scene.add(particleField)
-
-    const onPointerMove = (event: PointerEvent) => {
-      const rect = mount.getBoundingClientRect()
-      const x = (event.clientX - rect.left) / rect.width - 0.5
-      const y = (event.clientY - rect.top) / rect.height - 0.5
-      gsap.to(group.rotation, { x: y * 0.35, y: x * 0.45, duration: 1.2, ease: 'power3.out' })
-    }
-    mount.addEventListener('pointermove', onPointerMove)
-
-    let frame = 0
-    const animateScene = () => {
-      frame = requestAnimationFrame(animateScene)
-      core.rotation.x += 0.002
-      core.rotation.y -= 0.003
-      inner.rotation.x -= 0.001
-      inner.rotation.y += 0.002
-      rings.forEach((ring, index) => {
-        ring.rotation.z += 0.0012 * (index + 1)
-        ring.rotation.x += 0.0005 * (index + 1)
-      })
-      particleField.rotation.y += 0.0003
-      renderer.render(scene, camera)
-    }
-    animateScene()
-
-    const onResize = () => {
-      if (!mount) return
-      camera.aspect = mount.clientWidth / mount.clientHeight
-      camera.updateProjectionMatrix()
-      renderer.setSize(mount.clientWidth, mount.clientHeight)
-    }
-    window.addEventListener('resize', onResize)
-
-    return () => {
-      cancelAnimationFrame(frame)
-      window.removeEventListener('resize', onResize)
-      mount.removeEventListener('pointermove', onPointerMove)
-      renderer.dispose()
-      mount.removeChild(renderer.domElement)
-    }
+    return () => { if (cleanup) cleanup() }
   }, [])
 
   return <div className="hero-scene" ref={mountRef} aria-label="Visualização 3D de uma rede tecnológica em movimento" role="img" />
+}
+
+function setupHeroScene(mount: HTMLDivElement) {
+  const scene = new THREE.Scene()
+  const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100)
+  camera.position.set(0, 0.2, 7.5)
+
+  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+  renderer.setSize(mount.clientWidth, mount.clientHeight)
+  renderer.outputColorSpace = THREE.SRGBColorSpace
+  mount.appendChild(renderer.domElement)
+
+  const group = new THREE.Group()
+  scene.add(group)
+
+  const core = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(1.25, 2),
+    new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.72 }),
+  )
+  const inner = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.82, 1),
+    new THREE.MeshBasicMaterial({ color: 0x1e3a8a, transparent: true, opacity: 0.45, wireframe: true }),
+  )
+  group.add(core, inner)
+
+  const rings = [1.7, 2.05, 2.42].map((radius, index) => {
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(radius, index === 1 ? 0.012 : 0.018, 12, 120),
+      new THREE.MeshBasicMaterial({ color: index === 1 ? 0x3b82f6 : 0x00e5ff, transparent: true, opacity: index === 1 ? 0.55 : 0.32 }),
+    )
+    ring.rotation.set(index * 0.62, index * 0.8, index * 0.3)
+    group.add(ring)
+    return ring
+  })
+
+  const points = new THREE.BufferGeometry()
+  const pointPositions = new Float32Array(220 * 3)
+  for (let i = 0; i < pointPositions.length; i += 3) {
+    pointPositions[i] = (Math.random() - 0.5) * 7
+    pointPositions[i + 1] = (Math.random() - 0.5) * 5
+    pointPositions[i + 2] = (Math.random() - 0.5) * 4
+  }
+  points.setAttribute('position', new THREE.BufferAttribute(pointPositions, 3))
+  const particleField = new THREE.Points(points, new THREE.PointsMaterial({ color: 0x7dd3fc, size: 0.018, transparent: true, opacity: 0.72 }))
+  scene.add(particleField)
+
+  const onPointerMove = (event: PointerEvent) => {
+    const rect = mount.getBoundingClientRect()
+    const x = (event.clientX - rect.left) / rect.width - 0.5
+    const y = (event.clientY - rect.top) / rect.height - 0.5
+    gsap.to(group.rotation, { x: y * 0.35, y: x * 0.45, duration: 1.2, ease: 'power3.out' })
+  }
+  mount.addEventListener('pointermove', onPointerMove)
+
+  let frame = 0
+  const animateScene = () => {
+    frame = requestAnimationFrame(animateScene)
+    core.rotation.x += 0.002
+    core.rotation.y -= 0.003
+    inner.rotation.x -= 0.001
+    inner.rotation.y += 0.002
+    rings.forEach((ring, index) => {
+      ring.rotation.z += 0.0012 * (index + 1)
+      ring.rotation.x += 0.0005 * (index + 1)
+    })
+    particleField.rotation.y += 0.0003
+    renderer.render(scene, camera)
+  }
+  animateScene()
+
+  const onResize = () => {
+    camera.aspect = mount.clientWidth / mount.clientHeight
+    camera.updateProjectionMatrix()
+    renderer.setSize(mount.clientWidth, mount.clientHeight)
+  }
+  window.addEventListener('resize', onResize)
+
+  return () => {
+    cancelAnimationFrame(frame)
+    window.removeEventListener('resize', onResize)
+    mount.removeEventListener('pointermove', onPointerMove)
+    renderer.dispose()
+    mount.removeChild(renderer.domElement)
+  }
 }
 
 function App() {
@@ -198,25 +211,59 @@ function App() {
   const [contactOptions, setContactOptions] = useState<string[]>(['Pedido geral', 'Serviço à medida', 'CFTEC Flow', 'CFTEC Insight', 'CFTEC Desk'])
   const [loadingServices, setLoadingServices] = useState(true)
   const [loadingSoftware, setLoadingSoftware] = useState(true)
+  const [banner, setBanner] = useState<{ active: boolean; message: string }>({ active: false, message: '' })
+  const [partnerSent, setPartnerSent] = useState(false)
 
-  useEffect(() => {
-    // Fetch services
-    fetch('/api/services')
-      .then(r => r.json())
-      .then(data => { setServicesData(data.length ? data : fallbackServices); setLoadingServices(false) })
-      .catch(() => { setServicesData(fallbackServices); setLoadingServices(false) })
+  const fetchServices = async () => {
+    try {
+      const r = await fetch('/api/services')
+      const data = await r.json()
+      setServicesData(data.length ? data : fallbackServices)
+    } catch {
+      setServicesData(fallbackServices)
+    } finally {
+      setLoadingServices(false)
+    }
+  }
 
-    // Fetch software
-    fetch('/api/software')
-      .then(r => r.json())
-      .then(data => { setSoftwareData(data.length ? data : fallbackProducts); setLoadingSoftware(false) })
-      .catch(() => { setSoftwareData(fallbackProducts); setLoadingSoftware(false) })
+  const fetchSoftware = async () => {
+    try {
+      const r = await fetch('/api/software')
+      const data = await r.json()
+      setSoftwareData(data.length ? data : fallbackProducts)
+    } catch {
+      setSoftwareData(fallbackProducts)
+    } finally {
+      setLoadingSoftware(false)
+    }
+  }
 
-    // Fetch contact options
+  const refreshData = () => {
+    fetchServices()
+    fetchSoftware()
     fetch('/api/contact-options')
       .then(r => r.json())
       .then(data => { if (data.ok && data.options?.length) setContactOptions(data.options) })
       .catch(() => {})
+    fetch('/api/settings', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.ok && data.settings) {
+          setBanner({ active: String(data.settings.banner_activo) === 'true', message: data.settings.banner_mensagem || '' })
+        }
+      })
+      .catch(() => {})
+  }
+
+  useEffect(() => {
+    refreshData()
+  }, [])
+
+  // Ouvir atualizações vindas do painel admin (ex: após criar/atualizar/deletar serviço)
+  useEffect(() => {
+    const handleRefresh = () => refreshData()
+    window.addEventListener('cftec-refresh-data', handleRefresh)
+    return () => window.removeEventListener('cftec-refresh-data', handleRefresh)
   }, [])
 
   useEffect(() => {
@@ -254,7 +301,7 @@ function App() {
       ScrollTrigger.getAll().forEach((trigger) => trigger.kill())
       statObserver.disconnect()
     }
-  }, [])
+  }, [servicesData, softwareData])
 
   const closeMenu = () => setMenuOpen(false)
   const showToast = (message: string) => {
@@ -286,9 +333,43 @@ function App() {
 
   const handleLogin = () => showToast('A Área do Cliente está a ser preparada. Fale connosco para obter acesso antecipado.')
 
+  const handleDownload = async (product: SiteProduct) => {
+    try {
+      const r = await fetch(`/api/software/${product.id}/download`, { method: 'POST' })
+      if (!r.ok) throw new Error()
+      const data = await r.json()
+      if (data.download_url) window.open(data.download_url, '_blank', 'noopener')
+      showToast(`Transferência de ${product.name} registada. Boa instalação!`)
+    } catch {
+      showToast('O download não está disponível neste momento. Fale connosco.')
+    }
+  }
+
+  const handlePartnerSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const currentForm = event.currentTarget
+    const payload = Object.fromEntries(new FormData(currentForm).entries())
+    try {
+      const response = await fetch('/api/partners-apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'falha')
+      currentForm.reset()
+      setPartnerSent(true)
+      showToast('Candidatura recebida. A equipa CFTEC entrará em contacto.')
+      window.dispatchEvent(new CustomEvent('cftec-refresh-data'))
+    } catch (error) {
+      showToast(error instanceof Error && error.message !== 'falha' ? error.message : 'Não foi possível enviar a candidatura. Tente novamente.')
+    }
+  }
+
   return (
-    <div className="site-shell">
+    <div className={`site-shell ${banner.active && banner.message ? 'site-shell--banner' : ''}`}>
       {toast && <div className="toast" role="status"><BadgeCheck size={18} />{toast}</div>}
+      {banner.active && banner.message && <div className="site-banner"><Sparkles size={14} /> {banner.message}</div>}
 
       <header className="site-header">
         <div className="container nav-wrap">
@@ -298,6 +379,7 @@ function App() {
             <a href="#sobre" onClick={closeMenu}>Sobre nós</a>
             <a href="#servicos" onClick={closeMenu}>Serviços</a>
             <a href="#softwares" onClick={closeMenu}>Softwares</a>
+            <a href="#parcerias" onClick={closeMenu}>Parcerias</a>
             <a href="#contacto" onClick={closeMenu}>Contacto</a>
             <Button variant="dark" size="sm" onClick={handleLogin}>Área do Cliente <ArrowRight size={15} /></Button>
           </nav>
@@ -388,7 +470,7 @@ function App() {
                 const statuses = ['Mais vendido', 'Novo', 'Estável']
                 const status = statuses[index % statuses.length]
                 const features = product.description ? [product.description] : []
-                const category = 'Solução CFTEC'
+                const category = product.category || 'Solução CFTEC'
                 return (
                   <Card className={`product-card product-card--${tone} reveal`} key={product.id}>
                     <div className="product-head">
@@ -412,8 +494,9 @@ function App() {
                     <span className="product-category">{category}</span>
                     <h3>{product.name}</h3>
                     <p>{product.description || 'Descrição em actualização.'}</p>
+                    {product.changelog && <small className="product-changelog">{product.changelog}</small>}
                     <ul>{features.map((feature, i) => <li key={i}><Check size={14} /> {feature}</li>)}</ul>
-                    <a href="#contacto" className="product-link">Solicitar demonstração <ArrowRight size={15} /></a>
+                    {product.file_url ? <button type="button" className="product-link product-download" onClick={() => handleDownload(product)}>Download <Download size={15} /></button> : <a href="#contacto" className="product-link">Solicitar demonstração <ArrowRight size={15} /></a>}
                   </Card>
                 )
               })}
@@ -421,9 +504,27 @@ function App() {
           </div>
         </section>
 
+        <section className="section section-partners" id="parcerias">
+          <div className="container contact-layout">
+            <div className="contact-copy reveal">
+              <span className="section-kicker">04 / Revenda Negomil</span>
+              <h2>Torne-se<br /><em>sub-parceiro AGT.</em></h2>
+              <p>A CFTEC é revenda autorizada Negomil de software fiscal AGT em Angola. Credencia-se como sub-parceiro para instalar, dar suporte e facturar na sua região, com acompanhamento técnico da nossa equipa.</p>
+              <div className="contact-details">
+                <div><Check size={17} /><span><small>Modalidades</small>Individual · Profissional · Empresa</span></div>
+                <div><Check size={17} /><span><small>Áreas de actuação</small>Todas as províncias de Angola</span></div>
+                <div><Check size={17} /><span><small>Inclui</small>Formação, updates AGT e licenças</span></div>
+              </div>
+            </div>
+            <Card className="contact-card reveal">
+              {partnerSent ? <div className="form-success"><div className="success-icon"><BadgeCheck size={28} /></div><h3>Candidatura recebida.</h3><p>Muito obrigado pelo interesse na revenda Negomil. Um gestor de parcerias da CFTEC analisa o seu perfil e responde em breve.</p><Button variant="outline" onClick={() => setPartnerSent(false)}>Enviar outra candidatura</Button></div> : <form onSubmit={handlePartnerSubmit}><div className="form-heading"><div><span className="form-step">CREDENCIAMENTO</span><h3>Candidatura a sub-parceiro</h3></div><Network size={20} /></div><div className="form-row"><label>Nome do responsável<input name="nome_responsavel" placeholder="O seu nome completo" required maxLength={150} /></label><label>Telefone / WhatsApp<input name="telefone_whatsapp" placeholder="+244 900 000 000" required maxLength={40} /></label></div><div className="form-row"><label>Empresa / NIF (opcional)<input name="empresa_nif" placeholder="Nome da empresa ou NIF" maxLength={80} /></label><label>Província<input name="provincia" placeholder="Ex.: Luanda" maxLength={60} /></label></div><label>Modalidade<select name="modalidade" defaultValue="Individual" required><option value="Individual">Individual</option><option value="Profissional">Profissional</option><option value="Empresa">Empresa</option></select></label><label>Apresentação (opcional)<textarea name="nota" rows={3} placeholder="Experiência com software fiscal, rede de clientes, região de actuação..." /></label><div className="form-footer"><span><LockKeyhole size={13} /> Os seus dados estão seguros.</span><Button type="submit">Enviar candidatura <ArrowRight size={16} /></Button></div></form>}
+            </Card>
+          </div>
+        </section>
+
         <section className="section section-contact" id="contacto">
           <div className="container contact-layout">
-            <div className="contact-copy reveal"><span className="section-kicker">04 / Vamos conversar</span><h2>O próximo passo<br /><em>começa aqui.</em></h2><p>Tem um desafio em mente ou quer perceber por onde começar? Conte-nos o contexto. Nós tratamos de encontrar o caminho mais claro.</p><div className="contact-details"><a href="mailto:hello@cftec.co"><Mail size={17} /><span><small>Escreva-nos</small>hello@cftec.co</span></a><a href="tel:+244923000000"><Phone size={17} /><span><small>Ligue-nos</small>+244 923 000 000</span></a><div><MapPin size={17} /><span><small>Visite-nos</small>Luanda, Angola</span></div><div><Clock3 size={17} /><span><small>Horário</small>Seg — Sex, 08:00 — 17:00</span></div></div></div>
+            <div className="contact-copy reveal"><span className="section-kicker">05 / Vamos conversar</span><h2>O próximo passo<br /><em>começa aqui.</em></h2><p>Tem um desafio em mente ou quer perceber por onde começar? Conte-nos o contexto. Nós tratamos de encontrar o caminho mais claro.</p><div className="contact-details"><a href="mailto:hello@cftec.co"><Mail size={17} /><span><small>Escreva-nos</small>hello@cftec.co</span></a><a href="tel:+244923000000"><Phone size={17} /><span><small>Ligue-nos</small>+244 923 000 000</span></a><div><MapPin size={17} /><span><small>Visite-nos</small>Luanda, Angola</span></div><div><Clock3 size={17} /><span><small>Horário</small>Seg — Sex, 08:00 — 17:00</span></div></div></div>
             <Card className="contact-card reveal"><div className="form-heading"><div><span className="form-step">COMECE POR AQUI</span><h3>Fale com a CFTEC</h3></div><Send size={20} /></div>{formSent ? <div className="form-success"><div className="success-icon"><BadgeCheck size={28} /></div><h3>Mensagem recebida.</h3><p>Obrigado por confiar na CFTEC. Em breve um especialista da nossa equipa entra em contacto consigo.</p><Button variant="outline" onClick={() => setFormSent(false)}>Enviar outra mensagem</Button></div> : <form onSubmit={handleSubmit}><div className="form-row"><label>Nome<input name="name" placeholder="O seu nome" required /></label><label>E-mail<input name="email" type="email" placeholder="nome@empresa.com" required /></label></div><div className="form-row"><label>Telefone<input name="phone" placeholder="+244 900 000 000" /></label><label>Interesse<select name="interest" defaultValue=""><option value="" disabled>Seleccione uma opção</option>{contactOptions.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}</select></label></div><label>Mensagem<textarea name="message" rows={4} placeholder="Conte-nos brevemente o que precisa de resolver..." required /></label><div className="form-footer"><span><LockKeyhole size={13} /> Os seus dados estão seguros.</span><Button type="submit">Enviar pedido <ArrowRight size={16} /></Button></div></form>}</Card>
           </div>
         </section>

@@ -21,7 +21,8 @@ import {
 import { Button } from '../ui/button'
 import { Card, CardContent } from '../ui/card'
 
-// Types
+type LucideIcon = React.ComponentType<{ size?: number; className?: string; 'aria-hidden'?: string }>
+
 interface FlagshipProduct {
   id: string
   name: string
@@ -34,7 +35,7 @@ interface FlagshipProduct {
   ctaPrimary: { label: string; href: string }
   ctaSecondary: { label: string; href: string }
   accentColor: 'cyan' | 'emerald'
-  icon: React.ComponentType<{ size?: number }>
+  icon: any
   stats: { label: string; value: string }[]
 }
 
@@ -42,7 +43,7 @@ interface CustomDevService {
   id: string
   name: string
   description: string
-  icon: React.ComponentType<{ size?: number }>
+  icon: any
   features: string[]
   techStack: string[]
 }
@@ -79,7 +80,7 @@ const flagshipProducts: FlagshipProduct[] = [
     ctaPrimary: { label: 'Solicitar Demonstração', href: '#contacto?interest=PalancaSoft' },
     ctaSecondary: { label: 'Ver Módulos Completos', href: '#modulos-palancasoft' },
     accentColor: 'cyan',
-    icon: Database,
+    icon: Database as any,
     stats: [
       { label: 'Empresas ativas', value: '240+' },
       { label: 'Documentos/mês', value: '1.2M+' },
@@ -117,7 +118,7 @@ const flagshipProducts: FlagshipProduct[] = [
     ctaPrimary: { label: 'Solicitar Demonstração', href: '#contacto?interest=Negomil' },
     ctaSecondary: { label: 'Ver Planos e Preços', href: '#planos-negomil' },
     accentColor: 'emerald',
-    icon: Building2,
+    icon: Building2 as any,
     stats: [
       { label: 'Clientes implementados', value: '380+' },
       { label: 'Setores atendidos', value: '15+' },
@@ -132,7 +133,7 @@ const customDevServices: CustomDevService[] = [
     id: 'web-systems',
     name: 'Sistemas Web à Medida',
     description: 'Plataformas web robustas, escaláveis e seguras — portais de clientes, áreas reservadas, marketplaces, ERPs leves, dashboards operacionais.',
-    icon: Globe2,
+    icon: Globe2 as any,
     features: [
       'Arquitetura limpa (Clean Architecture / DDD)',
       'Autenticação robusta (OAuth2, OIDC, MFA)',
@@ -149,7 +150,7 @@ const customDevServices: CustomDevService[] = [
     id: 'mobile-apps',
     name: 'Aplicações Móveis Nativas & Híbridas',
     description: 'Apps iOS e Android para equipas de campo, vendas, logística, inspeções, ponto de venda móvel — online/offline-first.',
-    icon: Smartphone,
+    icon: Smartphone as any,
     features: [
       'React Native / Expo (código partilhado 90%+)',
       'Modo offline-first com sincronização inteligente',
@@ -166,7 +167,7 @@ const customDevServices: CustomDevService[] = [
     id: 'corporate-games',
     name: 'Jogos & Simuladores Corporativos',
     description: 'Gamificação para onboarding, formação técnica, awareness de segurança, simulações de decisão — engagement real, métricas reais.',
-    icon: Gamepad2,
+    icon: Gamepad2 as any,
     features: [
       'Unity / Godot (2D, 3D, AR/VR leve)',
       'LMS integration (SCORM, xAPI)',
@@ -274,7 +275,7 @@ function FlagshipCard({ product }: { product: FlagshipProduct }) {
               ))}
             </ul>
           </div>
-        </div>
+        </details>
 
         {/* Certifications */}
         <div className="flex flex-wrap gap-2 pt-2">

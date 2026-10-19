@@ -1,0 +1,936 @@
+<!DOCTYPE html>
+<html lang="pt-AO" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="theme-color" content="#031130">
+<title>CFTEC | Prestação de Serviços e Comércio — PalancaSoft, Negomil e Infraestrutura de TI</title>
+<meta name="description" content="CFTEC: criadora do PalancaSoft, distribuidora autorizada do Negomil e parceira em infraestrutura de TI em Angola.">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          royal: { DEFAULT: '#185DF1', dark: '#0F46C4', deep: '#0B3696' },
+          navy: { DEFAULT: '#031130', blue: '#082459' },
+          ink: '#3A4A66',
+          mist: '#F3F7F5',
+          blue: { 50: '#EEF4FE', 100: '#D9E6FD', 200: '#BBD3FB', 300: '#8FB9F8', 400: '#5C93F4', 500: '#2E6FE8', 600: '#185DF1', 700: '#0F46C4', 800: '#0B3696', 900: '#082459' }
+        },
+        fontFamily: {
+          display: ['Poppins', 'sans-serif'],
+          body: ['Inter', 'sans-serif']
+        },
+        boxShadow: {
+          soft: '0 1px 2px rgba(3,17,48,.04), 0 8px 24px -8px rgba(3,17,48,.08)',
+          lift: '0 2px 4px rgba(3,17,48,.05), 0 20px 40px -12px rgba(24,93,241,.18)'
+        }
+      }
+    }
+  };
+</script>
+<script src="https://unpkg.com/lucide@latest"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="bg-white">
+
+<!-- ============ HEADER ============ -->
+<header id="header" class="fixed top-0 inset-x-0 z-50 bg-white/85 backdrop-blur-xl border-b border-slate-200/60 transition-shadow">
+  <div class="max-w-7xl mx-auto px-5 h-[72px] flex items-center justify-between gap-6">
+    <a href="#inicio" class="flex items-center gap-2.5 shrink-0" aria-label="CFTEC — Início">
+      <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-navy-blue to-royal flex items-center justify-center text-white shadow-soft">
+        <i data-lucide="cpu" class="w-5 h-5"></i>
+      </span>
+      <span class="leading-none">
+        <span class="block font-display font-extrabold text-xl text-navy-blue tracking-tight">CF<span class="text-royal">TEC</span></span>
+        <span class="block text-[9px] font-semibold tracking-[.14em] uppercase text-slate-500 mt-1">Serviços &amp; Comércio</span>
+      </span>
+    </a>
+
+    <nav class="hidden xl:flex items-center gap-1" aria-label="Navegação principal">
+      <a class="nav-link" href="#inicio">Início</a>
+
+      <div data-dd-wrapper class="relative">
+        <button data-dd-trigger="dd-sistemas" class="nav-dropdown" aria-haspopup="true">
+          Sistemas <i data-dd-arrow data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div data-dd-menu="dd-sistemas" class="dd-panel hidden" role="menu" aria-label="Sistemas de gestão">
+          <span class="dd-label">Sistemas de gestão</span>
+      <a role="menuitem" class="dd-item" href="detalhes.html?id=1">
+        <span class="icon-box"><i data-lucide="layout-dashboard" class="w-4 h-4"></i></span>
+        <span><span class="t">PalancaSoft ERP</span><span class="d">Gestão comercial e faturação certificada AGT</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="detalhes.html?id=4">
+        <span class="icon-box"><i data-lucide="boxes" class="w-4 h-4"></i></span>
+        <span><span class="t">Negomil ERP</span><span class="d">ERP modular com gestão escolar e tesouraria</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="#contactos">
+        <span class="icon-box"><i data-lucide="code-2" class="w-4 h-4"></i></span>
+        <span><span class="t">Desenvolvimento Customizado</span><span class="d">Sistemas web e apps à medida do seu negócio</span></span>
+      </a>
+          <div class="dd-foot">
+            <span>Faturação certificada pela AGT</span>
+            <a href="#downloads">Ver downloads <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
+          </div>
+        </div>
+      </div>
+
+      <div data-dd-wrapper class="relative">
+        <button data-dd-trigger="dd-servicos" class="nav-dropdown" aria-haspopup="true">
+          Serviços de TI <i data-dd-arrow data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div data-dd-menu="dd-servicos" class="dd-panel dd-wide hidden" role="menu" aria-label="Serviços de TI">
+          <span class="dd-label">Serviços de TI &amp; Infraestrutura</span>
+      <a role="menuitem" class="dd-item" href="#servicos">
+        <span class="icon-box"><i data-lucide="cctv" class="w-4 h-4"></i></span>
+        <span><span class="t">Segurança Eletrónica &amp; CCTV</span><span class="d">Câmeras IP, porteiros e controlo de acessos</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="#servicos">
+        <span class="icon-box"><i data-lucide="laptop" class="w-4 h-4"></i></span>
+        <span><span class="t">Assistência Técnica &amp; Hardware</span><span class="d">Reparação e manutenção de computadores</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="#servicos">
+        <span class="icon-box"><i data-lucide="network" class="w-4 h-4"></i></span>
+        <span><span class="t">Redes &amp; Segurança Digital</span><span class="d">Cablagem, Wi-Fi, firewalls e backups</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="#servicos">
+        <span class="icon-box"><i data-lucide="globe" class="w-4 h-4"></i></span>
+        <span><span class="t">Sites &amp; Otimização Web</span><span class="d">Sites institucionais e lojas online</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="#servicos">
+        <span class="icon-box"><i data-lucide="wrench" class="w-4 h-4"></i></span>
+        <span><span class="t">Suporte Especializado</span><span class="d">Planos de suporte pensados para a sua operação</span></span>
+      </a>
+        </div>
+      </div>
+
+      <a class="nav-link" href="#downloads">Downloads</a>
+      <a class="nav-link" href="#parcerias">Parcerias</a>
+
+      <div data-dd-wrapper class="relative">
+        <button data-dd-trigger="dd-recursos" class="nav-dropdown" aria-haspopup="true">
+          Recursos <i data-dd-arrow data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div data-dd-menu="dd-recursos" class="dd-panel hidden" role="menu" aria-label="Recursos">
+          <span class="dd-label">Recursos &amp; Conteúdo</span>
+      <a role="menuitem" class="dd-item" href="clientes.html">
+        <span class="icon-box"><i data-lucide="handshake" class="w-4 h-4"></i></span>
+        <span><span class="t">Casos de Sucesso</span><span class="d">Histórias de clientes angolanos reais</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="blog.html">
+        <span class="icon-box"><i data-lucide="newspaper" class="w-4 h-4"></i></span>
+        <span><span class="t">Notícias</span><span class="d">Lançamentos, dicas e novidades do setor</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="faq.html">
+        <span class="icon-box"><i data-lucide="help-circle" class="w-4 h-4"></i></span>
+        <span><span class="t">FAQ</span><span class="d">Respostas rápidas às dúvidas frequentes</span></span>
+      </a>
+        </div>
+      </div>
+
+      <a class="nav-link" href="#contactos">Contactos</a>
+    </nav>
+
+    <div class="hidden lg:flex items-center gap-3">
+      <a href="#downloads" class="btn btn-outline !py-2.5"><i data-lucide="download" class="w-4 h-4"></i>Central de Downloads</a>
+      <a href="#contactos" class="btn btn-primary !py-2.5"><i data-lucide="message-circle" class="w-4 h-4"></i>Falar com Consultor</a>
+    </div>
+
+    <button id="menuBtn" class="xl:hidden p-2 rounded-lg border border-slate-200 text-navy" aria-label="Abrir menu" aria-expanded="false">
+      <i data-lucide="menu" class="w-6 h-6"></i>
+    </button>
+  </div>
+
+  <div id="mobileMenu" class="hidden xl:hidden border-t border-slate-200 bg-white">
+    <div class="px-5 py-4 flex flex-col gap-1">
+      <a class="m-link py-2.5 font-medium text-navy" href="#inicio">Início</a>
+
+      <div data-md-trigger="mobile-sistemas" class="border-b border-slate-100 py-3 flex items-center justify-between cursor-pointer">
+        <span class="font-medium text-navy">Sistemas</span>
+        <i data-md-arrow data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200" id="arrowSistemas"></i>
+      </div>
+      <div data-md-menu="mobile-sistemas" class="hidden pl-4 pb-2 space-y-1">
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="detalhes.html?id=1">PalancaSoft ERP</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="detalhes.html?id=4">Negomil ERP</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="#contactos">Desenvolvimento Customizado</a>
+      </div>
+
+      <div data-md-trigger="mobile-servicos" class="border-b border-slate-100 py-3 flex items-center justify-between cursor-pointer">
+        <span class="font-medium text-navy">Serviços de TI</span>
+        <i data-md-arrow data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200" id="arrowServicos"></i>
+      </div>
+      <div data-md-menu="mobile-servicos" class="hidden pl-4 pb-2 space-y-1">
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="#servicos">Segurança Eletrónica &amp; CCTV</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="#servicos">Assistência Técnica &amp; Hardware</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="#servicos">Redes &amp; Segurança Digital</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="#servicos">Criação de Sites &amp; Web</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="#servicos">Suporte Especializado</a>
+      </div>
+
+      <a class="m-link py-2.5 font-medium text-slate-600" href="#downloads">Downloads</a>
+      <a class="m-link py-2.5 font-medium text-slate-600" href="#parcerias">Parcerias</a>
+
+      <div data-md-trigger="mobile-recursos" class="border-b border-slate-100 py-3 flex items-center justify-between cursor-pointer">
+        <span class="font-medium text-navy">Recursos</span>
+        <i data-md-arrow data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200" id="arrowRecursos"></i>
+      </div>
+      <div data-md-menu="mobile-recursos" class="hidden pl-4 pb-2 space-y-1">
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="clientes.html">Casos de Sucesso</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="blog.html">Notícias</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="faq.html">FAQ</a>
+      </div>
+
+      <a class="m-link py-2.5 font-medium text-slate-600" href="#contactos">Contactos</a>
+
+      <div class="pt-4 border-t border-slate-100">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="#downloads" class="m-link btn btn-outline flex-1">Central de Downloads</a>
+          <a href="#contactos" class="m-link btn btn-primary flex-1">Falar com Consultor</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+<!-- ============ HERO ============ -->
+<section id="inicio" class="relative isolate overflow-hidden pt-[72px] bg-navy">
+  <div class="absolute inset-0 -z-10">
+    <img src="assets/img/hero-1.jpg" alt="Rede e infraestrutura tecnológica — CFTEC Angola" class="h-full w-full object-cover">
+    <div class="hero-overlay absolute inset-0"></div>
+    <div class="grid-lines absolute inset-0 pointer-events-none opacity-40"></div>
+  </div>
+  <div class="relative max-w-7xl mx-auto px-5 pt-20 pb-24 lg:pt-28 lg:pb-32 text-center">
+    <span class="hero-anim section-tag section-tag-invert">
+      <span class="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+      Tecnologia &amp; Faturação 100% Angolana
+    </span>
+    <h1 class="hero-anim mt-6 font-display font-extrabold text-4xl sm:text-5xl lg:text-6xl leading-[1.08] tracking-tight max-w-4xl mx-auto text-white">
+      Tecnologia que simplifica.<br>
+      <span class="bg-gradient-to-r from-blue-300 to-blue-500 bg-clip-text text-transparent">Resultados que ficam.</span>
+    </h1>
+    <p class="hero-anim mt-6 text-base sm:text-lg text-slate-200 max-w-2xl mx-auto leading-relaxed">
+      A CFTEC é a criadora do <strong class="text-white">PalancaSoft</strong>, distribuidora autorizada do <strong class="text-white">Negomil ERP</strong> e parceira de confiança em infraestrutura de TI, segurança eletrónica e desenvolvimento de sistemas para empresas angolanas.
+    </p>
+    <div class="hero-anim mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
+      <a href="#sistemas" class="btn btn-light-solid !px-7 !py-3.5">Explorar Softwares <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+      <a href="#servicos" class="btn btn-outline-light !px-7 !py-3.5">Serviços de TI</a>
+    </div>
+
+    <div class="hero-anim mt-16 grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl mx-auto">
+      <div class="glass-card p-5"><div class="font-display font-bold text-3xl text-white" data-count="10" data-suffix="+">0</div><div class="text-xs text-slate-300 mt-1">Anos de experiência</div></div>
+      <div class="glass-card p-5"><div class="font-display font-bold text-3xl text-white" data-count="500" data-suffix="+">0</div><div class="text-xs text-slate-300 mt-1">Clientes atendidos</div></div>
+      <div class="glass-card p-5"><div class="font-display font-bold text-3xl text-white" data-count="18" data-suffix="">0</div><div class="text-xs text-slate-300 mt-1">Províncias com cobertura</div></div>
+      <div class="glass-card p-5"><div class="font-display font-bold text-3xl text-white">24/7</div><div class="text-xs text-slate-300 mt-1">Suporte para contratos</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SOBRE ============ -->
+<section id="sobre" class="bg-mist py-20 lg:py-28 border-y border-slate-200/70">
+  <div class="max-w-7xl mx-auto px-5 grid lg:grid-cols-2 gap-14 items-center">
+    <div class="reveal">
+      <span class="section-tag">Sobre Nós</span>
+      <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 leading-tight text-navy-blue">Software de gestão e infraestrutura, num único parceiro.</h2>
+      <p class="mt-5 leading-relaxed">A <strong>CFTEC — Prestação de Serviços e Comércio</strong> combina desenvolvimento de software próprio, representação de soluções ERP reconhecidas e serviços completos de infraestrutura tecnológica. Ajudamos empresas, escolas e instituições a faturar com conformidade, proteger o seu património e trabalhar com sistemas fiáveis.</p>
+      <p class="mt-4 leading-relaxed">A nossa abordagem é simples: perceber a operação do cliente, propor a solução certa e acompanhar depois da implementação com suporte técnico próximo.</p>
+      <ul class="mt-7 space-y-3">
+        <li class="flex gap-3"><i data-lucide="check-circle-2" class="w-5 h-5 text-royal shrink-0 mt-0.5"></i><span>Faturação adaptada à realidade fiscal angolana</span></li>
+        <li class="flex gap-3"><i data-lucide="check-circle-2" class="w-5 h-5 text-royal shrink-0 mt-0.5"></i><span>Equipa técnica local, com atendimento em português</span></li>
+        <li class="flex gap-3"><i data-lucide="check-circle-2" class="w-5 h-5 text-royal shrink-0 mt-0.5"></i><span>Do software à rede e à segurança física — tudo coordenado</span></li>
+      </ul>
+    </div>
+    <div class="reveal">
+      <div class="relative rounded-2xl overflow-hidden shadow-lg mb-6">
+        <img src="assets/img/team-1.jpg" alt="Equipa técnica CFTEC a trabalhar com o cliente" class="h-56 lg:h-64 w-full object-cover">
+        <div class="absolute inset-0 bg-gradient-to-t from-navy/85 via-transparent to-transparent"></div>
+        <p class="absolute bottom-4 left-5 right-5 text-white text-sm font-medium font-display">Equipa técnica CFTEC — formação e implementação junto do cliente.</p>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="card p-6"><div class="icon-box"><i data-lucide="target" class="w-6 h-6"></i></div><h3 class="font-display font-semibold mt-4 text-lg">Missão</h3><p class="text-sm mt-2">Simplificar a gestão e a tecnologia das organizações angolanas.</p></div>
+        <div class="card p-6 mt-8"><div class="icon-box"><i data-lucide="eye" class="w-6 h-6"></i></div><h3 class="font-display font-semibold mt-4 text-lg">Visão</h3><p class="text-sm mt-2">Ser referência nacional em software de gestão e infraestrutura de TI.</p></div>
+        <div class="card p-6"><div class="icon-box"><i data-lucide="shield-check" class="w-6 h-6"></i></div><h3 class="font-display font-semibold mt-4 text-lg">Confiança</h3><p class="text-sm mt-2">Soluções certificadas, suporte responsável e transparência.</p></div>
+        <div class="card p-6 mt-8"><div class="icon-box"><i data-lucide="zap" class="w-6 h-6"></i></div><h3 class="font-display font-semibold mt-4 text-lg">Agilidade</h3><p class="text-sm mt-2">Implementação rápida e resposta eficaz às necessidades do cliente.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CASOS DE SUCESSO ============ -->
+<section id="casos" class="bg-white py-20 lg:py-28 border-y border-slate-200/70">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="max-w-4xl reveal">
+      <span class="section-tag">Casos de Sucesso</span>
+      <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">Empresas que confiam na CFTEC.</h2>
+      <p class="mt-4 text-ink leading-relaxed max-w-xl">Desde PMEs até grandes instituições, ajudamos negócios angolanos a crescer com tecnologia própria e suporte próximo.</p>
+    </div>
+
+    <div class="mt-16 grid md:grid-cols-3 gap-6">
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/retail.jpg" alt="Interior de um supermercado — Supermercado Kero">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Retalho</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="building-2" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-bold text-xl text-navy-blue mb-3">Supermercado Kero</h3>
+          <p class="text-sm text-ink leading-relaxed flex-1">Implantação do PalancaSoft ERP em 3 lojas, com faturação certificada AGT e gestão centralizada de stocks.</p>
+          <div class="pc-stat text-blue-700 bg-blue-50 border border-blue-100"><i data-lucide="trending-down" class="w-3.5 h-3.5"></i>-40% tempo de faturação</div>
+        </div>
+      </article>
+
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/school.jpg" alt="Sala de aula — Instituto Técnico de Luanda">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Educação</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="graduation-cap" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-bold text-xl text-navy-blue mb-3">Instituto Técnico de Luanda</h3>
+          <p class="text-sm text-ink leading-relaxed flex-1">Negomil ERP com Módulo Escolar para gestão de matrículas, propinas e pautas de mais de 2.000 alunos.</p>
+          <div class="pc-stat text-emerald-700 bg-emerald-50 border border-emerald-100"><i data-lucide="trending-up" class="w-3.5 h-3.5"></i>+50% eficiência administrativa</div>
+        </div>
+      </article>
+
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/logistics.jpg" alt="Frota de transporte logístico — Transporte Azul Logística">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Logística</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="shield-check" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-bold text-xl text-navy-blue mb-3">Transporte Azul Logística</h3>
+          <p class="text-sm text-ink leading-relaxed flex-1">Solução de redes e segurança digital com CCTV para 4 armazéns e frota de 30 veículos.</p>
+          <div class="pc-stat text-cyan-700 bg-cyan-50 border border-cyan-100"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i>0 incidentes em 18 meses</div>
+        </div>
+      </article>
+    </div>
+
+    <div class="mt-12 text-center">
+      <a href="clientes.html" class="btn btn-primary px-8 py-3.5">Ver todos os casos <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ NOTÍCIAS ============ -->
+<section id="noticias" class="bg-mist py-20 lg:py-28 border-y border-slate-200/70">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="max-w-4xl reveal">
+      <span class="section-tag">Notícias CFTEC</span>
+      <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">Novidades da nossa tecnologia.</h2>
+      <p class="mt-4 text-ink leading-relaxed max-w-xl">Acompanhe lançamentos, atualizações fiscais e dicas de infraestrutura de TI para o seu negócio.</p>
+    </div>
+
+    <div class="mt-16 grid md:grid-cols-3 gap-6">
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/erp-dashboard.jpg" alt="Relatórios gerenciais do PalancaSoft">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Lançamento</span>
+        </div>
+        <div class="pc-body">
+          <h3 class="font-display font-bold text-lg text-navy-blue group-hover:text-blue-600 transition-colors">PalancaSoft v7.1 já disponível</h3>
+          <p class="text-sm text-ink mt-2.5 leading-relaxed flex-1">Nova interface de relatórios gerenciais, melhorias de performance na faturação e correções de conformidade fiscal AGT.</p>
+          <div class="mt-4 flex items-center justify-between text-xs text-slate-500">
+            <span class="flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i>15 Out 2025</span>
+            <a href="blog-post.html?id=1" class="font-semibold text-blue-600 flex items-center gap-1.5 hover:gap-3 transition-colors">Ler artigo <i data-lucide="arrow-right" class="w-3 h-3"></i></a>
+          </div>
+        </div>
+      </article>
+
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/cctv-1.jpg" alt="Câmera de videovigilância instalada em poste">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Segurança</span>
+        </div>
+        <div class="pc-body">
+          <h3 class="font-display font-bold text-lg text-navy-blue group-hover:text-blue-600 transition-colors">Dicas de segurança CCTV para empresas</h3>
+          <p class="text-sm text-ink mt-2.5 leading-relaxed flex-1">Como posicionar câmeras, configurar detecção de movimento e proteger o seu património com sistemas de videovigilância IP.</p>
+          <div class="mt-4 flex items-center justify-between text-xs text-slate-500">
+            <span class="flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i>03 Set 2025</span>
+            <a href="blog-post.html?id=2" class="font-semibold text-blue-600 flex items-center gap-1.5 hover:gap-3 transition-colors">Ler artigo <i data-lucide="arrow-right" class="w-3 h-3"></i></a>
+          </div>
+        </div>
+      </article>
+
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/tax.jpg" alt="Cálculo fiscal e conformidade AGT">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Fiscal</span>
+        </div>
+        <div class="pc-body">
+          <h3 class="font-display font-bold text-lg text-navy-blue group-hover:text-blue-600 transition-colors">Por que faturar com certificação AGT?</h3>
+          <p class="text-sm text-ink mt-2.5 leading-relaxed flex-1">Entenda as obrigações fiscais para empresas angolanas e como o PalancaSoft ajuda a manter a conformidade sem complicações.</p>
+          <div class="mt-4 flex items-center justify-between text-xs text-slate-500">
+            <span class="flex items-center gap-1.5"><i data-lucide="calendar" class="w-3 h-3"></i>18 Jul 2025</span>
+            <a href="blog-post.html?id=3" class="font-semibold text-blue-600 flex items-center gap-1.5 hover:gap-3 transition-colors">Ler artigo <i data-lucide="arrow-right" class="w-3 h-3"></i></a>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="mt-12 text-center">
+      <a href="blog.html" class="btn btn-outline px-8 py-3.5">Ver todas as notícias <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SISTEMAS ============ -->
+<section id="sistemas" class="bg-white py-20 lg:py-28">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="max-w-2xl reveal">
+      <span class="section-tag">Sistemas &amp; Software</span>
+      <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">PalancaSoft e Negomil: gestão completa para o seu negócio.</h2>
+      <p class="mt-4">Duas plataformas, dois perfis de cliente. Escolha a que melhor se adapta à sua operação — nós tratamos da implementação.</p>
+    </div>
+
+    <div class="mt-12 grid lg:grid-cols-2 gap-6">
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/erp-dashboard.jpg" alt="Painel de gestão e relatórios do PalancaSoft ERP">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Software próprio CFTEC</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon !bg-navy-blue !text-white !border-0"><i data-lucide="layout-dashboard" class="w-6 h-6"></i></div>
+          <h3 class="font-display font-bold text-2xl">PalancaSoft</h3>
+          <p class="mt-3 leading-relaxed">ERP desenvolvido pela CFTEC, com faturação certificada pela AGT e gestão empresarial pensada para o mercado angolano.</p>
+          <ul class="mt-5 grid sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+            <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"></i>Faturação certificada AGT</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"></i>Stocks e armazéns</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"></i>Contas a pagar e receber</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"></i>Relatórios de gestão</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"></i>Multiutilizador e permissões</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-emerald-600 mt-0.5 shrink-0"></i>Suporte técnico local</li>
+          </ul>
+          <div class="mt-auto pt-8 flex flex-col sm:flex-row gap-3">
+            <a href="#contactos" data-subject="Demonstração PalancaSoft" class="btn btn-primary flex-1 pick-subject">Pedir Demonstração</a>
+            <a href="#downloads" data-filter="PalancaSoft" class="btn btn-outline flex-1 pick-filter"><i data-lucide="download" class="w-4 h-4"></i>Baixar</a>
+          </div>
+        </div>
+      </article>
+
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="relative h-36 bg-white border-b border-slate-100 overflow-hidden flex items-center justify-center shrink-0">
+          <img src="assets/img/negomil-logo.png" alt="Logotipo oficial do Negomil ERP" class="h-20 w-auto transition-transform duration-500 group-hover:scale-105">
+          <span class="pc-badge">Revenda autorizada oficial</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon !bg-royal !text-white !border-0"><i data-lucide="boxes" class="w-6 h-6"></i></div>
+          <h3 class="font-display font-bold text-2xl">Negomil ERP</h3>
+          <p class="mt-3 leading-relaxed">Parceria e revenda autorizada oficial. Um ERP modular que cobre as principais áreas de operação de empresas e instituições de ensino.</p>
+          <div class="mt-5 grid grid-cols-2 gap-3">
+            <div class="rounded-xl border border-slate-200 bg-mist p-3 flex items-center gap-2.5 text-sm font-medium"><i data-lucide="shopping-cart" class="w-4 h-4 text-royal"></i>Módulo Comercial</div>
+            <div class="rounded-xl border border-slate-200 bg-mist p-3 flex items-center gap-2.5 text-sm font-medium"><i data-lucide="landmark" class="w-4 h-4 text-royal"></i>Tesouraria</div>
+            <div class="rounded-xl border border-slate-200 bg-mist p-3 flex items-center gap-2.5 text-sm font-medium"><i data-lucide="graduation-cap" class="w-4 h-4 text-royal"></i>Módulo Escolar</div>
+            <div class="rounded-xl border border-slate-200 bg-mist p-3 flex items-center gap-2.5 text-sm font-medium"><i data-lucide="file-check-2" class="w-4 h-4 text-royal"></i>Módulo Fiscal</div>
+          </div>
+          <div class="mt-auto pt-8 flex flex-col sm:flex-row gap-3">
+            <a href="#contactos" data-subject="Demonstração Negomil ERP" class="btn btn-primary flex-1 pick-subject">Pedir Demonstração</a>
+            <a href="#downloads" data-filter="Negomil" class="btn btn-outline flex-1 pick-filter"><i data-lucide="download" class="w-4 h-4"></i>Baixar</a>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <article class="card mt-6 p-8 reveal grid lg:grid-cols-[1fr_auto] gap-8 items-center bg-gradient-to-br from-white to-blue-50/50">
+      <div class="flex gap-5">
+        <div class="icon-box shrink-0"><i data-lucide="code-2" class="w-6 h-6"></i></div>
+        <div>
+          <h3 class="font-display font-bold text-xl">Desenvolvimento Customizado</h3>
+          <p class="mt-2 text-sm leading-relaxed max-w-2xl">Sistemas web sob medida, aplicações móveis e jogos corporativos — desenhados em função dos processos do seu negócio, com código limpo, documentação e acompanhamento pós-entrega.</p>
+          <div class="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+            <span class="px-3 py-1 rounded-full bg-white border border-slate-200">Sistemas Web</span>
+            <span class="px-3 py-1 rounded-full bg-white border border-slate-200">Apps Mobile</span>
+            <span class="px-3 py-1 rounded-full bg-white border border-slate-200">Jogos Corporativos</span>
+          </div>
+        </div>
+      </div>
+      <a href="#contactos" data-subject="Orçamento de Desenvolvimento Customizado" class="btn btn-primary pick-subject">Solicitar Orçamento</a>
+    </article>
+  </div>
+</section>
+
+<!-- ============ SERVIÇOS ============ -->
+<section id="servicos" class="bg-mist py-20 lg:py-28 border-y border-slate-200/70">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 reveal">
+      <div class="max-w-2xl">
+        <span class="section-tag">Serviços de TI &amp; Infraestrutura</span>
+        <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">Tudo o que a sua tecnologia precisa para funcionar sem falhas.</h2>
+      </div>
+      <div class="lg:text-right lg:shrink-0">
+        <p class="text-sm text-slate-500 max-w-xs mx-auto lg:mx-0">Da cablagem ao suporte diário — uma só equipa responsável pela sua infraestrutura.</p>
+        <a href="#contactos" class="btn btn-outline mt-4">Pedir Orçamento <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+      </div>
+    </div>
+    <div class="mt-12 grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/cctv-1.jpg" alt="Câmera de videovigilância IP instalada pela CFTEC">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Videovigilância</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="cctv" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-semibold text-lg">Segurança Eletrónica</h3>
+          <p class="text-sm mt-2.5 leading-relaxed">Instalação de câmeras CCTV, porteiros eletrónicos e controlo de acessos para residências, comércios e empresas.</p>
+          <ul class="mt-4 space-y-1.5 text-[.8rem] text-slate-600">
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Câmeras IP com acesso remoto</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Gravação contínua e alertas de movimento</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Manutenção preventiva contratual</li>
+          </ul>
+          <a href="#contactos" data-subject="Orçamento de Segurança Eletrónica" class="pick-subject mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:gap-3 transition-all">Pedir orçamento <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
+        </div>
+      </article>
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/repair.jpg" alt="Técnico a reparar um portátil">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Hardware</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="laptop" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-semibold text-lg">Assistência Técnica &amp; Venda de Computadores</h3>
+          <p class="text-sm mt-2.5 leading-relaxed">Reparação de computadores e portáteis, manutenção preventiva e venda de equipamento novo e seleccionado.</p>
+          <ul class="mt-4 space-y-1.5 text-[.8rem] text-slate-600">
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Diagnóstico rápido e orçamento</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Equipamento novo com garantia</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Recolha e entrega no local</li>
+          </ul>
+          <a href="#contactos" data-subject="Orçamento de Assistência Técnica" class="pick-subject mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:gap-3 transition-all">Pedir orçamento <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
+        </div>
+      </article>
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/code.jpg" alt="Consola de terminal com código — Windows e Linux">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Sistemas</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="terminal-square" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-semibold text-lg">Windows &amp; Linux</h3>
+          <p class="text-sm mt-2.5 leading-relaxed">Instalação, configuração e suporte especializado em sistemas Windows e Linux, para estações de trabalho e servidores.</p>
+          <ul class="mt-4 space-y-1.5 text-[.8rem] text-slate-600">
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Instalação e configuração</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Migração sem perder dados</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Servidores de domínio e ficheiros</li>
+          </ul>
+          <a href="#contactos" data-subject="Orçamento de Sistemas Windows &amp; Linux" class="pick-subject mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:gap-3 transition-all">Pedir orçamento <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
+        </div>
+      </article>
+      <article class="card photo-card reveal overflow-hidden group">
+        <div class="pc-media">
+          <img src="assets/img/cables.jpg" alt="Cablagem de rede estruturada e cabo ethernet">
+          <div class="pc-shade"></div>
+          <span class="pc-badge">Infraestrutura</span>
+        </div>
+        <div class="pc-body">
+          <div class="icon-box pc-icon"><i data-lucide="network" class="w-5 h-5"></i></div>
+          <h3 class="font-display font-semibold text-lg">Redes &amp; Segurança Digital</h3>
+          <p class="text-sm mt-2.5 leading-relaxed">Cablagem estruturada, Wi-Fi empresarial, firewalls, backups e políticas de proteção de dados.</p>
+          <ul class="mt-4 space-y-1.5 text-[.8rem] text-slate-600">
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Cablagem estruturada certificada</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Firewall e proteção de rede</li>
+            <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Backups automáticos em nuvem</li>
+          </ul>
+          <a href="#contactos" data-subject="Orçamento de Redes &amp; Segurança Digital" class="pick-subject mt-5 inline-flex items-center gap-1.5 text-sm font-semibold text-blue-600 hover:gap-3 transition-all">Pedir orçamento <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
+        </div>
+      </article>
+      <article class="card photo-card reveal overflow-hidden group sm:col-span-2 lg:col-span-2">
+        <div class="flex flex-col lg:flex-row lg:items-stretch">
+          <div class="relative lg:w-64 h-36 lg:h-auto shrink-0 overflow-hidden">
+            <img src="assets/img/web.jpg" alt="Design e código de um site profissional" class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-105">
+            <div class="pc-shade"></div>
+            <span class="pc-badge">Web</span>
+          </div>
+          <div class="flex flex-col sm:flex-row gap-5 sm:items-center flex-1 pt-7 lg:pt-0 lg:pl-7 pr-7 pb-7 lg:py-7">
+            <div class="flex-1">
+              <h3 class="font-display font-semibold text-lg">Sites Profissionais &amp; Otimização Web</h3>
+              <p class="text-sm mt-2 leading-relaxed">Criação de sites institucionais e lojas online rápidos, responsivos e preparados para motores de busca.</p>
+              <ul class="mt-4 grid sm:grid-cols-2 gap-x-5 gap-y-1.5 text-[.8rem] text-slate-600">
+                <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Site institucional e portfólio</li>
+                <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Loja online com pagamentos</li>
+                <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>SEO e desempenho monitorados</li>
+                <li class="flex gap-2"><i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600 mt-0.5 shrink-0"></i>Domínio e alojamento incluídos</li>
+              </ul>
+            </div>
+            <a href="#contactos" data-subject="Orçamento de Serviços de TI" class="btn btn-outline pick-subject shrink-0">Pedir Orçamento</a>
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <div class="mt-8 card p-6 lg:p-7 flex flex-col md:flex-row md:items-center gap-5 reveal">
+      <div class="icon-box shrink-0 !w-12 !h-12 !bg-navy-blue !text-white !border-0"><i data-lucide="headset" class="w-6 h-6"></i></div>
+      <div class="flex-1">
+        <h3 class="font-display font-bold text-lg text-navy-blue">Precisa de algo diferente?</h3>
+        <p class="text-sm mt-1 text-slate-600">Equipa de campo nas 18 províncias. Serviços à hora, por projeto ou contrato mensal de manutenção.</p>
+      </div>
+      <a href="#contactos" data-subject="Serviços de TI &amp; Infraestrutura" class="btn btn-primary pick-subject shrink-0">Falar com Consultor</a>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DOWNLOADS ============ -->
+<section id="downloads" class="bg-white py-20 lg:py-28">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 reveal">
+      <div class="max-w-2xl">
+        <span class="section-tag">Central Unificada de Downloads</span>
+        <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">Instaladores e utilitários num só lugar.</h2>
+      </div>
+      <div class="lg:text-right lg:shrink-0">
+        <p class="text-sm text-slate-500 max-w-xs mx-auto lg:mx-0">Instaladores de acesso livre, assinados pela equipa CFTEC. A ativação da licença é feita junto à nossa equipa comercial.</p>
+      </div>
+    </div>
+
+    <div class="mt-10 flex flex-col lg:flex-row gap-4 lg:items-center justify-between reveal">
+      <div class="relative w-full lg:max-w-md">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+        <input id="dlSearch" type="search" class="field !pl-10" placeholder="Pesquisar software, versão ou nota..." aria-label="Pesquisar downloads">
+      </div>
+      <div id="dlFilters" class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por categoria">
+        <button class="chip active" data-cat="Todos">Todos</button>
+        <button class="chip" data-cat="PalancaSoft">PalancaSoft</button>
+        <button class="chip" data-cat="Negomil">Negomil</button>
+        <button class="chip" data-cat="Utilitários">Utilitários</button>
+      </div>
+    </div>
+
+    <p id="dlCount" class="mt-6 text-sm text-slate-500" aria-live="polite"></p>
+    <div id="dlGrid" class="mt-4 grid md:grid-cols-2 xl:grid-cols-3 gap-5"></div>
+    <div id="dlEmpty" class="hidden mt-6 card p-10 text-center">
+      <i data-lucide="search-x" class="w-10 h-10 text-slate-400 mx-auto"></i>
+      <p class="font-display font-semibold mt-3 text-navy">Nenhum ficheiro encontrado</p>
+      <p class="text-sm mt-1">Experimente outra palavra-chave ou categoria.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ PARCERIAS ============ -->
+<section id="parcerias" class="bg-mist py-20 lg:py-28 border-y border-slate-200/70">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-6 reveal">
+      <div class="max-w-2xl">
+        <span class="section-tag">Programa de Parcerias &amp; Revenda Negomil</span>
+        <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">Faça parte da rede oficial de sub-parceiros CFTEC.</h2>
+        <p class="mt-4 leading-relaxed">A CFTEC, enquanto distribuidora autorizada, constitui uma rede de sub-parceiros para comercializar o Negomil ERP em Angola — com formação, materiais comerciais e apoio técnico em cada venda.</p>
+      </div>
+      <div class="lg:text-right lg:shrink-0">
+        <p class="text-sm text-slate-500 max-w-xs mx-auto lg:mx-0">Escolha o plano, forme a sua equipa e comece a vender com material oficial e apoio técnico contínuo.</p>
+        <a href="#form-parceria" class="btn btn-outline mt-4">Inscrever-me <i data-lucide="arrow-right" class="w-4 h-4"></i></a>
+      </div>
+    </div>
+
+    <div class="mt-12 grid lg:grid-cols-3 gap-6">
+      <article class="card p-7 reveal flex flex-col">
+        <div class="flex items-center gap-3">
+          <div class="icon-box !w-11 !h-11"><i data-lucide="user" class="w-5 h-5"></i></div>
+          <div>
+            <h3 class="font-display font-semibold text-lg leading-tight">Parceiro Individual</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Freelancers e técnicos independentes</p>
+          </div>
+        </div>
+        <div class="mt-6 flex items-baseline gap-1.5">
+          <span class="font-display font-extrabold text-4xl text-navy-blue">75.000</span>
+          <span class="text-sm text-slate-500 font-semibold">Kz</span>
+          <span class="text-xs text-slate-400">/ adesão</span>
+        </div>
+        <ul class="mt-6 space-y-2.5 text-sm flex-1 border-t border-slate-100 pt-6">
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Licença de demonstração</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Formação inicial online</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Comissão base por venda</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Suporte por WhatsApp</li>
+        </ul>
+        <a href="#form-parceria" data-plan="Individual" class="btn btn-outline mt-7 pick-plan">Escolher Individual</a>
+      </article>
+
+      <article class="card p-7 reveal flex flex-col relative !border-royal ring-4 ring-blue-100/70">
+        <span class="absolute -top-3 left-7 text-[11px] font-bold px-3 py-1 rounded-full bg-royal text-white font-display shadow-md shadow-blue-600/30">Mais escolhido</span>
+        <div class="flex items-center gap-3">
+          <div class="icon-box !w-11 !h-11 !bg-navy-blue !text-white !border-0"><i data-lucide="briefcase" class="w-5 h-5"></i></div>
+          <div>
+            <h3 class="font-display font-semibold text-lg leading-tight">Parceiro Profissional</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Pequenas empresas de TI e consultores</p>
+          </div>
+        </div>
+        <div class="mt-6 flex items-baseline gap-1.5">
+          <span class="font-display font-extrabold text-4xl text-navy-blue">180.000</span>
+          <span class="text-sm text-slate-500 font-semibold">Kz</span>
+          <span class="text-xs text-slate-400">/ adesão</span>
+        </div>
+        <ul class="mt-6 space-y-2.5 text-sm flex-1 border-t border-blue-100 pt-6">
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Tudo do plano Individual</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Comissão superior por venda</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Formação presencial / avançada</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Material de marketing incluído</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Suporte técnico prioritário</li>
+        </ul>
+        <a href="#form-parceria" data-plan="Profissional" class="btn btn-primary mt-7 pick-plan">Escolher Profissional</a>
+      </article>
+
+      <article class="card p-7 reveal flex flex-col">
+        <div class="flex items-center gap-3">
+          <div class="icon-box !w-11 !h-11"><i data-lucide="building-2" class="w-5 h-5"></i></div>
+          <div>
+            <h3 class="font-display font-semibold text-lg leading-tight">Parceiro Empresa</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Revendedores com equipa comercial</p>
+          </div>
+        </div>
+        <div class="mt-6 flex items-baseline gap-1.5">
+          <span class="font-display font-extrabold text-4xl text-navy-blue">400.000</span>
+          <span class="text-sm text-slate-500 font-semibold">Kz</span>
+          <span class="text-xs text-slate-400">/ adesão</span>
+        </div>
+        <ul class="mt-6 space-y-2.5 text-sm flex-1 border-t border-slate-100 pt-6">
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Tudo do plano Profissional</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Melhor margem de revenda</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Várias licenças de demonstração</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Gestor de conta dedicado</li>
+          <li class="flex gap-2"><i data-lucide="check" class="w-4 h-4 text-royal mt-0.5 shrink-0"></i>Território exclusivo (sujeito a análise)</li>
+        </ul>
+        <a href="#form-parceria" data-plan="Empresa" class="btn btn-outline mt-7 pick-plan">Escolher Empresa</a>
+      </article>
+    </div>
+
+    <div class="mt-8 grid sm:grid-cols-3 gap-4 reveal">
+      <div class="card p-5 flex gap-4 items-start">
+        <span class="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-royal-dark font-display font-bold flex items-center justify-center shrink-0">1</span>
+        <div>
+          <h4 class="font-display font-semibold text-sm">Escolha o plano e inscreva-se</h4>
+          <p class="text-xs text-slate-500 mt-1 leading-relaxed">Resposta da equipa comercial em até 2 dias úteis.</p>
+        </div>
+      </div>
+      <div class="card p-5 flex gap-4 items-start">
+        <span class="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-royal-dark font-display font-bold flex items-center justify-center shrink-0">2</span>
+        <div>
+          <h4 class="font-display font-semibold text-sm">Formação com a equipa CFTEC</h4>
+          <p class="text-xs text-slate-500 mt-1 leading-relaxed">Produto, instalação, vendas e certificação.</p>
+        </div>
+      </div>
+      <div class="card p-5 flex gap-4 items-start">
+        <span class="w-9 h-9 rounded-lg bg-blue-50 border border-blue-100 text-royal-dark font-display font-bold flex items-center justify-center shrink-0">3</span>
+        <div>
+          <h4 class="font-display font-semibold text-sm">Venda com apoio contínuo</h4>
+          <p class="text-xs text-slate-500 mt-1 leading-relaxed">Material oficial, comissões e suporte técnico.</p>
+        </div>
+      </div>
+    </div>
+    <p class="mt-4 text-xs text-slate-500 reveal">Valores indicativos, sujeitos a confirmação pela equipa comercial da CFTEC.</p>
+
+    <div id="form-parceria" class="mt-14 card !transform-none hover:!transform-none p-8 lg:p-10 reveal grid lg:grid-cols-[1fr_1.3fr] gap-10">
+      <div>
+        <h3 class="font-display font-bold text-2xl text-navy-blue">Inscrição no programa</h3>
+        <p class="mt-3 text-sm leading-relaxed">Preencha os dados e a nossa equipa comercial entra em contacto para validar a adesão e agendar a formação inicial.</p>
+        <ul class="mt-6 space-y-3 text-sm">
+          <li class="flex gap-3"><i data-lucide="user-check" class="w-5 h-5 text-royal shrink-0"></i>Resposta em até 2 dias úteis</li>
+          <li class="flex gap-3"><i data-lucide="graduation-cap" class="w-5 h-5 text-royal shrink-0"></i>Formação incluída na adesão</li>
+          <li class="flex gap-3"><i data-lucide="handshake" class="w-5 h-5 text-royal shrink-0"></i>Contrato de parceria transparente</li>
+        </ul>
+      </div>
+      <form id="partnerForm" class="grid sm:grid-cols-2 gap-4" novalidate>
+        <div class="sm:col-span-2">
+          <label class="lbl" for="pModalidade">Modalidade pretendida *</label>
+          <select id="pModalidade" class="field" required>
+            <option value="">Selecione uma modalidade</option>
+            <option value="Individual">Parceiro Individual — 75.000 Kz</option>
+            <option value="Profissional">Parceiro Profissional — 180.000 Kz</option>
+            <option value="Empresa">Parceiro Empresa — 400.000 Kz</option>
+          </select>
+        </div>
+        <div>
+          <label class="lbl" for="pNome">Nome completo *</label>
+          <input id="pNome" type="text" class="field" placeholder="O seu nome" required autocomplete="name">
+        </div>
+        <div>
+          <label class="lbl" for="pNif">NIF / Empresa *</label>
+          <input id="pNif" type="text" class="field" placeholder="NIF ou nome da empresa" required>
+        </div>
+        <div>
+          <label class="lbl" for="pTel">Telefone / WhatsApp *</label>
+          <input id="pTel" type="tel" class="field" placeholder="+244 9XX XXX XXX" required autocomplete="tel">
+        </div>
+        <div>
+          <label class="lbl" for="pProv">Província *</label>
+          <select id="pProv" class="field" required>
+            <option value="">Selecione</option>
+            <option>Bengo</option><option>Benguela</option><option>Bié</option><option>Cabinda</option>
+            <option>Cuando</option><option>Cubango</option><option>Cuanza Norte</option><option>Cuanza Sul</option>
+            <option>Cunene</option><option>Huambo</option><option>Huíla</option><option>Icolo e Bengo</option>
+            <option>Luanda</option><option>Lunda Norte</option><option>Lunda Sul</option><option>Malanje</option>
+            <option>Moxico</option><option>Moxico Leste</option><option>Namibe</option><option>Uíge</option><option>Zaire</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2 flex flex-col sm:flex-row sm:items-center gap-3 justify-between pt-2">
+          <p id="pMsg" class="text-sm min-h-[1.25rem]" aria-live="polite"></p>
+          <button type="submit" class="btn btn-primary"><i data-lucide="send" class="w-4 h-4"></i>Enviar inscrição</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+
+<!-- ============ CONTACTOS ============ -->
+<section id="contactos" class="bg-white py-20 lg:py-28">
+  <div class="max-w-7xl mx-auto px-5">
+    <div class="max-w-2xl reveal">
+      <span class="section-tag">Contactos &amp; Diretório Telefónico</span>
+      <h2 class="font-display font-bold text-3xl sm:text-4xl mt-3 text-navy-blue">Fale diretamente com o departamento certo.</h2>
+    </div>
+
+    <div class="mt-12 grid lg:grid-cols-[1fr_1.2fr] gap-8">
+      <div class="space-y-4">
+        <article class="card p-6 flex gap-4 items-center reveal">
+          <div class="icon-box shrink-0"><i data-lucide="briefcase" class="w-6 h-6"></i></div>
+          <div class="flex-1">
+            <h3 class="font-display font-semibold">Comercial</h3>
+            <p class="text-xs text-slate-500">Licenças, demonstrações e parcerias</p>
+            <a href="tel:+244900000001" class="text-royal-dark font-semibold text-sm hover:underline">+244 900 000 001</a>
+          </div>
+        </article>
+        <article class="card p-6 flex gap-4 items-center reveal">
+          <div class="icon-box shrink-0"><i data-lucide="headset" class="w-6 h-6"></i></div>
+          <div class="flex-1">
+            <h3 class="font-display font-semibold">Suporte Técnico</h3>
+            <p class="text-xs text-slate-500">Assistência a software e equipamentos</p>
+            <a href="tel:+244900000002" class="text-royal-dark font-semibold text-sm hover:underline">+244 900 000 002</a>
+          </div>
+        </article>
+        <article class="card p-6 flex gap-4 items-center reveal">
+          <div class="icon-box shrink-0"><i data-lucide="cctv" class="w-6 h-6"></i></div>
+          <div class="flex-1">
+            <h3 class="font-display font-semibold">Infraestrutura / CCTV</h3>
+            <p class="text-xs text-slate-500">Redes, câmeras e segurança eletrónica</p>
+            <a href="tel:+244900000003" class="text-royal-dark font-semibold text-sm hover:underline">+244 900 000 003</a>
+          </div>
+        </article>
+        <div class="rounded-2xl bg-navy p-6 text-white reveal">
+          <div class="flex items-center gap-3"><i data-lucide="clock" class="w-5 h-5 text-blue-300"></i><span class="font-display font-semibold">Horário de atendimento</span></div>
+          <p class="text-sm text-slate-300 mt-2">Segunda a Sexta: 08h00 – 17h00 · Sábado: 08h00 – 12h00</p>
+          <p class="text-sm text-slate-300 mt-1 flex items-center gap-2"><i data-lucide="map-pin" class="w-4 h-4 text-blue-300"></i>Luanda, Angola</p>
+        </div>
+      </div>
+
+      <form id="contactForm" class="card !transform-none hover:!transform-none p-8 reveal grid sm:grid-cols-2 gap-4 content-start" novalidate>
+        <div class="sm:col-span-2">
+          <h3 class="font-display font-bold text-xl text-navy-blue">Pedido de demonstração ou orçamento</h3>
+          <p class="text-sm mt-1">Responderemos pelo canal que indicar.</p>
+        </div>
+        <div>
+          <label class="lbl" for="cNome">Nome *</label>
+          <input id="cNome" type="text" class="field" placeholder="O seu nome" required autocomplete="name">
+        </div>
+        <div>
+          <label class="lbl" for="cTel">Telefone / WhatsApp *</label>
+          <input id="cTel" type="tel" class="field" placeholder="+244 9XX XXX XXX" required autocomplete="tel">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="lbl" for="cEmail">E-mail</label>
+          <input id="cEmail" type="email" class="field" placeholder="nome@empresa.ao" autocomplete="email">
+        </div>
+        <div class="sm:col-span-2">
+          <label class="lbl" for="cAssunto">Assunto *</label>
+          <select id="cAssunto" class="field" required>
+            <option value="">Selecione o assunto</option>
+            <option>Demonstração PalancaSoft</option>
+            <option>Demonstração Negomil ERP</option>
+            <option>Orçamento de Desenvolvimento Customizado</option>
+            <option>Orçamento de Serviços de TI</option>
+            <option>Segurança Eletrónica / CCTV</option>
+            <option>Suporte Técnico</option>
+            <option>Outro</option>
+          </select>
+        </div>
+        <div class="sm:col-span-2">
+          <label class="lbl" for="cMsg">Mensagem *</label>
+          <textarea id="cMsg" rows="4" class="field resize-y" placeholder="Descreva brevemente a sua necessidade..." required></textarea>
+        </div>
+        <div class="sm:col-span-2 flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <p id="cMsgFeedback" class="text-sm min-h-[1.25rem]" aria-live="polite"></p>
+          <button type="submit" class="btn btn-primary"><i data-lucide="send" class="w-4 h-4"></i>Enviar pedido</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer class="bg-navy text-slate-300 py-12 border-t border-white/10">
+  <div class="max-w-7xl mx-auto px-5 py-16 grid sm:grid-cols-2 lg:grid-cols-4 gap-10">
+    <div>
+      <a href="#inicio" class="flex items-center gap-2.5">
+        <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-navy-blue to-royal flex items-center justify-center text-white"><i data-lucide="cpu" class="w-5 h-5"></i></span>
+        <span class="font-display font-extrabold text-xl text-white">CF<span class="text-blue-400">TEC</span></span>
+      </a>
+      <p class="text-sm mt-4 leading-relaxed text-slate-400 max-w-xs">Prestação de Serviços e Comércio. Software de gestão, infraestrutura de TI e segurança eletrónica para empresas angolanas.</p>
+    </div>
+    <div>
+      <h4 class="!text-white font-display font-semibold mb-4 text-sm">Navegação</h4>
+      <ul class="space-y-2 text-sm">
+        <li><a class="hover:text-white transition" href="#inicio">Início</a></li>
+        <li><a class="hover:text-white transition" href="#sobre">Sobre Nós</a></li>
+        <li><a class="hover:text-white transition" href="#sistemas">Sistemas</a></li>
+        <li><a class="hover:text-white transition" href="#servicos">Serviços de TI</a></li>
+        <li><a class="hover:text-white transition" href="#downloads">Downloads</a></li>
+        <li><a class="hover:text-white transition" href="#parcerias">Parcerias</a></li>
+        <li><a class="hover:text-white transition" href="#contactos">Contactos</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="!text-white font-display font-semibold mb-4 text-sm">Soluções</h4>
+      <ul class="space-y-2 text-sm">
+        <li>PalancaSoft ERP</li>
+        <li>Negomil ERP</li>
+        <li>Desenvolvimento Customizado</li>
+        <li>Segurança Eletrónica</li>
+        <li>Redes &amp; Segurança Digital</li>
+        <li>Criação de Sites</li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="!text-white font-display font-semibold mb-4 text-sm">Contacto</h4>
+      <ul class="space-y-2 text-sm">
+        <li class="flex gap-2"><i data-lucide="phone" class="w-4 h-4 mt-0.5 text-blue-400"></i>+244 900 000 001</li>
+        <li class="flex gap-2"><i data-lucide="mail" class="w-4 h-4 mt-0.5 text-blue-400"></i>geral@cftec.ao</li>
+        <li class="flex gap-2"><i data-lucide="map-pin" class="w-4 h-4 mt-0.5 text-blue-400"></i>Luanda, Angola</li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-5 py-6 flex flex-col md:flex-row gap-3 md:items-center justify-between text-xs text-slate-400">
+      <p>© <span id="year"></span> CFTEC — Prestação de Serviços e Comércio. Todos os direitos reservados.</p>
+      <div class="flex flex-wrap gap-x-5 gap-y-1">
+        <a href="#" class="hover:text-white" data-legal="Política de Privacidade">Política de Privacidade</a>
+        <a href="#" class="hover:text-white" data-legal="Termos de Utilização">Termos de Utilização</a>
+        <a href="#" class="hover:text-white" data-legal="Política de Licenciamento">Licenciamento</a>
+      </div>
+    </div>
+    <div class="max-w-7xl mx-auto px-5 pb-8 text-[11px] leading-relaxed text-slate-500">
+      <strong class="text-slate-400">Aviso legal:</strong> PalancaSoft é software desenvolvido pela CFTEC. Negomil é uma marca dos seus respetivos titulares, sendo a CFTEC distribuidora autorizada em Angola. Os instaladores disponibilizados exigem licença ativa para utilização plena. Os valores e especificações apresentados são indicativos e podem ser alterados sem aviso prévio. As informações recolhidas através dos formulários são usadas exclusivamente para contacto comercial.
+    </div>
+  </div>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="assets/js/menu.js"></script>
+<script src="assets/js/main.js"></script>
+</body>
+</html>

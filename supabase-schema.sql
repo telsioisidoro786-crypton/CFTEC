@@ -2,6 +2,7 @@
 DROP TABLE IF EXISTS contacts CASCADE;
 DROP TABLE IF EXISTS media CASCADE;
 DROP TABLE IF EXISTS softwares CASCADE;
+DROP TABLE IF EXISTS services CASCADE;
 DROP TABLE IF EXISTS admins CASCADE;
 
 -- contacts table
@@ -50,20 +51,37 @@ CREATE TABLE admins (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- services table
+CREATE TABLE services (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title TEXT NOT NULL,
+  slug TEXT NOT NULL UNIQUE,
+  short_description TEXT NOT NULL,
+  full_description TEXT,
+  icon TEXT NOT NULL DEFAULT 'Code2',
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Enable RLS
 ALTER TABLE contacts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE softwares ENABLE ROW LEVEL SECURITY;
+ALTER TABLE services ENABLE ROW LEVEL SECURITY;
 ALTER TABLE admins ENABLE ROW LEVEL SECURITY;
 
 -- Policies for service role (full access)
 CREATE POLICY "Service role full access contacts" ON contacts FOR ALL USING (auth.role() = 'service_role');
 CREATE POLICY "Service role full access media" ON media FOR ALL USING (auth.role() = 'service_role');
 CREATE POLICY "Service role full access softwares" ON softwares FOR ALL USING (auth.role() = 'service_role');
+CREATE POLICY "Service role full access services" ON services FOR ALL USING (auth.role() = 'service_role');
 CREATE POLICY "Service role full access admins" ON admins FOR ALL USING (auth.role() = 'service_role');
 
 -- Public read for softwares
 CREATE POLICY "Public read active softwares" ON softwares FOR SELECT USING (is_active = TRUE);
+
+-- Public read for active services
+CREATE POLICY "Public read active services" ON services FOR SELECT USING (is_active = TRUE);
 
 -- Public insert for contacts
 CREATE POLICY "Public insert contacts" ON contacts FOR INSERT WITH CHECK (TRUE);

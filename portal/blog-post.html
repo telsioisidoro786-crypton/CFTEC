@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pt-AO" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="theme-color" content="#031130">
+<title id="blogTitle">CFTEC | Artigo</title>
+<meta name="description" id="blogDesc" content="Leia os últimos artigos da CFTEC sobre tecnologia de gestão em Angola." />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Poppins:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          royal: { DEFAULT: '#185DF1', dark: '#0F46C4', deep: '#0B3696' },
+          navy: { DEFAULT: '#031130', blue: '#082459' },
+          ink: '#3A4A66',
+          mist: '#F3F7F5',
+          blue: { 50: '#EEF4FE', 100: '#D9E6FD', 200: '#BBD3FB', 300: '#8FB9F8', 400: '#5C93F4', 500: '#2E6FE8', 600: '#185DF1', 700: '#0F46C4', 800: '#0B3696', 900: '#082459' }
+        },
+        fontFamily: {
+          display: ['Poppins', 'sans-serif'],
+          body: ['Inter', 'sans-serif']
+        },
+      }
+    }
+  };
+</script>
+<script src="https://unpkg.com/lucide@latest"></script>
+
+<link rel="stylesheet" href="assets/css/style.css" />
+</head>
+<body class="bg-white">
+<div id="readProgress" class="fixed top-0 left-0 h-[3px] z-[60] w-0 bg-gradient-to-r from-royal to-blue-400 transition-[width] duration-150 ease-out" aria-hidden="true"></div>
+
+<!-- ============ HEADER ============ -->
+<header id="header" class="fixed top-0 inset-x-0 z-50 bg-white/85 backdrop-blur-xl border-b border-slate-200/60 transition-shadow">
+  <div class="max-w-7xl mx-auto px-5 h-[72px] flex items-center justify-between gap-6">
+    <a href="index.html#inicio" class="flex items-center gap-2.5 shrink-0" aria-label="CFTEC — Início">
+      <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-navy-blue to-royal flex items-center justify-center text-white shadow-soft">
+        <i data-lucide="cpu" class="w-5 h-5"></i>
+      </span>
+      <span class="leading-none">
+        <span class="block font-display font-extrabold text-xl text-navy-blue tracking-tight">CF<span class="text-royal">TEC</span></span>
+        <span class="block text-[9px] font-semibold tracking-[.14em] uppercase text-slate-500 mt-1">Serviços &amp; Comércio</span>
+      </span>
+    </a>
+
+    <nav class="hidden xl:flex items-center gap-1" aria-label="Navegação principal">
+      <a class="nav-link" href="index.html#inicio">Início</a>
+
+      <div data-dd-wrapper class="relative">
+        <button data-dd-trigger="dd-sistemas" class="nav-dropdown" aria-haspopup="true">
+          Sistemas <i data-dd-arrow data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div data-dd-menu="dd-sistemas" class="dd-panel hidden" role="menu" aria-label="Sistemas de gestão">
+          <span class="dd-label">Sistemas de gestão</span>
+      <a role="menuitem" class="dd-item" href="detalhes.html?id=1">
+        <span class="icon-box"><i data-lucide="layout-dashboard" class="w-4 h-4"></i></span>
+        <span><span class="t">PalancaSoft ERP</span><span class="d">Gestão comercial e faturação certificada AGT</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="detalhes.html?id=4">
+        <span class="icon-box"><i data-lucide="boxes" class="w-4 h-4"></i></span>
+        <span><span class="t">Negomil ERP</span><span class="d">ERP modular com gestão escolar e tesouraria</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="index.html#contactos">
+        <span class="icon-box"><i data-lucide="code-2" class="w-4 h-4"></i></span>
+        <span><span class="t">Desenvolvimento Customizado</span><span class="d">Sistemas web e apps à medida do seu negócio</span></span>
+      </a>
+          <div class="dd-foot">
+            <span>Faturação certificada pela AGT</span>
+            <a href="index.html#downloads">Ver downloads <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i></a>
+          </div>
+        </div>
+      </div>
+
+      <div data-dd-wrapper class="relative">
+        <button data-dd-trigger="dd-servicos" class="nav-dropdown" aria-haspopup="true">
+          Serviços de TI <i data-dd-arrow data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div data-dd-menu="dd-servicos" class="dd-panel dd-wide hidden" role="menu" aria-label="Serviços de TI">
+          <span class="dd-label">Serviços de TI &amp; Infraestrutura</span>
+      <a role="menuitem" class="dd-item" href="index.html#servicos">
+        <span class="icon-box"><i data-lucide="cctv" class="w-4 h-4"></i></span>
+        <span><span class="t">Segurança Eletrónica &amp; CCTV</span><span class="d">Câmeras IP, porteiros e controlo de acessos</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="index.html#servicos">
+        <span class="icon-box"><i data-lucide="laptop" class="w-4 h-4"></i></span>
+        <span><span class="t">Assistência Técnica &amp; Hardware</span><span class="d">Reparação e manutenção de computadores</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="index.html#servicos">
+        <span class="icon-box"><i data-lucide="network" class="w-4 h-4"></i></span>
+        <span><span class="t">Redes &amp; Segurança Digital</span><span class="d">Cablagem, Wi-Fi, firewalls e backups</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="index.html#servicos">
+        <span class="icon-box"><i data-lucide="globe" class="w-4 h-4"></i></span>
+        <span><span class="t">Sites &amp; Otimização Web</span><span class="d">Sites institucionais e lojas online</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="index.html#servicos">
+        <span class="icon-box"><i data-lucide="wrench" class="w-4 h-4"></i></span>
+        <span><span class="t">Suporte Especializado</span><span class="d">Planos de suporte pensados para a sua operação</span></span>
+      </a>
+        </div>
+      </div>
+
+      <a class="nav-link" href="index.html#downloads">Downloads</a>
+      <a class="nav-link" href="index.html#parcerias">Parcerias</a>
+
+      <div data-dd-wrapper class="relative">
+        <button data-dd-trigger="dd-recursos" class="nav-dropdown" aria-haspopup="true">
+          Recursos <i data-dd-arrow data-lucide="chevron-down" class="w-3.5 h-3.5 text-slate-400 transition-transform duration-200"></i>
+        </button>
+        <div data-dd-menu="dd-recursos" class="dd-panel hidden" role="menu" aria-label="Recursos">
+          <span class="dd-label">Recursos &amp; Conteúdo</span>
+      <a role="menuitem" class="dd-item" href="clientes.html">
+        <span class="icon-box"><i data-lucide="handshake" class="w-4 h-4"></i></span>
+        <span><span class="t">Casos de Sucesso</span><span class="d">Histórias de clientes angolanos reais</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="blog.html">
+        <span class="icon-box"><i data-lucide="newspaper" class="w-4 h-4"></i></span>
+        <span><span class="t">Notícias</span><span class="d">Lançamentos, dicas e novidades do setor</span></span>
+      </a>
+      <a role="menuitem" class="dd-item" href="faq.html">
+        <span class="icon-box"><i data-lucide="help-circle" class="w-4 h-4"></i></span>
+        <span><span class="t">FAQ</span><span class="d">Respostas rápidas às dúvidas frequentes</span></span>
+      </a>
+        </div>
+      </div>
+
+      <a class="nav-link" href="index.html#contactos">Contactos</a>
+    </nav>
+
+    <div class="hidden lg:flex items-center gap-3">
+      <a href="index.html#downloads" class="btn btn-outline !py-2.5"><i data-lucide="download" class="w-4 h-4"></i>Central de Downloads</a>
+      <a href="index.html#contactos" class="btn btn-primary !py-2.5"><i data-lucide="message-circle" class="w-4 h-4"></i>Falar com Consultor</a>
+    </div>
+
+    <button id="menuBtn" class="xl:hidden p-2 rounded-lg border border-slate-200 text-navy" aria-label="Abrir menu" aria-expanded="false">
+      <i data-lucide="menu" class="w-6 h-6"></i>
+    </button>
+  </div>
+
+  <div id="mobileMenu" class="hidden xl:hidden border-t border-slate-200 bg-white">
+    <div class="px-5 py-4 flex flex-col gap-1">
+      <a class="m-link py-2.5 font-medium text-navy" href="index.html#inicio">Início</a>
+
+      <div data-md-trigger="mobile-sistemas" class="border-b border-slate-100 py-3 flex items-center justify-between cursor-pointer">
+        <span class="font-medium text-navy">Sistemas</span>
+        <i data-md-arrow data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200" id="arrowSistemas"></i>
+      </div>
+      <div data-md-menu="mobile-sistemas" class="hidden pl-4 pb-2 space-y-1">
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="detalhes.html?id=1">PalancaSoft ERP</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="detalhes.html?id=4">Negomil ERP</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="index.html#contactos">Desenvolvimento Customizado</a>
+      </div>
+
+      <div data-md-trigger="mobile-servicos" class="border-b border-slate-100 py-3 flex items-center justify-between cursor-pointer">
+        <span class="font-medium text-navy">Serviços de TI</span>
+        <i data-md-arrow data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200" id="arrowServicos"></i>
+      </div>
+      <div data-md-menu="mobile-servicos" class="hidden pl-4 pb-2 space-y-1">
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="index.html#servicos">Segurança Eletrónica &amp; CCTV</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="index.html#servicos">Assistência Técnica &amp; Hardware</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="index.html#servicos">Redes &amp; Segurança Digital</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="index.html#servicos">Criação de Sites &amp; Web</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="index.html#servicos">Suporte Especializado</a>
+      </div>
+
+      <a class="m-link py-2.5 font-medium text-slate-600" href="index.html#downloads">Downloads</a>
+      <a class="m-link py-2.5 font-medium text-slate-600" href="index.html#parcerias">Parcerias</a>
+
+      <div data-md-trigger="mobile-recursos" class="border-b border-slate-100 py-3 flex items-center justify-between cursor-pointer">
+        <span class="font-medium text-navy">Recursos</span>
+        <i data-md-arrow data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform duration-200" id="arrowRecursos"></i>
+      </div>
+      <div data-md-menu="mobile-recursos" class="hidden pl-4 pb-2 space-y-1">
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="clientes.html">Casos de Sucesso</a>
+        <a class="block px-2 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded-lg transition-colors" href="blog.html">Notícias</a>
+        <a class="block px-2 py-2 text-sm text-blue-600 font-semibold hover:bg-slate-50 rounded-lg transition-colors" href="faq.html">FAQ</a>
+      </div>
+
+      <a class="m-link py-2.5 font-medium text-slate-600" href="index.html#contactos">Contactos</a>
+
+      <div class="pt-4 border-t border-slate-100">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <a href="index.html#downloads" class="m-link btn btn-outline flex-1">Central de Downloads</a>
+          <a href="index.html#contactos" class="m-link btn btn-primary flex-1">Falar com Consultor</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="pt-24 pb-20">
+  <div class="container max-w-7xl mx-auto px-5">
+    <article class="max-w-3xl mx-auto reveal">
+      <div class="flex flex-col lg:flex-row gap-12">
+        <div class="flex-1">
+          <nav class="flex items-center gap-2 text-xs text-slate-500 mb-6" aria-label="Caminho de navegação">
+            <a href="blog.html" class="font-medium hover:text-blue-600 transition-colors">Notícias</a>
+            <i data-lucide="chevron-right" class="w-3 h-3 text-slate-300"></i>
+            <span id="postCrumbCat" class="text-slate-400">Artigo</span>
+          </nav>
+          <span id="postCatPill" class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-full font-display mb-5 bg-blue-50 text-royal-dark border border-blue-100">
+            <i data-lucide="file-text" class="w-3 h-3"></i><span id="postCategoria">Lançamento</span>
+          </span>
+          <h1 class="font-display font-bold text-3xl sm:text-4xl text-navy-blue mb-6 leading-tight" id="postTitulo">Título do Artigo</h1>
+
+          <div class="article-meta flex flex-wrap gap-x-6 gap-y-2 text-sm text-slate-600 bg-mist border border-slate-200/70 rounded-xl px-5 py-4 mb-8">
+            <span class="flex items-center gap-1.5"><i data-lucide="calendar" class="w-3.5 h-3.5 text-royal"></i> <span id="postData">15 Out 2025</span></span>
+            <span class="flex items-center gap-1.5"><i data-lucide="user" class="w-3.5 h-3.5 text-royal"></i> <span id="postAutor">Equipe CFTEC</span></span>
+            <span class="flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5 text-royal"></i> <span id="postTempo">5 min leitura</span></span>
+          </div>
+
+          <div class="article-image mb-8" id="postImagem"></div>
+
+          <div class="article-content prose prose-navy max-w-none" id="postConteudo"></div>
+
+          <div class="mt-10 flex gap-4 items-center bg-mist border border-slate-200/70 rounded-2xl p-5">
+            <span class="w-12 h-12 rounded-xl bg-gradient-to-br from-navy-blue to-royal text-white flex items-center justify-center font-display font-extrabold shrink-0 shadow-soft">CF</span>
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-wider text-royal-dark">Sobre o autor</p>
+              <p class="text-sm font-semibold text-navy-blue">Equipe CFTEC</p>
+              <p class="text-xs text-slate-500 mt-0.5 leading-relaxed">Especialistas em software de gestão, faturação AGT e infraestrutura de TI em Angola.</p>
+            </div>
+          </div>
+
+          <div class="mt-10 pt-8 border-t border-slate-200 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <a href="blog.html" class="text-sm font-semibold text-blue-600 flex items-center gap-2 hover:gap-3 transition-all">
+              <i data-lucide="arrow-left" class="w-4 h-4"></i> Voltar às notícias
+            </a>
+            <div class="flex items-center gap-2">
+              <span class="text-xs text-slate-500 font-medium mr-1">Partilhar:</span>
+              <a id="shareIn" href="#" target="_blank" rel="noopener" aria-label="Partilhar no LinkedIn" class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><i data-lucide="linkedin" class="w-4 h-4"></i></a>
+              <a id="shareTw" href="#" target="_blank" rel="noopener" aria-label="Partilhar no X (Twitter)" class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><i data-lucide="twitter" class="w-4 h-4"></i></a>
+              <a id="shareWa" href="#" target="_blank" rel="noopener" aria-label="Partilhar no WhatsApp" class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 transition-colors"><i data-lucide="message-circle" class="w-4 h-4"></i></a>
+              <button id="copyLink" aria-label="Copiar link do artigo" class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"><i data-lucide="link-2" class="w-4 h-4"></i></button>
+            </div>
+          </div>
+        </div>
+
+        <aside class="lg:w-80 space-y-8 lg:sticky lg:top-24 self-start">
+          <div class="bg-mist rounded-2xl p-6">
+            <h4 class="font-display font-bold text-lg text-navy-blue mb-4">Leia também</h4>
+            <div id="postsRelacionados" class="space-y-4"></div>
+          </div>
+          <div class="bg-blue-600 rounded-2xl p-6 text-white">
+            <h4 class="font-display font-bold text-lg mb-3">Precisa de ajuda?</h4>
+            <p class="text-sm text-blue-100 mb-4">Fale com a nossa equipa comercial ou técnica.</p>
+            <a href="index.html#contactos" class="block w-full text-center py-3 rounded-lg bg-white text-blue-600 font-semibold hover:bg-blue-50 transition-colors">Falar com Consultor</a>
+            <a href="https://wa.me/244900000001" class="block w-full text-center py-3 rounded-lg bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors mt-3"><i data-lucide="phone" class="w-4 h-4 inline mr-2"></i> WhatsApp</a>
+          </div>
+        </aside>
+      </div>
+    </article>
+  </div>
+</main>
+
+<!-- ============ FOOTER ============ -->
+<footer class="bg-navy text-slate-300 py-12 border-t border-white/10">
+  <div class="max-w-7xl mx-auto px-5 py-16 grid sm:grid-cols-2 lg:grid-cols-4 gap-10">
+    <div>
+      <a href="index.html#inicio" class="flex items-center gap-2.5">
+        <span class="w-10 h-10 rounded-xl bg-gradient-to-br from-navy-blue to-royal flex items-center justify-center text-white"><i data-lucide="cpu" class="w-5 h-5"></i></span>
+        <span class="font-display font-extrabold text-xl text-white">CF<span class="text-blue-400">TEC</span></span>
+      </a>
+      <p class="text-sm mt-4 leading-relaxed text-slate-400">
+        Prestação de Serviços e Comércio. Software de gestão, infraestrutura de TI e segurança eletrónica para empresas angolanas.
+      </p>
+    </div>
+    <div>
+      <h4 class="!text-white font-display font-semibold mb-4 text-sm">Navegação</h4>
+      <ul class="space-y-2 text-sm">
+        <li><a class="hover:text-white transition" href="index.html#inicio">Início</a></li>
+        <li><a class="hover:text-white transition" href="index.html#sobre">Sobre Nós</a></li>
+        <li><a class="hover:text-white transition" href="clientes.html">Casos de Sucesso</a></li>
+        <li><a class="hover:text-white transition" href="blog.html">Notícias</a></li>
+        <li><a class="hover:text-white transition" href="faq.html">FAQ</a></li>
+        <li><a class="hover:text-white transition" href="index.html#contactos">Contactos</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="!text-white font-display font-semibold mb-4 text-sm">Categorias</h4>
+      <ul class="space-y-2 text-sm">
+        <li><a class="hover:text-white transition" href="#">Lançamentos</a></li>
+        <li><a class="hover:text-white transition" href="#">Segurança CCTV</a></li>
+        <li><a class="hover:text-white transition" href="#">Fiscal AGT</a></li>
+        <li><a class="hover:text-white transition" href="#">Dicas de TI</a></li>
+      </ul>
+    </div>
+    <div>
+      <h4 class="!text-white font-display font-semibold mb-4 text-sm">Contacto</h4>
+      <ul class="space-y-2 text-sm">
+        <li class="flex gap-2"><i data-lucide="phone" class="w-4 h-4 mt-0.5 text-blue-400"></i>+244 900 000 001</li>
+        <li class="flex gap-2"><i data-lucide="mail" class="w-4 h-4 mt-0.5 text-blue-400"></i>geral@cftec.ao</li>
+        <li class="flex gap-2"><i data-lucide="map-pin" class="w-4 h-4 mt-0.5 text-blue-400"></i>Luanda, Angola</li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-white/10">
+    <div class="max-w-7xl mx-auto px-5 py-6 flex flex-col md:flex-row gap-3 md:items-center justify-between text-xs text-slate-400">
+      <p>© <span id="yearBlogPost"></span> CFTEC — Prestação de Serviços e Comércio. Todos os direitos reservados.</p>
+      <div class="flex flex-wrap gap-x-5 gap-y-1">
+        <a href="#" class="hover:text-white" data-legal="Política de Privacidade">Política de Privacidade</a>
+        <a href="#" class="hover:text-white" data-legal="Termos de Utilização">Termos de Utilização</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="assets/js/menu.js"></script>
+<script src="assets/js/main.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  const ARTIGOS = [
+    { id: 1, titulo: 'PalancaSoft v7.1 já disponível', categoria: 'Lançamento', data: '15 Out 2025', resumo: 'Nova interface de relatórios gerenciais, melhorias de performance na faturação e correções de conformidade fiscal AGT.', foto: 'erp-dashboard.jpg', conteudo: '<p>A CFTEC lançou oficialmente a versão <strong>v7.1 do PalancaSoft ERP</strong>, trazendo melhorias significativas para gestores e equipes financeiras.</p><p>Esta atualização foi trabalhada a partir do dia-a-dia dos nossos clientes: relatórios que levavam minutos a gerar nas versões anteriores respondem agora em segundos, e todo o circuito de faturação ganhou velocidade sem perder rigor fiscal.</p><h3>Principais novidades:</h3><ul><li><strong>Nova interface de relatórios gerenciais</strong> — mais intuitiva e com exportação para PDF e Excel.</li><li><strong>Melhorias de performance na faturação</strong> — emissão até 40% mais rápida em lotes grandes.</li><li><strong>Correções de conformidade fiscal AGT</strong> — alinhamento total com as exigências da Administração Geral Tributária.</li></ul><h3>Como atualizar:</h3><p>Os clientes com contrato de suporte recebem a atualização automaticamente pelo canal de suporte da CFTEC. Se a sua instalação é gerida pela sua equipa, o instalador está disponível na nossa <a href="index.html#downloads">Central de Downloads</a>.</p><p>Para ativação de licença ou migração de dados, entre em contato com a equipe comercial — agendamos a atualização sem interromper a sua operação.</p>', autor: 'Equipe CFTEC', tempoLeitura: '5 min' },
+    { id: 2, titulo: 'Dicas de segurança CCTV para empresas', categoria: 'Segurança', data: '03 Set 2025', resumo: 'Como posicionar câmeras, configurar detecção de movimento e proteger o seu património com sistemas de videovigilância IP.', foto: 'cctv-1.jpg', conteudo: '<p>A segurança eletrónica é essencial para proteger o património da sua empresa. A CFTEC compartilha <strong>dicas práticas de CCTV</strong> para negócios angolanos.</p><h3>Onde colocar as câmeras:</h3><ul><li><strong>Entradas e saídas</strong> — todas as portas de acesso devem estar cobertas, com imagem de rosto legível.</li><li><strong>Caixas e cofres</strong> — zonas de dinheiro exigem câmera dedicada e gravação em qualidade máxima.</li><li><strong>Armazéns e corredores</strong> — cobertura total de circulação de mercadoria e pessoal.</li></ul><h3>Configurações que fazem a diferença:</h3><p>Câmeras sem detecção de movimento gravam 24h e ninguém olha as imagens. Configure <strong>alertas de movimento</strong> enviados por push ou e-mail, defina zonas de exclusão (ex. comprovantes no balcão) e mantenha o <strong>NVR com cópias em duas localizações</strong>.</p><p>A CFTEC instala sistemas de videovigilância IP com acesso remoto por telemóvel, gravação em nuvem e manutenção preventiva contratual. Peça uma avaliação gratuita da sua instalação atual.</p>', autor: 'Equipe CFTEC', tempoLeitura: '4 min' },
+    { id: 3, titulo: 'Por que faturar com certificação AGT?', categoria: 'Fiscal', data: '18 Jul 2025', resumo: 'Entenda as obrigações fiscais para empresas angolanas e como o PalancaSoft ajuda.', foto: 'tax.jpg', conteudo: '<p>A faturação eletrónica certificada pela <strong>AGT</strong> é obrigatória para empresas em Angola. Faturar com um sistema não certificado expõe a empresa a sanções e trava operações com clientes exigentes.</p><h3>O que muda com um sistema certificado:</h3><ul><li><strong>Faturas com validade fiscal</strong> — emissão com assinatura da AGT e transmissão das faturas em tempo real.</li><li><strong>Balanço fiscal facilitado</strong> — documentos gravados e prontos para auditoria.</li><li><strong>Confiança de clientes institucionais</strong> — empresas e o Estado só aceitam fatura com validade legal.</li></ul><h3>Como o PalancaSoft cumpre as exigências:</h3><p>O PalancaSoft ERP está <strong>certificado pela AGT</strong> e a CFTEC mantém a certificação atualizada em cada versão lançada. As faturas seguem automaticamente o formato legal e o sistema avisa qualquer movimento que não cumpra as regras vigentes.</p><p>Não deixe a conformidade para a última hora — a nossa equipa orienta e instala em poucos dias. Fale com a nossa equipa comercial.</p>', autor: 'Equipe CFTEC', tempoLeitura: '6 min' },
+    { id: 4, titulo: 'Negomil ERP: módulo escolar', categoria: 'Lançamento', data: '10 Ago 2025', resumo: 'Gestão de matrículas, propinas e pautas com o módulo escolar do Negomil ERP.', foto: 'school.jpg', conteudo: '<p>Instituições de ensino em Angola agora podem contar com o <strong>módulo escolar do Negomil ERP</strong>, distribuído oficialmente pela CFTEC.</p><h3>O que o módulo escolar cobre:</h3><ul><li><strong>Matrículas e inscrições</strong> — ficha completa do estudante, turmas e reservas de vaga.</li><li><strong>Propinas e mensalidades</strong> — cobrança automática e emissão de recibos com validade fiscal.</li><li><strong>Pautas e aproveitamento</strong> — lançamento de notas, transição de ano e boletim automático.</li></ul><h3>Por que integrado num ERP:</h3><p>Quando a admissão dos estudantes, tesouraria e contabilização correm no mesmo sistema, a direção deixa de reconstruir números à mão — o relatório de inadimplência e o caixa previsto são gerados em cliques.</p><p>Quer ver o módulo em funcionamento com dados da sua instituição? Agende uma <strong>demonstração guiada</strong> com a nossa equipa, presencial ou online.</p>', autor: 'Equipe CFTEC', tempoLeitura: '4 min' },
+    { id: 5, titulo: 'Como escolher o ERP certo', categoria: 'Dicas', data: '22 Jul 2025', resumo: 'Guia rápido para comparar PalancaSoft e Negomil ERP.', foto: 'web.jpg', conteudo: '<p>Escolher um ERP é uma decisão estratégica. As duas plataformas da CFTEC têm <strong>perfis próprios</strong> — a escolha certa começa por entender a sua operação.</p><h3>O checklist antes de decidir:</h3><ul><li><strong>Volume de movimento</strong> — número de faturas e lojas por dia.</li><li><strong>Rigor fiscal</strong> — exigência de certificação AGT e relatórios legais.</li><li><strong>Equipa de TI interna</strong> — ou suporte contemplado por quem instala.</li><li><strong>Orçamento de implementação</strong> — hardware, formação e licença.</li></ul><h3>PalancaSoft ou Negomil:</h3><p>O <strong>PalancaSoft</strong> nasceu no retalho e nos serviços: lojas, stocks, caixa e faturação AGT como espinha dorsal. O <strong>Negomil ERP</strong> é modular — brilha em instituições de ensino, tesouraria e operações comerciais com áreas de negócio variadas.</p><p>Se está indeciso, a CFTEC faz a análise da sua operação e recomenda o caminho com números — <strong>demonstração guiada com os seus dados reais</strong>, sem compromisso.</p>', autor: 'Equipe CFTEC', tempoLeitura: '7 min' },
+    { id: 6, titulo: 'Backup automático: por que sua empresa não pode ficar sem', categoria: 'Dicas', data: '05 Jul 2025', resumo: 'A importância de backups automáticos para bases de dados de PalancaSoft e Negomil.', foto: 'servers-1.jpg', conteudo: '<p>Perder dados pode parar um negócio. A CFTEC reforça a importância do <strong>backup automático</strong> para as bases de dados do PalancaSoft e do Negomil.</p><h3>O que um backup mal configurado esconde:</h3><ul><li><strong>Ficheiro único no mesmo disco</strong> — se o disco falhar, o backup falha com ele.</li><li><strong>Sem teste de restauro</strong> — um backup que nunca foi testado não é backup.</li><li><strong>Processo manual</strong> — depende de alguém lembrar, e falha justo quando mais importa.</li></ul><h3>O padrão CFTEC:</h3><p>Backup <strong>automático diário</strong> da base de dados, cópia em disco externo e sincronização para a nuvem com histórico de dias — o restauro é testado de forma programada na vossa manutenção.</p><p>Se tem PalancaSoft ou Negomil em produção, a nossa equipa faz uma <strong>auditoria de backup</strong> da sua instalação e implementa o esquema completo. Proteja anos de informação num dia de trabalho.</p>', autor: 'Equipe CFTEC', tempoLeitura: '3 min' }
+  ];
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const params = new URLSearchParams(window.location.search);
+    const id = Number(params.get('id'));
+    const artigo = ARTIGOS.find(a => a.id === id);
+
+    if (!artigo) {
+      document.body.innerHTML = '<div class="container max-w-md mx-auto py-20 text-center"><h2 class="text-2xl font-bold text-navy-blue">Artigo não encontrado</h2><p class="mt-4 text-ink">O artigo solicitado não existe.</p><a href="blog.html" class="btn btn-primary mt-6">Voltar às notícias</a></div>';
+      return;
+    }
+
+    document.getElementById('blogTitle').textContent = `CFTEC | ${artigo.titulo}`;
+    document.getElementById('blogDesc').content = artigo.resumo;
+    document.getElementById('postCategoria').textContent = artigo.categoria;
+    document.getElementById('postCrumbCat').textContent = artigo.categoria;
+    document.getElementById('postTitulo').textContent = artigo.titulo;
+    document.getElementById('postData').textContent = artigo.data;
+    document.getElementById('postAutor').textContent = artigo.autor;
+    document.getElementById('postTempo').textContent = artigo.tempoLeitura;
+    document.getElementById('postConteudo').innerHTML = artigo.conteudo;
+
+    // Partilha e link copiável
+    const shareUrl = encodeURIComponent(window.location.href);
+    const shareTitle = encodeURIComponent(artigo.titulo + ' — CFTEC');
+    document.getElementById('shareIn').href = `https://www.linkedin.com/sharing/share-offsite/?url=${shareUrl}`;
+    document.getElementById('shareTw').href = `https://twitter.com/intent/tweet?text=${shareTitle}&url=${shareUrl}`;
+    document.getElementById('shareWa').href = `https://wa.me/?text=${shareTitle}%20${shareUrl}`;
+
+    const copyBtn = document.getElementById('copyLink');
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(window.location.href);
+        copyBtn.innerHTML = '<i data-lucide="check" class="w-4 h-4 text-emerald-600"></i>';
+        lucide.createIcons();
+        setTimeout(() => {
+          copyBtn.innerHTML = '<i data-lucide="link-2" class="w-4 h-4"></i>';
+          lucide.createIcons();
+        }, 1600);
+      } catch (err) { /* clipboard indisponível */ }
+    });
+
+    const imgEl = document.getElementById('postImagem');
+    if (artigo.foto) {
+      imgEl.innerHTML = `<img src="assets/img/${artigo.foto}" alt="${artigo.titulo}">`;
+    }
+
+    const relacionados = ARTIGOS.filter(a => a.categoria === artigo.categoria && a.id !== artigo.id).slice(0, 3);
+    const relEl = document.getElementById('postsRelacionados');
+    if (relacionados.length > 0) {
+      relEl.innerHTML = relacionados.map(r => `
+        <div class="flex gap-3 items-start">
+          <img class="art-thumb" src="assets/img/${r.foto}" alt="${r.titulo}">
+          <div>
+            <div class="text-[10px] font-bold uppercase tracking-wider text-royal-dark mb-0.5">${r.categoria}</div>
+            <a href="blog-post.html?id=${r.id}" class="text-sm font-semibold text-navy-blue hover:text-blue-600 transition-colors block">${r.titulo}</a>
+            <div class="text-[10px] text-slate-500 mt-0.5">${r.data}</div>
+          </div>
+        </div>
+      `).join('');
+    } else {
+      relEl.innerHTML = '<p class="text-sm text-slate-500">Sem artigos relacionados nesta categoria.</p>';
+    }
+
+    lucide.createIcons();
+    document.getElementById('yearBlogPost').textContent = new Date().getFullYear();
+  });
+
+  const header = document.getElementById('header');
+  const progress = document.getElementById('readProgress');
+  const onScroll = () => {
+    header.classList.toggle('shadow-soft', window.scrollY > 8);
+    const h = document.documentElement;
+    const total = h.scrollHeight - h.clientHeight;
+    progress.style.width = (total > 0 ? (h.scrollTop / total) * 100 : 0) + '%';
+  };
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+
+  if (window.lucide) lucide.createIcons();
+})();
+</script>
+</body>
+</html>
