@@ -543,3 +543,6 @@
 .order-status--Rejeitado{background:#fee2e2;color:#b91c1c}
 .order-btn--ok{color:#16a34a}
 .order-btn--ok:hover{background:#dcfce7;color:#15803d;border-color:#86efac}
+.order-live-note{display:inline-flex;align-items:center;gap:5px;color:#16a34a;font:700 .56rem 'Manrope',sans-serif}
+.order-live-note i{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:orderPulse 2s infinite}
+@keyframes orderPulse{0%,100%{opacity:1}50%{opacity:.35}}
