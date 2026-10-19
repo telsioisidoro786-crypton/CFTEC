@@ -73,6 +73,68 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body))
 }
 
+// ============================================================
+// NOTIFICAÇÕES POR E-MAIL (Resend) — uma falha de e-mail NUNCA
+// bloqueia a resposta principal da API.
+//   .env:  RESEND_API_KEY=...   RESEND_FROM="CFTEC <nome@dominio>"
+//          NOTIFY_EMAIL_TO=destino@fallback (usado se a settings 'notify_email' estiver vazia)
+// Destino do admin fica na settings 'notify_email' (editável no painel).
+// ============================================================
+type EmailResult = { enviado: boolean; detalhe: string }
+
+const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+async function getNotifyDestino(): Promise<string> {
+  try {
+    if (supabase) {
+      const { data } = await supabase.from('settings').select('key, value').eq('key', 'notify_email').limit(1)
+      const v = (data || []).find((s: { key: string; value: string }) => s.key === 'notify_email')?.value
+      if (v && String(v).trim()) return String(v).trim()
+    }
+  } catch { /* sem tabela settings → fallback .env */ }
+  return (process.env.NOTIFY_EMAIL_TO || '').trim()
+}
+
+async function sendEmailRaw(to: string, subject: string, html: string): Promise<EmailResult> {
+  const apiKey = (process.env.RESEND_API_KEY || '').trim()
+  if (!apiKey) return { enviado: false, detalhe: 'sem RESEND_API_KEY no .env' }
+  const from = (process.env.RESEND_FROM || '').trim() || 'CFTEC <onboarding@resend.dev>'
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from, to: [to], subject, html }),
+    })
+    const body = (await response.json().catch(() => ({}))) as { id?: string; message?: string }
+    if (!response.ok) return { enviado: false, detalhe: `Resend HTTP ${response.status}: ${body.message || 'erro desconhecido'}` }
+    return { enviado: true, detalhe: body.id ? `id=${body.id}` : 'sem id' }
+  } catch (e) {
+    return { enviado: false, detalhe: e instanceof Error ? e.message : 'exception' }
+  }
+}
+
+function emailShell(titulo: string, corpoHtml: string): string {
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif">
+<div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0">
+<div style="background:#0f172a;padding:22px 28px"><span style="color:#ffffff;font-size:18px;font-weight:800;letter-spacing:.5px">CFTEC</span><span style="color:#60a5fa;font-size:12px;display:block;margin-top:2px">cftec.co &middot; Engenharia digital para negócios que avançam</span></div>
+<div style="padding:26px 28px;color:#0f172a;font-size:14px;line-height:1.7"><h1 style="margin:0 0 16px;font-size:19px">${titulo}</h1>${corpoHtml}
+<p style="margin:22px 0 0;padding-top:14px;border-top:1px solid #eef2f7;color:#94a3b8;font-size:11px">Mensagem automática do sistema CFTEC — por favor não responda directamente a este e-mail.</p></div></div></body></html>`
+}
+
+function emailLinha(label: string, valor: string): string {
+  return `<tr><td style="padding:6px 12px 6px 0;color:#64748b;font-size:12px;white-space:nowrap;vertical-align:top">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600">${valor}</td></tr>`
+}
+
+/** Dispara e-mail para o admin em fire-and-forget (não bloqueia a resposta) */
+function fireAdminEmail(subject: string, html: string): void {
+  void getNotifyDestino().then(destino => {
+    if (!destino) { console.warn(`[EMAIL] salto (sem destino configurado): ${subject}`); return }
+    void sendEmailRaw(destino, subject, html).then(r =>
+      console.log(`[EMAIL] ${r.enviado ? 'enviado' : 'não enviado'} → ${destino} · ${r.detalhe} · ${subject}`),
+    )
+  })
+}
+
 type MultipartPart = { name: string; filename?: string; mimetype?: string; data: Buffer }
 
 /**
@@ -389,6 +451,11 @@ function adminApi(): Plugin {
             })
             
             if (error) return json(res, 500, { ok: false, error: error.message })
+            fireAdminEmail(
+              `Novo contacto do site — ${name}`,
+              emailShell('Novo contacto recebido', `<p>Alguém preencheu o formulário do site:</p>
+<table style="border-collapse:collapse">${emailLinha('Nome', escHtml(name))}${emailLinha('E-mail', `<a href="mailto:${escHtml(email)}" style="color:#1d4ed8">${escHtml(email)}</a>`)}${emailLinha('Telefone', escHtml(payload.phone?.trim() || '—'))}${emailLinha('Interesse', escHtml(payload.interest?.trim() || '—'))}${emailLinha('Mensagem', escHtml(message).slice(0, 800).replace(/\n/g, '<br />'))}</table>`),
+            )
             return json(res, 201, { ok: true })
           }
           
@@ -475,6 +542,12 @@ function adminApi(): Plugin {
             // Instruções de pagamento (settings do portal)
             const { data: cfg } = await supabase.from('settings').select('key, value').in('key', ['iban_cftec', 'whatsapp_comercial'])
             const getCfg = (k: string) => (cfg || []).find((c: { key: string; value: string }) => c.key === k)?.value || ''
+            fireAdminEmail(
+              `Pedido de licença — ${nomeEmpresa} (${softwareNome})`,
+              emailShell('Novo pedido de licença (checkout B2B)', `<p>Um cliente acabou de submeter o checkout do site:</p>
+<table style="border-collapse:collapse">${emailLinha('Software', escHtml(softwareNome))}${emailLinha('Empresa', escHtml(nomeEmpresa))}${emailLinha('NIF', escHtml(nif))}${emailLinha('Responsável', escHtml(responsavel))}${emailLinha('WhatsApp', escHtml(telefone))}${emailLinha('E-mail', email ? `<a href="mailto:${escHtml(email)}" style="color:#1d4ed8">${escHtml(email)}</a>` : '—')}${emailLinha('Província', escHtml(provincia))}${emailLinha('Forma de pagamento', escHtml(formaPagamento))}${emailLinha('Observações', observacoes ? escHtml(observacoes).slice(0, 600).replace(/\n/g, '<br />') : '—')}${emailLinha('Ref.', `<code>#${String(data.id).slice(0, 8).toUpperCase()}</code>`)}</table>
+<p style="margin:18px 0 0">Trate no painel CFTEC → Secção «Pedidos de Licença».</p>`),
+            )
             return json(res, 201, {
               ok: true,
               pedido_id: data.id,
@@ -766,6 +839,9 @@ function adminApi(): Plugin {
               }
               if (payload.observacoes !== undefined) updates.observacoes = String(payload.observacoes).slice(0, 1000)
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
+              // estado prévio — o e-mail ao cliente só dispara quando o status muda de verdade
+              const { data: antes } = await supabase.from('pedidos_licencas').select('status, email, nome_empresa, software_nome').eq('id', id).limit(1)
+              const prevStatus = (antes && antes[0]?.status) || null
               const { data, error } = await supabase
                 .from('pedidos_licencas')
                 .update(updates)
@@ -773,7 +849,40 @@ function adminApi(): Plugin {
                 .select('*')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
-              return json(res, 200, { ok: true, pedido: data })
+              // E-MAIL AO CLIENTE na aprovação/rejeição (se tiver e-mail e o mudou de status)
+              let emailCliente: EmailResult | null = null
+              const cliMail = String((data as { email?: string }).email || '').trim()
+              const novoStatus = String((data as { status?: string }).status || '')
+              if (cliMail && novoStatus && novoStatus !== prevStatus && ['Aprovado', 'Rejeitado'].includes(novoStatus)) {
+                const empresa = escHtml(String((data as { nome_empresa?: string }).nome_empresa || 'empresa'))
+                const software = escHtml(String((data as { software_nome?: string }).software_nome || ''))
+                const ref = `#${String((data as { id?: string }).id || '').slice(0, 8).toUpperCase()}`
+                const { data: cfg2 } = await supabase.from('settings').select('key, value').in('key', ['iban_cftec', 'whatsapp_comercial'])
+                const g2 = (k: string) => escHtml((cfg2 || []).find((c: { key: string; value: string }) => c.key === k)?.value || '')
+                const obsAr = String((data as { observacoes?: string }).observacoes || '').trim()
+                if (novoStatus === 'Aprovado') {
+                  emailCliente = await sendEmailRaw(
+                    cliMail,
+                    `Licença aprovada — CFTEC (${software})`,
+                    emailShell('O seu pedido foi aprovado',
+                      `<p>Olá <b>${empresa}</b>,</p><p>O pedido de licença <code>${ref}</code> para <b>${software || 'o software'}</b> foi <b style="color:#16a34a">aprovado</b>. Confirme os dados de pagamento:</p>
+<table style="border-collapse:collapse;background:#f8fafc;border-radius:8px;padding:8px">${emailLinha('Forma de pagamento', escHtml(String((data as { forma_pagamento?: string }).forma_pagamento || '—')))}${emailLinha('IBAN', `<code style="user-select:all">${g2('iban_cftec') || '—'}</code>`)}</table>
+<p style="margin:16px 0 0">Depois da transferência, envie o comprovativo para o nosso WhatsApp comercial: <b>+${g2('whatsapp_comercial') || '—'}</b> e a licença será emitida.</p>
+${obsAr ? `<p style="margin:14px 0 0;background:#eff6ff;border-radius:8px;padding:10px 12px"><b>Nota da equipa:</b><br />${escHtml(obsAr)}</p>` : ''}`),
+                  )
+                } else {
+                  emailCliente = await sendEmailRaw(
+                    cliMail,
+                    `Pedido não aprovado — CFTEC (${software})`,
+                    emailShell('Sobre o seu pedido', `<p>Olá <b>${empresa}</b>,</p>
+<p>O pedido <code>${ref}</code> para <b>${software}</b> não pôde ser aprovado neste momento.</p>
+${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>Motivo indicado pela equipa:</b><br />${escHtml(obsAr)}</p>` : '<p>Sinta-se livre para contactar-nos para entender os próximos passos ou submeter um novo pedido com dados actualizados.</p>'}
+<p style="margin:16px 0 0">Fala com a equipa comercial no WhatsApp: <b>+${g2('whatsapp_comercial') || '—'}</b></p>`),
+                  )
+                }
+                console.log(`[EMAIL] cliente ${novoStatus} → ${cliMail} · ${emailCliente.detalhe}`)
+              }
+              return json(res, 200, { ok: true, pedido: data, emailCliente: emailCliente ? (emailCliente.enviado ? 'enviado' : emailCliente.detalhe) : 'nenhum' })
             }
 
             if (path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
