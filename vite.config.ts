@@ -73,6 +73,71 @@ function json(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body))
 }
 
+type MultipartPart = { name: string; filename?: string; mimetype?: string; data: Buffer }
+
+/**
+ * Parser multipart/form-data à prova de binário — trabalha SEMPRE com Buffer
+ * (na versão antiga o corpo era convertido para string UTF-8, o que corrompia
+ * ficheiros .exe/.zip com qualquer byte não-ASCII:.SizeType > 127).
+ */
+function parseMultipart(raw: Buffer, contentType: string): { fields: Record<string, string>; file: MultipartPart | null } {
+  const fields: Record<string, string> = {}
+  let file: MultipartPart | null = null
+
+  const boundaryQuoted = contentType.match(/boundary="([^"]+)"/)
+  const boundaryPlain = contentType.match(/boundary=([^;]+)/)
+  const boundary = Buffer.from('--' + (boundaryQuoted ? boundaryQuoted[1] : boundaryPlain ? boundaryPlain[1].trim() : ''))
+
+  // Localizar todas as ocorrências do delimitador no corpo
+  const positions: number[] = []
+  let idx = raw.indexOf(boundary)
+  while (idx !== -1) {
+    positions.push(idx)
+    idx = raw.indexOf(boundary, idx + boundary.length)
+  }
+
+  for (let i = 0; i < positions.length - 1; i++) {
+    // conteúdo do partido: entre o fim da linha do boundary e o \r\n antes do próximo boundary
+    let start = positions[i] + boundary.length
+    const lineEnd = raw.indexOf('\r\n', start)
+    if (lineEnd === -1) continue
+    // boundary final termina com '--'; ignorar
+    if (raw.slice(start, Math.min(lineEnd, start + 6)).toString().startsWith('--')) break
+    start = lineEnd + 2
+
+    const headerEnd = raw.indexOf('\r\n\r\n', start)
+    if (headerEnd === -1 || headerEnd >= positions[i + 1]) continue
+    const headers = raw.slice(start, headerEnd).toString('utf8')
+
+    // o conteúdo termina 2 bytes antes do próximo boundary (o \r\n que o antecede)
+    const dataEnd = positions[i + 1] - 2
+    if (dataEnd <= headerEnd + 4) continue
+    const data = raw.subarray(headerEnd + 4, dataEnd)
+
+    const nameMatch = headers.match(/name="([^"]*)"/)
+    if (!nameMatch) continue
+    const name = nameMatch[1]
+
+    if (/filename="/.test(headers)) {
+      const filenameMatch = headers.match(/filename="([^"]*)"/)
+      const mimetypeMatch = headers.match(/Content-Type: *([^\r\n]+)/)
+      let filename = filenameMatch ? filenameMatch[1] : 'upload'
+      try { filename = decodeURIComponent(filename) } catch { /* resposta crua */ }
+      const part: MultipartPart = {
+        name,
+        filename,
+        mimetype: mimetypeMatch ? mimetypeMatch[1].trim() : 'application/octet-stream',
+        data,
+      }
+      if (!file) file = part
+    } else {
+      fields[name] = data.toString('utf8')
+    }
+  }
+
+  return { fields, file }
+}
+
 function cookies(req: IncomingMessage): Record<string, string> {
   const cookieHeader = req.headers.cookie || ''
   const parsed = Object.fromEntries(cookieHeader.split(';').filter(Boolean).map((part) => {
@@ -908,34 +973,11 @@ function adminApi(): Plugin {
               
               const chunks: Buffer[] = []
               for await (const chunk of req) chunks.push(Buffer.from(chunk))
-              const body = Buffer.concat(chunks).toString('utf8')
-              
-              const boundaryMatch = contentType.match(/boundary=([^;]+)/)
-              if (!boundaryMatch) return json(res, 400, { ok: false, error: 'Boundary não encontrado' })
-              const boundary = '--' + boundaryMatch[1]
-              
-              const parts = body.split(boundary).slice(1, -1)
-              let fileData: { buffer: Buffer; filename: string; mimetype: string } | null = null
-              let altText = ''
-              
-              for (const part of parts) {
-                const headerEnd = part.indexOf('\r\n\r\n')
-                if (headerEnd === -1) continue
-                const headers = part.slice(0, headerEnd)
-                const content = part.slice(headerEnd + 4, -2)
-                
-                if (headers.includes('name="file"')) {
-                  const filenameMatch = headers.match(/filename="([^"]+)"/)
-                  const mimetypeMatch = headers.match(/Content-Type: ([^\r\n]+)/)
-                  fileData = {
-                    buffer: Buffer.from(content, 'binary'),
-                    filename: filenameMatch ? filenameMatch[1] : 'upload',
-                    mimetype: mimetypeMatch ? mimetypeMatch[1].trim() : 'application/octet-stream',
-                  }
-                } else if (headers.includes('name="alt_text"')) {
-                  altText = content.trim()
-                }
-              }
+              const parsed = parseMultipart(Buffer.concat(chunks), contentType)
+              const fileData = parsed.file
+                ? { buffer: parsed.file.data, filename: parsed.file.filename || 'upload', mimetype: parsed.file.mimetype || 'application/octet-stream' }
+                : null
+              const altText = (parsed.fields['alt_text'] || '').trim()
               
               if (!fileData) return json(res, 400, { ok: false, error: 'Ficheiro não enviado' })
               
@@ -1052,36 +1094,11 @@ function adminApi(): Plugin {
               
               const chunks: Buffer[] = []
               for await (const chunk of req) chunks.push(Buffer.from(chunk))
-              const body = Buffer.concat(chunks).toString('utf8')
-              
-              const boundaryMatch = contentType.match(/boundary=([^;]+)/)
-              if (!boundaryMatch) return json(res, 400, { ok: false, error: 'Boundary não encontrado' })
-              const boundary = '--' + boundaryMatch[1]
-              
-              const parts = body.split(boundary).slice(1, -1)
-              const fields: Record<string, string> = {}
-              let fileData: { buffer: Buffer; filename: string; mimetype: string } | null = null
-              
-              for (const part of parts) {
-                const headerEnd = part.indexOf('\r\n\r\n')
-                if (headerEnd === -1) continue
-                const headers = part.slice(0, headerEnd)
-                const content = part.slice(headerEnd + 4, -2)
-                
-                const nameMatch = headers.match(/name="([^"]+)"/)
-                if (headers.includes('name="file"')) {
-                  const filenameMatch = headers.match(/filename="([^"]+)"/)
-                  const mimetypeMatch = headers.match(/Content-Type: ([^\r\n]+)/)
-                  fields.file = filenameMatch ? filenameMatch[1] : ''
-                  fileData = {
-                    buffer: Buffer.from(content, 'binary'),
-                    filename: filenameMatch ? filenameMatch[1] : 'upload',
-                    mimetype: mimetypeMatch ? mimetypeMatch[1].trim() : 'application/octet-stream',
-                  }
-                } else if (nameMatch) {
-                  fields[nameMatch[1]] = content
-                }
-              }
+              const parsed = parseMultipart(Buffer.concat(chunks), contentType)
+              const fields: Record<string, string> = parsed.fields
+              const fileData = parsed.file
+                ? { buffer: parsed.file.data, filename: parsed.file.filename || 'upload', mimetype: parsed.file.mimetype || 'application/octet-stream' }
+                : null
               
               if (!fields.name || !fields.version || !fields.price || !fields.description) {
                 return json(res, 400, { ok: false, error: 'Todos os campos são obrigatórios.' })
