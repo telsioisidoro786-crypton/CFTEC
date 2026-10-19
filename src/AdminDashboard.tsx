@@ -76,7 +76,14 @@ const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
 
 type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'parceiros' | 'contactos' | 'settings'
 
-type Summary = { softwares: number; media: number; services: number; contacts: number }
+type Summary = {
+  softwares: number; media: number; services: number; contacts: number
+  servicesActive?: number; softwaresActive?: number
+  licenses?: number; licensesActivas?: number; licensesExpiring?: number
+  orders?: number; ordersPending?: number; ordersApproved?: number; ordersVerificacao?: number
+  partners?: number; partnersPending?: number
+  contactsUnread?: number
+}
 type Contact = { id: string; name: string; email: string; phone: string | null; service_interest: string; message: string; status: string; created_at: string }
 type Software = { id: string; name: string; version: string; description?: string | null; price?: number | null; category?: string | null; changelog?: string | null; file_url?: string; file_size: string; downloads_count: number; is_active?: boolean; created_at: string }
 type Service = { id: string; title: string; slug: string; short_description: string; full_description: string | null; icon: string; is_active: boolean; created_at: string }
@@ -139,16 +146,17 @@ function AdminMark() {
   return <a href="/" className="admin-brand"><span className="admin-brand-mark"><span /><span /><span /></span><span><strong>CFTEC</strong><small>Painel Admin</small></span></a>
 }
 
-function StatCard({ label, value, change, icon: Icon, tone }: { label: string; value: number; change: string; icon: typeof Users; tone: string }) {
+function StatCard({ label, value, sub, badge, icon: Icon, tone, onClick }: { label: string; value: number; sub: string; badge?: number; icon: typeof Users; tone: string; onClick?: () => void }) {
   return (
-    <Card className="admin-stat">
+    <Card className={`admin-stat ${onClick ? 'admin-stat--link' : ''}`} onClick={onClick}>
+      {badge != null && badge > 0 && <span className="admin-stat-badge" title={`${badge} por tratar`}>{badge > 9 ? '9+' : badge}</span>}
       <div className="admin-stat-head">
         <span>{label}</span>
         <span className={`admin-stat-icon admin-stat-icon--${tone}`}><Icon size={17} /></span>
       </div>
       <div className="admin-stat-value">
         <strong>{value}</strong>
-        <small><span className="stat-up">↗ {change}</span> vs. mês anterior</small>
+        <small>{sub}</small>
       </div>
     </Card>
   )
@@ -403,6 +411,11 @@ export default function AdminDashboard() {
       })
       if (!response.ok) throw new Error('Falha ao actualizar o contacto')
       setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, status } : c))
+      // bolha de notificação: recalcula novos/não lidos em tempo real
+      const wasNew = contact.status === 'new' || contact.status === 'unread'
+      const isNew = (status as string) === 'new' || status === 'unread'
+      if (wasNew !== isNew)
+        setSummary(prev => ({ ...prev, contactsUnread: Math.max(0, (prev.contactsUnread || 0) + (wasNew ? -1 : 1)) }))
       notify(`Contacto ${status === 'archived' ? 'arquivado' : status === 'read' ? 'marcado como lido' : 'marcado como novo'}`)
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Erro ao actualizar o contacto')
@@ -416,6 +429,7 @@ export default function AdminDashboard() {
       if (!response.ok) throw new Error('Falha ao eliminar contacto')
       notify('Contacto eliminado')
       setContacts(prev => prev.filter(c => c.id !== deletingContactId))
+      setSummary(prev => ({ ...prev, contacts: Math.max(0, (prev.contacts || 0) - 1), contactsUnread: Math.max(0, (prev.contactsUnread || 0) - (contacts.find(c => c.id === deletingContactId)?.status === 'new' || contacts.find(c => c.id === deletingContactId)?.status === 'unread' ? 1 : 0)) }))
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Erro ao eliminar contacto')
     } finally {
@@ -1348,7 +1362,7 @@ export default function AdminDashboard() {
     <aside className={`admin-sidebar ${sidebarOpen ? 'admin-sidebar--open' : ''}`}>
       <div className="admin-sidebar-top"><AdminMark /><button className="admin-close" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
       <div className="admin-workspace"><span className="admin-avatar">CF</span><div><strong>CFTEC Workspace</strong><small>Plano empresarial <span /></small></div><ChevronRight size={15} /></div>
-      <nav className="admin-nav"><span className="admin-nav-label">Workspace</span>{navItems.filter(n => !adminUser?.level || n.levels.includes(adminUser.level)).map(({ id, label, icon: Icon }) => <button className={activeSection === id ? 'is-active' : ''} key={id} onClick={() => { setActiveSection(id); setSidebarOpen(false) }}><Icon size={17} /><span>{label}</span>{id === 'dashboard' && <i className="admin-nav-pip" />}</button>)}</nav>
+      <nav className="admin-nav"><span className="admin-nav-label">Workspace</span>{navItems.filter(n => !adminUser?.level || n.levels.includes(adminUser.level)).map(({ id, label, icon: Icon }) => { const navId = String(id); const pendingBadge = summary.contactsUnread || 0; const badgeMap: Record<string, number> = { contactos: pendingBadge, pedidos: (summary.ordersPending || 0) + (summary.ordersVerificacao || 0), parceiros: summary.partnersPending || 0, licencas: summary.licensesExpiring || 0 }; const badge = badgeMap[navId] || 0; return <button className={activeSection === id ? 'is-active' : ''} key={id} onClick={() => { setActiveSection(id); setSidebarOpen(false) }}><Icon size={17} /><span>{label}</span>{badge > 0 ? <i className="admin-nav-badge">{badge > 9 ? '9+' : badge}</i> : id === 'dashboard' ? <i className="admin-nav-pip" /> : null}</button> })}</nav>
       <div className="admin-sidebar-bottom"><div className="admin-help"><CircleHelp size={17} /><div><strong>Precisa de ajuda?</strong><small>Fale com o suporte CFTEC</small></div></div><button className="admin-logout" onClick={handleLogout}><LogOut size={16} /> Sair do painel</button></div>
     </aside>
 
@@ -1358,7 +1372,15 @@ export default function AdminDashboard() {
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
         {activeSection === 'dashboard' && <>
-          <div className="admin-stats-grid"><StatCard label="Softwares cadastrados" value={summary.softwares} change="12.5%" icon={Package} tone="blue" /><StatCard label="Imagens na galeria" value={summary.media} change="8.2%" icon={FileImage} tone="cyan" /><StatCard label="Serviços activos" value={summary.services} change="4.1%" icon={Code2} tone="violet" /><StatCard label="Contactos recebidos" value={summary.contacts} change="18.4%" icon={Users} tone="lime" /></div>
+          <div className="admin-stats-grid admin-stats-grid--seven">
+            <StatCard label="Serviços" value={summary.services || 0} sub={`${summary.servicesActive ?? 0} activo(s) no site`} icon={Code2} tone="violet" onClick={() => setActiveSection('services')} />
+            <StatCard label="Mídias" value={summary.media || 0} sub="ficheiros na galeria" icon={FileImage} tone="cyan" onClick={() => setActiveSection('media')} />
+            <StatCard label="Softwares" value={summary.softwares || 0} sub={`${summary.softwaresActive ?? 0} publicado(s)`} icon={Package} tone="blue" onClick={() => setActiveSection('software')} />
+            <StatCard label="Licenças" value={summary.licenses || 0} sub={`${summary.licensesActivas ?? 0} activa(s)`} badge={summary.licensesExpiring} icon={KeyRound} tone="lime" onClick={() => setActiveSection('licencas')} />
+            <StatCard label="Pedidos" value={summary.orders || 0} sub={`${summary.ordersPending ?? 0} pendente(s) · ${summary.ordersApproved ?? 0} aprovado(s)`} badge={(summary.ordersPending || 0) + (summary.ordersVerificacao || 0)} icon={ShoppingCart} tone="blue" onClick={() => setActiveSection('pedidos')} />
+            <StatCard label="Revenda" value={summary.partners || 0} sub={`${summary.partnersPending ?? 0} candidatura(s) pendente(s)`} badge={summary.partnersPending} icon={Network} tone="violet" onClick={() => setActiveSection('parceiros')} />
+            <StatCard label="Contactos" value={summary.contacts || 0} sub={`${summary.contactsUnread ?? 0} novo(s) por responder`} badge={summary.contactsUnread} icon={Users} tone="lime" onClick={() => setActiveSection('contactos')} />
+          </div>
           <div className="admin-dashboard-grid"><Card className="admin-panel admin-panel--activity"><div className="admin-panel-head"><div><span className="admin-panel-kicker">ACTIVIDADE</span><h2>Pedidos recentes</h2></div><button onClick={() => setActiveSection('contactos')}>Ver todos <ChevronRight size={14} /></button></div><div className="contact-list">{contacts.map((contact) => <div className="contact-row" key={contact.id}><span className="contact-initials">{contact.name.split(' ').map((name) => name[0]).join('').slice(0, 2)}</span><div className="contact-main"><strong>{contact.name}</strong><span>{contact.email}</span></div><span className="contact-interest">{contact.service_interest || 'Pedido geral'}</span><span className={`contact-status contact-status--${contactStatusTone(contact.status)}`}>{contactStatusLabel(contact.status)}</span><time>{formatDate(contact.created_at)}</time><MoreHorizontal size={17} className="row-more" /></div>)}</div></Card><Card className="admin-panel admin-panel--health"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SISTEMA</span><h2>Saúde do workspace</h2></div><div className="health-actions"><button className="icon-btn" title="Verificar agora" onClick={refreshHealth}>{refreshingHealth ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={15} />}</button><Activity size={18} className="panel-accent" /></div></div>
               <>
               {health ? (

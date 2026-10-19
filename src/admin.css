@@ -108,6 +108,12 @@
 .admin-online i{width:8px;height:8px;background:#22c55e;border-radius:50%}
 
 .admin-stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}
+.admin-stats-grid--seven{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
+.admin-stat--link{cursor:pointer}
+.admin-stat-badge{position:absolute;top:14px;right:16px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 6px;border-radius:999px;background:#ef4444;color:#fff;font:800 .58rem/1 'Manrope',sans-serif;box-shadow:0 3px 8px rgba(239,68,68,.4)}
+.admin-stat{position:relative}
+.admin-nav-badge{margin-left:auto;min-width:17px;height:17px;display:grid;place-items:center;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font:800 .54rem/1 'Manrope',sans-serif;animation:navBadge 1.2s ease}
+@keyframes navBadge{from{transform:scale(0)}to{transform:scale(1)}}
 .admin-dashboard-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px}
 .admin-dashboard-grid--bottom{margin-bottom:0}
 .admin-panel{background:#fff;border:1px solid #e2e8f0;border-radius:16px;padding:20px}

@@ -592,21 +592,59 @@ function adminApi(): Plugin {
             
             if (path === '/api/admin/summary' && req.method === 'GET') {
               if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
-              
-              const [{ count: servicesCount }, { count: contactsCount }, { count: mediaCount }, { count: softwareCount }] = await Promise.all([
-                supabase.from('services').select('*', { count: 'exact', head: true }),
-                supabase.from('contacts').select('*', { count: 'exact', head: true }),
-                supabase.from('media').select('*', { count: 'exact', head: true }),
-                supabase.from('softwares').select('*', { count: 'exact', head: true }),
+
+              const count = async (table: string, match: Record<string, unknown> = {}) => {
+                const { count: c } = await supabase.from(table).select('*', { count: 'exact', head: true }).match(match)
+                return c || 0
+              }
+
+              const [
+                servicesCount, servicesActive, mediaCount, softwareCount, softwareActive,
+                licensesCount, licensesActivas,
+                ordersCount, ordersPending, ordersApproved,
+                partnersCount, partnersPending,
+                contactsCount,
+              ] = await Promise.all([
+                count('services'),
+                count('services', { is_active: true }),
+                count('media'),
+                count('softwares'),
+                count('softwares', { is_active: true }),
+                count('licencas_palancasoft'),
+                count('licencas_palancasoft', { status: 'activa' }),
+                count('pedidos_licencas'),
+                count('pedidos_licencas', { status: 'Pendente' }),
+                count('pedidos_licencas', { status: 'Aprovado' }),
+                count('parceiros_candidaturas'),
+                count('parceiros_candidaturas', { status: 'pendente' }),
+                count('contacts'),
               ])
-              
+
+              const { count: contactsNew } = await supabase.from('contacts').select('*', { count: 'exact', head: true }).in('status', ['new', 'unread'])
+              const { count: ordersVer } = await supabase.from('pedidos_licencas').select('*', { count: 'exact', head: true }).eq('status', 'Em Verificação')
+              const expiringLim = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+              const { count: licensesExpiringSoon } = await supabase.from('licencas_palancasoft').select('*', { count: 'exact', head: true }).eq('status', 'activa').lte('data_expiracao', expiringLim)
+
               return json(res, 200, {
                 ok: true,
                 summary: {
-                  services: servicesCount || 0,
-                  contacts: contactsCount || 0,
-                  media: mediaCount || 0,
-                  software: softwareCount || 0,
+                  services: servicesCount,
+                  servicesActive,
+                  media: mediaCount,
+                  softwares: softwareCount,
+                  software: softwareCount,
+                  softwaresActive: softwareActive,
+                  licenses: licensesCount,
+                  licensesActivas: licensesActivas,
+                  licensesExpiring: (licensesExpiringSoon || 0) + 0,
+                  orders: ordersCount,
+                  ordersPending,
+                  ordersApproved,
+                  ordersVerificacao: ordersVer || 0,
+                  partners: partnersCount,
+                  partnersPending,
+                  contacts: contactsCount,
+                  contactsUnread: (contactsNew || 0) + 0,
                 }
               })
             }
