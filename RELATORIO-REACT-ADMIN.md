@@ -141,6 +141,7 @@ Necessário decidir: (a) **React passa a ser o site oficial** (porting do conte�
 - Endpoints `GET/POST/PATCH/DELETE /api/admin/users` (só Super Admin; proíbido alterar nível/desactivar/eliminar a própria conta).
 - UI: sidebar filtrada por nível; badge de nível junto ao perfil no topo; secção Definições mostra **"Utilizadores do painel"** (só Super Admin): criar utilizador, mudar nível (select em linha), activar/desactivar, **redefinir password** (modal) e eliminar (confirmação).
 - Token sem `level` (sessões antigas) = tratado como Super Admin para transição suave.
+- **Dashboard** — cartão "CATÁLOGO" ganhou o gráfico de barras da actividade de downloads dos últimos 30 dias (`dl-metrics--panel`, 14 dias) e o **health** passa a avisar sobre candidaturas de sub-parceiros pendentes e licenças a expirar em 30 dias.
 
 ## 6. Estado do repo Git
 - Modificações não commitadas na parte React: `App.tsx`, `AdminDashboard.tsx`, `components/sections/ITServices.tsx`, `components/sections/SystemsSoftware.tsx`, `components/ui/MediaTile.tsx`, `supabase-schema.sql`, `vite.config.ts`; não seguidos: `src/lucide-fix.d.ts` + lixo (`server.log`, `cookies.txt`, `test-*`).

@@ -499,6 +499,7 @@
   .partner-metrics{width:100%}
 }
 .dl-metrics{margin-bottom:16px;padding:14px 16px;background:#f8fafc;border:1px solid #eef0f2;border-radius:12px}
+.dl-metrics--panel{margin:14px 0 0;padding:12px 12px 10px}
 .dl-metrics-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:10px;flex-wrap:wrap}
 .dl-metrics-head strong{display:block;font:600 .85rem 'Space Grotesk',sans-serif;color:#0f172a;margin-top:4px}
 .dl-metrics-head small{color:#64748b;font-size:.66rem;max-width:420px;text-align:right}

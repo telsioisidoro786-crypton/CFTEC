@@ -391,11 +391,13 @@ function adminApi(): Plugin {
               const storageLatency = Date.now() - storageStart
 
               const contentStart = Date.now()
-              const [{ count: activeServices }, { count: activeSoftware }, { count: unreadCount }, { count: inactiveSoftware }] = await Promise.all([
+              const [{ count: activeServices }, { count: activeSoftware }, { count: unreadCount }, { count: inactiveSoftware }, { count: pendingPartners }, { count: expiringLicenses }] = await Promise.all([
                 supabase.from('services').select('*', { count: 'exact', head: true }).eq('is_active', true),
                 supabase.from('softwares').select('*', { count: 'exact', head: true }).eq('is_active', true),
                 supabase.from('contacts').select('*', { count: 'exact', head: true }).in('status', ['unread', 'new']),
                 supabase.from('softwares').select('*', { count: 'exact', head: true }).eq('is_active', false),
+                supabase.from('parceiros_candidaturas').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
+                supabase.from('licencas_palancasoft').select('*', { count: 'exact', head: true }).eq('status', 'activa').lte('data_expiracao', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)),
               ])
               const contentLatency = Date.now() - contentStart
 
@@ -422,6 +424,16 @@ function adminApi(): Plugin {
                 warnings.push({
                   level: unreadCount > 10 ? 'warning' : 'info',
                   message: `${unreadCount} pedido(s) de contacto ainda sem resposta.`,
+                })
+              if ((pendingPartners || 0) > 0)
+                warnings.push({
+                  level: (pendingPartners || 0) > 5 ? 'warning' : 'info',
+                  message: `${pendingPartners} candidatura(s) de sub-parceiro pendente(s) de análise.`,
+                })
+              if ((expiringLicenses || 0) > 0)
+                warnings.push({
+                  level: (expiringLicenses || 0) > 3 ? 'warning' : 'info',
+                  message: `${expiringLicenses} licença(s) activa(s) expiram nos próximos 30 dias.`,
                 })
 
               return json(res, 200, {
