@@ -611,6 +611,7 @@ export default function AdminDashboard() {
       changelog: item.changelog || '',
       file: null,
       fileName: '',
+      progress: -1,
       isLoading: false,
       errors: {},
     })
@@ -842,6 +843,7 @@ export default function AdminDashboard() {
     changelog: '',
     file: null as File | null,
     fileName: '',
+    progress: -1,
     isLoading: false,
     errors: {} as Record<string, string>,
   })
@@ -858,7 +860,7 @@ export default function AdminDashboard() {
     const file = event.target.files?.[0] || null
     if (file) {
       const validTypes = ['application/zip', 'application/x-zip-compressed', 'application/x-msdownload', 'application/octet-stream']
-      const maxSize = 100 * 1024 * 1024 // 100MB
+      const maxSize = 50 * 1024 * 1024 // 50MB — limite por ficheiro do Supabase (plano Free)
       
       if (!validTypes.includes(file.type) && !file.name.match(/\.(zip|exe)$/i)) {
         setSoftwareFormState(prev => ({
@@ -872,7 +874,7 @@ export default function AdminDashboard() {
       if (file.size > maxSize) {
         setSoftwareFormState(prev => ({
           ...prev,
-          errors: { ...prev.errors, file: 'Ficheiro excede 100MB' },
+          errors: { ...prev.errors, file: 'O ficheiro excede o limite de 50 MB por ficheiro do Supabase (plano Free). Comprime o instalador ou reduz o pacote.' },
           fileName: '',
           file: null,
         }))
@@ -939,20 +941,44 @@ export default function AdminDashboard() {
           }),
         })
       } else {
-        const formData = new FormData()
-        formData.append('name', softwareFormState.name.trim())
-        formData.append('version', softwareFormState.version.trim())
-        formData.append('price', softwareFormState.price.trim())
-        formData.append('description', softwareFormState.description.trim())
-        formData.append('category', softwareFormState.category.trim())
-        if (softwareFormState.changelog.trim()) formData.append('changelog', softwareFormState.changelog.trim())
-        if (softwareFormState.file) {
-          formData.append('file', softwareFormState.file)
-        }
+        // Upload DIRECTO do browser ao bucket via URL assinado (sem passar pelo dev-server) + metadados JSON
+        const urlRes = await fetch('/api/admin/software/upload-url', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: softwareFormState.fileName || 'instalador.zip' }),
+        })
+        const urlBody = await urlRes.json().catch(() => ({}))
+        if (!urlRes.ok || !urlBody.ok) throw new Error(urlBody.error || 'Falha ao preparar o upload')
+        setSoftwareFormState(prev => ({ ...prev, progress: 0 }))
+        await new Promise<void>((resolve, reject) => {
+          const xhr = new XMLHttpRequest()
+          xhr.open('PUT', urlBody.signedUrl)
+          xhr.upload.onprogress = (ev) => {
+            if (ev.lengthComputable) {
+              const pct = Math.round((ev.loaded / ev.total) * 100)
+              setSoftwareFormState(prev => ({ ...prev, progress: pct }))
+            }
+          }
+          xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error('Falha ao enviar o ficheiro ao storage (HTTP ' + xhr.status + ')')))
+          xhr.onerror = () => reject(new Error('A rede interrompeu o upload do ficheiro.'))
+          xhr.send(softwareFormState.file)
+        })
+
         response = await fetch('/api/admin/software', {
           method: 'POST',
           credentials: 'include',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: softwareFormState.name.trim(),
+            version: softwareFormState.version.trim(),
+            price: softwareFormState.price.trim().replace(',', '.'),
+            description: softwareFormState.description.trim(),
+            category: softwareFormState.category.trim(),
+            changelog: softwareFormState.changelog.trim(),
+            storage_path: urlBody.path,
+            file_size: `${(softwareFormState.file!.size / 1024 / 1024).toFixed(2)} MB`,
+          }),
         })
       }
 
@@ -992,6 +1018,7 @@ export default function AdminDashboard() {
       changelog: '',
       file: null,
       fileName: '',
+      progress: -1,
       isLoading: false,
       errors: {},
     })
@@ -1128,12 +1155,18 @@ export default function AdminDashboard() {
                       <>
                         <UploadCloud size={32} className="admin-upload-icon" />
                         <strong>Arraste o ficheiro aqui</strong>
-                        <span>ou clique para seleccionar · .zip, .exe até 100MB</span>
+                        <span>ou clique para seleccionar · .zip, .exe até 50 MB (com barra de progresso)</span>
                       </>
                     )}
                   </label>
                   {softwareFormState.errors.file && (
                     <p className="admin-field-error">{softwareFormState.errors.file}</p>
+                  )}
+                  {softwareFormState.progress >= 0 && softwareFormState.isLoading && (
+                    <div className="admin-upload-progress">
+                      <div className="admin-upload-progress-bar"><i style={{ width: `${softwareFormState.progress}%` }} /></div>
+                      <span>{softwareFormState.progress < 100 ? `A carregar para o storage… ${softwareFormState.progress}%` : 'A concluir o registo…'}</span>
+                    </div>
                   )}
                 </div>
                 )}

@@ -523,3 +523,7 @@
 .user-role-select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
 .user-role-select:disabled{opacity:.55;cursor:not-allowed}
 .admin-modal-intro{margin:0 0 14px;color:#475569;font-size:.72rem;line-height:1.55}
+.admin-upload-progress{margin-top:10px}
+.admin-upload-progress-bar{height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden}
+.admin-upload-progress-bar i{display:block;height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e);border-radius:6px;transition:width .25s ease}
+.admin-upload-progress span{display:block;margin-top:5px;font:600 .62rem 'Manrope',sans-serif;color:#2563eb}

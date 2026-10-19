@@ -1086,10 +1086,63 @@ function adminApi(): Plugin {
               return json(res, 200, data || [])
             }
             
+            // URL DE UPLOAD ASSINADO — o browser envia o ficheiro DIRECTO ao bucket
+            // (bypassa o dev-server: sem timeout de 300s nem recodificação de bytes)
+            if (path === '/api/admin/software/upload-url' && req.method === 'POST') {
+              const admin = currentAdmin(req)
+              if (!admin) return json(res, 401, { ok: false, error: 'Sessão de administrador inválida ou expirada.' })
+              if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+              const { filename } = await readBody(req) as { filename?: string }
+              const safe = String(filename || 'instalador.zip').replace(/[^a-zA-Z0-9-_.() ]/g, '_').slice(-80)
+              const objectPath = `software/upload-${Date.now()}-${safe.replace(/\s+/g, '-')}`
+              const { data: signed, error } = await supabase.storage.from('software').createSignedUploadUrl(objectPath)
+              if (error || !signed) return json(res, 500, { ok: false, error: error?.message || 'Falha ao gerar o URL de upload.' })
+              const { data: pub } = supabase.storage.from('software').getPublicUrl(objectPath)
+              return json(res, 200, { ok: true, signedUrl: signed.signedUrl, path: objectPath, publicUrl: pub.publicUrl })
+            }
+
             if (path === '/api/admin/software' && req.method === 'POST') {
               const contentType = req.headers['content-type'] || ''
+
+              // Modo B — metadados em JSON (o ficheiro já está no bucket via URL assinado)
+              if (contentType.includes('application/json')) {
+                const payload = await readBody(req) as Partial<{ name: string; version: string; price: string; description: string; category: string; changelog: string; storage_path: string; file_size: string }>
+                const name = String(payload.name || '').trim()
+                const version = String(payload.version || '').trim()
+                const price = String(payload.price || '').replace(',', '.')
+                const description = String(payload.description || '').trim()
+                const storagePath = String(payload.storage_path || '')
+                if (!name || !version || !price || !description)
+                  return json(res, 400, { ok: false, error: 'Todos os campos são obrigatórios.' })
+                if (!storagePath.startsWith('software/'))
+                  return json(res, 400, { ok: false, error: 'Caminho de storage inválido.' })
+                const filedSize = String(payload.file_size || '').match(/^\d+(\.\d{1,2})? MB$/)
+                  ? String(payload.file_size)
+                  : `${Number(payload.file_size || 0) > 0 ? Number(payload.file_size).toFixed(2) + ' MB' : '0 MB'}`
+                const { data: pub } = supabase.storage.from('software').getPublicUrl(storagePath)
+                const { data, error } = await supabase
+                  .from('softwares')
+                  .insert({
+                    name,
+                    version,
+                    description,
+                    price: parseFloat(price),
+                    category: String(payload.category || '').trim() || null,
+                    changelog: String(payload.changelog || '').trim() || null,
+                    file_url: pub.publicUrl,
+                    file_size: filedSize,
+                    downloads_count: 0,
+                    is_active: true,
+                  })
+                  .select('id, name, version, file_size, downloads_count, created_at')
+                  .single()
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 201, { ok: true, software: data })
+              }
+
+              // Modo A — multipart legado (ficheiro no corpo, para ferramentas/testes)
               if (!contentType.includes('multipart/form-data')) {
-                return json(res, 400, { ok: false, error: 'Content-Type deve ser multipart/form-data' })
+                return json(res, 400, { ok: false, error: 'Content-Type deve ser multipart/form-data ou application/json' })
               }
               
               const chunks: Buffer[] = []
@@ -1104,6 +1157,8 @@ function adminApi(): Plugin {
                 return json(res, 400, { ok: false, error: 'Todos os campos são obrigatórios.' })
               }
               if (!fileData) return json(res, 400, { ok: false, error: 'Ficheiro do instalador é obrigatório' })
+              if (fileData.buffer.length > 50 * 1024 * 1024)
+                return json(res, 413, { ok: false, error: 'O ficheiro excede o limite de 50 MB por ficheiro do Supabase (plano Free).' })
               
               // Upload software file to storage
               const ext = fileData.filename.split('.').pop()
