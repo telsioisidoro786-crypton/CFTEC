@@ -500,9 +500,10 @@ function App() {
                     <p>{product.description || 'Descrição em actualização.'}</p>
                     {product.changelog && <small className="product-changelog">{product.changelog}</small>}
                     <ul>{features.map((feature, i) => <li key={i}><Check size={14} /> {feature}</li>)}</ul>
-                    {product.price != null && product.price > 0 ? (
+                    <div className="product-actions">
                       <button type="button" className="product-link product-buy" onClick={() => setOrderProduct(product)}>Adquirir Licença <ArrowRight size={15} /></button>
-                    ) : product.file_url ? <button type="button" className="product-link product-download" onClick={() => handleDownload(product)}>Download <Download size={15} /></button> : <a href="#contacto" className="product-link">Solicitar demonstração <ArrowRight size={15} /></a>}
+                      {product.file_url && <button type="button" className="product-link product-download product-link--secondary" onClick={() => handleDownload(product)}>Download directo <Download size={14} /></button>}
+                    </div>
                   </Card>
                 )
               })}
