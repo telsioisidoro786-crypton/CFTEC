@@ -510,6 +510,23 @@ function adminApi(): Plugin {
             return json(res, 200, { ok: true, settings: Object.fromEntries((data || []).map((s: { key: string; value: string }) => [s.key, s.value])) })
           }
 
+          // DESTAQUES & NOVIDADES (slider da página inicial — sem auth)
+          if (path === '/api/destaques' && req.method === 'GET') {
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const { data, error } = await supabase
+              .from('novidades_destaques')
+              .select('id, titulo, descricao, imagem_url, link_botao, texto_botao')
+              .eq('ativo', true)
+              .order('ordem', { ascending: true })
+              .order('created_at', { ascending: false })
+              .limit(10)
+            if (error) {
+              if (String(error.message).includes('novidades_destaques')) return json(res, 200, { ok: true, destaques: [] })
+              return json(res, 500, { ok: false, error: error.message })
+            }
+            return json(res, 200, { ok: true, destaques: data || [] })
+          }
+
           if (path.startsWith('/api/admin/')) {
             if (!currentAdmin(req)) return json(res, 401, { ok: false, error: 'Sessão de administrador inválida ou expirada.' })
             
@@ -1128,6 +1145,74 @@ function adminApi(): Plugin {
                 .order('uploaded_at', { ascending: false })
                 .limit(50)
               return json(res, 200, data || [])
+            }
+
+            // DESTAQUES & NOVIDADES — CRUD (mesmos níveis das mídias/serviços: qualquer admin)
+            if (path === '/api/admin/destaques' && req.method === 'GET') {
+              const { data, error } = await supabase
+                .from('novidades_destaques')
+                .select('id, created_at, titulo, descricao, imagem_url, link_botao, texto_botao, ativo, ordem')
+                .order('ordem', { ascending: true })
+                .order('created_at', { ascending: false })
+              if (error) {
+                if (String(error.message).includes('novidades_destaques')) return json(res, 200, [])
+                return json(res, 500, { ok: false, error: error.message })
+              }
+              return json(res, 200, data || [])
+            }
+
+            if (path === '/api/admin/destaques' && req.method === 'POST') {
+              const payload = await readBody(req) as Partial<{ titulo: string; descricao: string; imagem_url: string; link_botao: string; texto_botao: string; ativo: boolean; ordem: number }>
+              const titulo = String(payload.titulo || '').trim()
+              const descricao = String(payload.descricao || '').trim()
+              const imagem = String(payload.imagem_url || '').trim()
+              if (!titulo || titulo.length > 120) return json(res, 400, { ok: false, error: 'Título é obrigatório (máx. 120 caracteres).' })
+              if (!descricao || descricao.length > 400) return json(res, 400, { ok: false, error: 'Descrição é obrigatória (máx. 400 caracteres).' })
+              if (!imagem) return json(res, 400, { ok: false, error: 'Selecione uma imagem para o destaque.' })
+              const { data, error } = await supabase
+                .from('novidades_destaques')
+                .insert({
+                  titulo: titulo.slice(0, 120),
+                  descricao: descricao.slice(0, 400),
+                  imagem_url: imagem.slice(0, 500),
+                  link_botao: String(payload.link_botao || '').trim().slice(0, 300) || null,
+                  texto_botao: String(payload.texto_botao || '').trim().slice(0, 40) || 'Saber Mais',
+                  ativo: payload.ativo !== false,
+                  ordem: Number.isFinite(Number(payload.ordem)) ? Math.max(1, Math.min(99, Number(payload.ordem))) : 1,
+                })
+                .select('*')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 201, { ok: true, destaque: data })
+            }
+
+            if (path.match(/^\/api\/admin\/destaques\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
+              const id = path.split('/').pop()
+              const payload = await readBody(req) as Partial<{ titulo: string; descricao: string; imagem_url: string; link_botao: string; texto_botao: string; ativo: boolean; ordem: number }>
+              const updates: Record<string, unknown> = {}
+              if (payload.titulo !== undefined) { const v = String(payload.titulo).trim(); if (!v || v.length > 120) return json(res, 400, { ok: false, error: 'Título inválido.' }); updates.titulo = v }
+              if (payload.descricao !== undefined) { const v = String(payload.descricao).trim(); if (!v || v.length > 400) return json(res, 400, { ok: false, error: 'Descrição inválida.' }); updates.descricao = v }
+              if (payload.imagem_url !== undefined) { const v = String(payload.imagem_url).trim(); if (!v) return json(res, 400, { ok: false, error: 'Imagem inválida.' }); updates.imagem_url = v.slice(0, 500) }
+              if (payload.link_botao !== undefined) updates.link_botao = String(payload.link_botao).trim().slice(0, 300) || null
+              if (payload.texto_botao !== undefined) updates.texto_botao = String(payload.texto_botao).trim().slice(0, 40) || 'Saber Mais'
+              if (payload.ativo !== undefined) updates.ativo = !!payload.ativo
+              if (payload.ordem !== undefined) { const n = Number(payload.ordem); if (!Number.isFinite(n)) return json(res, 400, { ok: false, error: 'Ordem inválida.' }); updates.ordem = Math.max(1, Math.min(99, n)) }
+              if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
+              const { data, error } = await supabase
+                .from('novidades_destaques')
+                .update(updates)
+                .eq('id', id)
+                .select('*')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true, destaque: data })
+            }
+
+            if (path.match(/^\/api\/admin\/destaques\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
+              const id = path.split('/').pop()
+              const { error } = await supabase.from('novidades_destaques').delete().eq('id', id)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true })
             }
             
             if (path === '/api/admin/media' && req.method === 'POST') {

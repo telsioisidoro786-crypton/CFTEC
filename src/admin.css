@@ -633,3 +633,23 @@
 .settings-checkbox input{width:16px;height:16px;accent-color:#2563eb}
 .settings-banner-checkbox{grid-column:1/-1}
 @media (max-width:720px){.settings-grid-2{grid-template-columns:1fr}}
+
+/* Novidades & destaques (admin) */
+.destaques-list{display:flex;flex-direction:column;gap:11px}
+.destaque-row{display:flex;align-items:center;gap:14px;padding:12px 14px;background:#fff;border:1px solid #eef2f7;border-radius:14px;transition:box-shadow .15s ease,border-color .15s ease}
+.destaque-row:hover{border-color:#dbeafe;box-shadow:0 6px 18px rgba(15,23,42,.06)}
+.destaque-thumb{width:118px;height:64px;object-fit:cover;border-radius:9px;background:#f1f5f9;flex:0 0 auto}
+.destaque-main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.destaque-main strong{font:700 .74rem Manrope,sans-serif;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.destaque-main span{font:500 .64rem Manrope,sans-serif;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.destaque-main small{font:600 .56rem DM Mono,monospace;color:#94a3b8}
+.destaque-ctrl{margin-left:auto;display:flex;align-items:center;gap:7px;flex:0 0 auto}
+.destaque-toggle{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font:700 .6rem Manrope,sans-serif;color:#475569}
+.destaque-toggle input{display:none}
+.destaque-toggle i{position:relative;width:34px;height:19px;border-radius:99px;background:#cbd5e1;transition:background .2s ease}
+.destaque-toggle i::after{content:'';position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:transform .2s ease;box-shadow:0 1px 4px rgba(15,23,42,.25)}
+.destaque-toggle input:checked + i{background:#16a34a}
+.destaque-toggle input:checked + i::after{transform:translateX(15px)}
+.destaque-upload{display:block;padding:11px 13px;border:1px dashed #cbd5e1;border-radius:10px;background:#fbfdff;color:#475569;font-size:.68rem;cursor:pointer}
+.destaque-upload:hover{border-color:#93c5fd;color:#1d4ed8}
+.destaque-upload input{display:none}

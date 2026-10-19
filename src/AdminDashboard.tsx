@@ -11,6 +11,7 @@ import { MediaTile } from './components/ui/MediaTile'
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   Archive,
   ArrowDownToLine,
   BarChart3,
@@ -75,7 +76,9 @@ const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
   UsersRound: UsersRound as any,
 }
 
-type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'parceiros' | 'contactos' | 'settings'
+type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'destaques' | 'parceiros' | 'contactos' | 'settings'
+type Destaque = { id: string; created_at: string; titulo: string; descricao: string; imagem_url: string; link_botao: string | null; texto_botao: string | null; ativo: boolean; ordem: number }
+const emptyDestaqueForm = { titulo: '', descricao: '', linkBotao: '', textoBotao: 'Saber Mais', ordem: '1', ativo: true }
 
 type Summary = {
   softwares: number; media: number; services: number; contacts: number
@@ -133,6 +136,7 @@ const navItems: { id: AdminSection; label: string; icon: typeof LayoutDashboard;
   { id: 'software', label: 'Softwares & Downloads', icon: Package, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'licencas', label: 'Licenças PalancaSoft', icon: KeyRound, levels: ['super_admin', 'gestor'] },
   { id: 'pedidos', label: 'Pedidos de Licença', icon: ShoppingCart, levels: ['super_admin', 'gestor'] },
+  { id: 'destaques', label: 'Novidades & Destaques', icon: Sparkles, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'parceiros', label: 'Revenda Negomil', icon: Network, levels: ['super_admin', 'gestor'] },
   { id: 'contactos', label: 'Contactos', icon: UsersRound, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'settings', label: 'Definições', icon: Settings, levels: ['super_admin', 'gestor', 'tecnico'] },
@@ -258,6 +262,12 @@ export default function AdminDashboard() {
   const [orderFilter, setOrderFilter] = useState<'Todos' | 'Pendente' | 'Aprovado'>('Todos')
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const knownOrderIdsRef = useRef<string[]>([])
+  const [destaques, setDestaques] = useState<Destaque[]>([])
+  const [destaqueForm, setDestaqueForm] = useState({ ...emptyDestaqueForm, imagem: null as File | null, imagemNome: '' })
+  const [editingDestaque, setEditingDestaque] = useState<Destaque | null>(null)
+  const [showDestaqueForm, setShowDestaqueForm] = useState(false)
+  const [deletingDestaqueId, setDeletingDestaqueId] = useState<string | null>(null)
+  const [savingDestaque, setSavingDestaque] = useState(false)
 
   useEffect(() => {
     fetch('/api/admin/session', { credentials: 'include' }).then((response) => {
@@ -274,7 +284,7 @@ export default function AdminDashboard() {
     if (authStatus !== 'authenticated') return
     
     try {
-      const [summaryRes, contactsRes, softwareRes, servicesRes, mediaRes, healthRes, licensesRes, partnersRes, downloadsRes, settingsRes, usersRes, ordersRes] = await Promise.all([
+      const [summaryRes, contactsRes, softwareRes, servicesRes, mediaRes, healthRes, licensesRes, partnersRes, downloadsRes, settingsRes, usersRes, ordersRes, destaquesRes] = await Promise.all([
         fetch('/api/admin/summary', { credentials: 'include' }),
         fetch('/api/admin/contacts', { credentials: 'include' }),
         fetch('/api/admin/software', { credentials: 'include' }),
@@ -287,9 +297,10 @@ export default function AdminDashboard() {
         fetch('/api/admin/settings', { credentials: 'include' }),
         fetch('/api/admin/users', { credentials: 'include' }),
         fetch('/api/admin/license-orders', { credentials: 'include' }),
+        fetch('/api/admin/destaques', { credentials: 'include' }),
       ])
 
-      const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData, ordersData] = await Promise.all([
+      const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData, ordersData, destaquesData] = await Promise.all([
         summaryRes.ok ? summaryRes.json() : fallbackSummary,
         contactsRes.ok ? contactsRes.json() : fallbackContacts,
         softwareRes.ok ? softwareRes.json() : fallbackSoftware,
@@ -302,6 +313,7 @@ export default function AdminDashboard() {
         settingsRes.ok ? settingsRes.json() : null,
         usersRes.ok ? usersRes.json() : [],
         ordersRes.ok ? ordersRes.json() : [],
+        destaquesRes.ok ? destaquesRes.json() : [],
       ])
       
       const resolvedSoftware = Array.isArray(softwareData) && softwareData.length > 0 ? softwareData : fallbackSoftware
@@ -318,7 +330,9 @@ export default function AdminDashboard() {
       setDownloadMetrics(downloadsData && downloadsData.ok ? { total30: downloadsData.total30, porDia: downloadsData.porDia || {}, topo: downloadsData.topo || [] } : null)
       setUsers(Array.isArray(usersData) ? usersData : [])
       setLicenseOrders(Array.isArray(ordersData) ? ordersData : [])
-      knownOrderIdsRef.current = (Array.isArray(ordersData) ? ordersData : []).map(o => o.id)
+      const ordersNow = Array.isArray(ordersData) ? ordersData : []
+      knownOrderIdsRef.current = ordersNow.map(o => o.id)
+      setDestaques(Array.isArray(destaquesData) ? destaquesData : [])
       if (settingsData && settingsData.ok) {
         const map: Record<string, string> = {}
         for (const entry of settingsData.settings || []) map[entry.key] = entry.value
@@ -946,7 +960,7 @@ export default function AdminDashboard() {
   }, [adminUser])
 
   // Modais — ESC fecha o do topo; backdrop desactiva o scroll da página
-  const anyModalOpen = !!(notifOpen || (showServiceForm !== false) || showUserForm || pwResetUser || showLicenseForm || showSoftwareForm || deletingServiceId || deletingOrderId || deletingContactId || deletingSoftwareId || deletingLicenseId || deletingPartnerId || deletingUserId)
+  const anyModalOpen = !!(notifOpen || (showServiceForm !== false) || showUserForm || pwResetUser || showLicenseForm || showSoftwareForm || showDestaqueForm || deletingServiceId || deletingOrderId || deletingContactId || deletingSoftwareId || deletingLicenseId || deletingPartnerId || deletingUserId || deletingDestaqueId)
   useEffect(() => {
     document.body.style.overflow = anyModalOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
@@ -961,16 +975,137 @@ export default function AdminDashboard() {
       else if (deletingLicenseId) setDeletingLicenseId(null)
       else if (deletingPartnerId) setDeletingPartnerId(null)
       else if (deletingUserId) setDeletingUserId(null)
+      else if (deletingDestaqueId) setDeletingDestaqueId(null)
       else if (notifOpen) setNotifOpen(false)
       else if (showServiceForm !== false) setShowServiceForm(false)
       else if (showUserForm) setShowUserForm(false)
       else if (pwResetUser) setPwResetUser(null)
       else if (showLicenseForm) setShowLicenseForm(false)
+      else if (showDestaqueForm) setShowDestaqueForm(false)
       else if (showSoftwareForm) setShowSoftwareForm(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [deletingServiceId, deletingOrderId, deletingContactId, deletingSoftwareId, deletingLicenseId, deletingPartnerId, deletingUserId, notifOpen, showServiceForm, showUserForm, pwResetUser, showLicenseForm, showSoftwareForm])
+  }, [deletingServiceId, deletingOrderId, deletingContactId, deletingSoftwareId, deletingLicenseId, deletingPartnerId, deletingUserId, deletingDestaqueId, notifOpen, showServiceForm, showUserForm, pwResetUser, showLicenseForm, showDestaqueForm, showSoftwareForm])
+
+  // Destaques & Novidades (carrossel do site)
+  const openDestaqueForm = (item: Destaque | null) => {
+    setEditingDestaque(item)
+    setDestaqueForm(item ? {
+      titulo: item.titulo,
+      descricao: item.descricao,
+      linkBotao: item.link_botao || '',
+      textoBotao: item.texto_botao || 'Saber Mais',
+      ordem: String(item.ordem || 1),
+      ativo: item.ativo,
+      imagem: null,
+      imagemNome: '',
+    } : { ...emptyDestaqueForm, imagem: null, imagemNome: '' })
+    setShowDestaqueForm(true)
+  }
+
+  const selectDestaqueImage = (file: File | null) => {
+    if (!file) { setDestaqueForm(f => ({ ...f, imagem: null, imagemNome: '' })); return }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { notify('Formato inválido — use JPEG, PNG ou WebP'); return }
+    if (file.size > 10 * 1024 * 1024) { notify('Imagem excede 10 MB'); return }
+    setDestaqueForm(f => ({ ...f, imagem: file, imagemNome: file.name }))
+  }
+
+  const saveDestaque = async () => {
+    if (!destaqueForm.imagem && !editingDestaque) { notify('Seleccione a imagem do destaque'); return }
+    setSavingDestaque(true)
+    try {
+      let imagemUrl = editingDestaque?.imagem_url || ''
+      if (destaqueForm.imagem) {
+        const fd = new FormData()
+        fd.append('file', destaqueForm.imagem)
+        const mediaRes = await fetch('/api/admin/media', { method: 'POST', credentials: 'include', body: fd })
+        const mediaBody = await mediaRes.json().catch(() => ({}))
+        if (!mediaRes.ok) throw new Error(mediaBody.error || 'Falha no upload da imagem')
+        imagemUrl = mediaBody.media?.file_path || mediaBody.file_path || mediaBody.item?.file_path || ''
+        if (!imagemUrl) throw new Error('O upload não devolveu o URL da imagem')
+      }
+      const payloadBruto: Record<string, unknown> = {
+        titulo: destaqueForm.titulo.trim(),
+        descricao: destaqueForm.descricao.trim(),
+        link_botao: destaqueForm.linkBotao.trim(),
+        texto_botao: destaqueForm.textoBotao.trim() || 'Saber Mais',
+        ativo: destaqueForm.ativo,
+        ordem: Number(destaqueForm.ordem) || 1,
+      }
+      if (editingDestaque) {
+        const response = await fetch(`/api/admin/destaques/${editingDestaque.id}`, {
+          method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(destaqueForm.imagem ? { ...payloadBruto, imagem_url: imagemUrl } : payloadBruto),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || 'Falha ao actualizar o destaque')
+        setDestaques(prev => prev.map(d => d.id === editingDestaque.id ? { ...d, ...body.destaque } : d))
+        notify('Destaque actualizado')
+      } else {
+        const response = await fetch('/api/admin/destaques', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ...payloadBruto, imagem_url: imagemUrl }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || 'Falha ao criar o destaque')
+        setDestaques(prev => [...prev, body.destaque])
+        notify('Destaque criado — já aparece no site')
+      }
+      setShowDestaqueForm(false)
+      setEditingDestaque(null)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao guardar o destaque')
+    } finally {
+      setSavingDestaque(false)
+    }
+  }
+
+  const toggleDestaque = async (item: Destaque) => {
+    try {
+      const response = await fetch(`/api/admin/destaques/${item.id}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ativo: !item.ativo }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao alternar o destaque')
+      setDestaques(prev => prev.map(d => d.id === item.id ? { ...d, ...body.destaque } : d))
+      notify(body.destaque.ativo ? 'Destaque activo no site' : 'Destaque desactivado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao alternar o destaque')
+    }
+  }
+
+  const moveDestaque = async (item: Destaque, dir: 'up' | 'down') => {
+    const sorted = [...destaques].sort((a, b) => a.ordem - b.ordem || +new Date(b.created_at) - +new Date(a.created_at))
+    const idx = sorted.findIndex(d => d.id === item.id)
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= sorted.length) return
+    const other = sorted[swapIdx]
+    try {
+      const applyOrder = (id: string, ordem: number) => fetch(`/api/admin/destaques/${id}`, { method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ordem }) })
+      await Promise.all([applyOrder(item.id, other.ordem), applyOrder(other.id, item.ordem)])
+      setDestaques(prev => prev.map(d => d.id === item.id ? { ...d, ordem: other.ordem } : d.id === other.id ? { ...d, ordem: item.ordem } : d))
+      notify('Ordem actualizada')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro a reordenar')
+    }
+  }
+
+  const handleDestaqueDelete = async () => {
+    if (!deletingDestaqueId) return
+    try {
+      const response = await fetch(`/api/admin/destaques/${deletingDestaqueId}`, { method: 'DELETE', credentials: 'include' })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao eliminar o destaque')
+      setDestaques(prev => prev.filter(d => d.id !== deletingDestaqueId))
+      notify('Destaque eliminado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao eliminar o destaque')
+    } finally {
+      setDeletingDestaqueId(null)
+    }
+  }
 
   // Software Modal Handlers
   const [softwareFormState, setSoftwareFormState] = useState({
@@ -1485,6 +1620,8 @@ export default function AdminDashboard() {
 
         {activeSection === 'media' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">ASSETS DIGITAIS</span><h2>Gestão de mídias</h2></div><span className="admin-muted">{media.length} ficheiros no storage</span></div><label className={`upload-zone ${dragActive ? 'upload-zone--active' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDrop={(event) => { event.preventDefault(); handleFiles(event.dataTransfer.files) }}><input type="file" accept="image/*" multiple onChange={(event) => handleFiles(event.target.files)} /><span className="upload-cloud"><UploadCloud size={28} /></span><strong>Arraste imagens para aqui</strong><span>ou clique para seleccionar ficheiros · PNG, JPG, WebP até 10 MB</span><Button type="button" variant="outline" size="sm"><FolderOpen size={14} /> Seleccionar ficheiros</Button></label>{visibleMedia.length === 0 && <div className="admin-empty-state"><FileImage size={48} /><h3>{media.length ? 'Sem correspondências' : 'Nenhuma mídia ainda'}</h3><p>{media.length ? `Nenhum ficheiro corresponde a "${search}".` : 'Faça upload da primeira imagem para começar a galeria.'}</p></div>}<div className="media-preview-grid">{visibleMedia.map((item) => <MediaTile key={item.id} item={item} onDelete={handleMediaDelete} notify={notify} />)}</div></Card>}
 
+        {activeSection === 'destaques' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CARROSSEL DO SITE</span><h2>Novidades & destaques</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><a className="settings-site-link" href="/" target="_blank" rel="noreferrer noopener">Ver site <ChevronRight size={14} /></a><Button size="sm" onClick={() => openDestaqueForm(null)}><Plus size={15} /> Novo destaque</Button></div></div><p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Aparecem em fundo escuro logo abaixo da hero no site. Com <b>1 destaque</b> mostra um banner imóvel; com <b>2 ou mais</b> entra o carrossel automático (5 s, setas e pontos). Ordenar = ordem de exibição.</p>{destaques.length === 0 ? <div className="admin-empty-state"><Sparkles size={48} /><h3>Sem destaques ainda</h3><p>Crie o primeiro anúncio — lançamento de software, promoção ou campanha — e o site mostra no carrossel.</p><Button size="lg" onClick={() => openDestaqueForm(null)}><Plus size={16} /> Novo destaque</Button></div> : <div className="destaques-list">{[...destaques].sort((a, b) => a.ordem - b.ordem || +new Date(b.created_at) - +new Date(a.created_at)).map((item) => <div className="destaque-row" key={item.id}><img className="destaque-thumb" src={item.imagem_url} alt={item.titulo} loading="lazy" /><div className="destaque-main"><strong>{item.titulo}</strong><span>{item.descricao.slice(0, 90)}{item.descricao.length > 90 ? '…' : ''}</span><small>#{item.ordem} · {item.link_botao ? item.link_botao : 'sem link'}{item.link_botao && item.texto_botao ? ` (“${item.texto_botao}”)` : ''}</small></div><div className="destaque-ctrl"><button className="icon-btn" title="Subir na ordem" disabled={item.ordem <= 1} onClick={() => moveDestaque(item, 'up')}><ArrowRight size={15} style={{ transform: 'rotate(-135deg)' }} /></button><button className="icon-btn" title="Descer na ordem" onClick={() => moveDestaque(item, 'down')}><ArrowRight size={15} style={{ transform: 'rotate(45deg)' }} /></button><label className="destaque-toggle"><input type="checkbox" checked={item.ativo} onChange={() => toggleDestaque(item)} /><i /><span>{item.ativo ? 'Activo' : 'Inactivo'}</span></label><button className="icon-btn" title="Editar" onClick={() => openDestaqueForm(item)}><Pencil size={16} /></button><button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingDestaqueId(item.id)}><Trash2 size={16} /></button></div></div>)}</div>}</Card>}
+
         {activeSection === 'software' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CATÁLOGO DIGITAL</span><h2>Softwares & downloads</h2></div><Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button></div>{downloadMetrics && <div className="dl-metrics"><div className="dl-metrics-head"><div><span className="admin-panel-kicker">MÉTRICAS · ÚLTIMOS 30 DIAS</span><strong>{downloadMetrics.total30} download(s) registados</strong></div><small>{downloadMetrics.topo.length ? downloadMetrics.topo.map(t => `${t.name}: ${t.count}`).join(' · ') : 'Sem downloads no período — os registos começam quando o site usa o link de download real.'}</small></div><div className="dl-bars">{dlDays.map((day) => <div key={day.d} className="dl-bar" title={`${day.d}: ${day.n} download(s)`}><i style={{ height: `${Math.max(4, Math.round((day.n / dlMax) * 100))}%` }} /><span>{day.d.slice(8)}</span></div>)}</div></div>}{visibleSoftware.length === 0 ? <div className="admin-empty-state"><Package size={48} /><h3>Nenhum software cadastrado</h3><p>Adicione o primeiro software ao catálogo para começar.</p><Button size="lg" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={16} /> Adicionar software</Button></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Software</th><th>Versão</th><th>Tamanho</th><th>Downloads</th><th>Estado</th><th>Actualizado</th><th /></tr></thead><tbody>{visibleSoftware.map((item) => <tr key={item.id}><td><span className="software-symbol"><Package size={15} /></span><strong>{item.name}</strong>{item.category && <span className="software-tag">{item.category}</span>}</td><td><span className="version-pill">{item.version}</span></td><td>{item.file_size}</td><td>{item.downloads_count}</td><td><span className={`active-pill ${item.is_active === false ? 'inactive' : ''}`}>{item.is_active === false ? 'Inactivo' : 'Activo'}</span></td><td>{formatDate(item.created_at)}</td><td className="row-actions"><button className="icon-btn" title="Editar" onClick={() => openEditSoftware(item)}><Pencil size={15} /></button><button className="icon-btn" title={item.is_active === false ? 'Activar' : 'Desactivar'} onClick={() => handleToggleSoftware(item)}><Power size={15} /></button><button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingSoftwareId(item.id)}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>}</Card>}
 
         {activeSection === 'licencas' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PALANCASOFT</span><h2>Licenças & activações</h2></div><Button size="sm" onClick={() => setShowLicenseForm(true)}><Plus size={15} /> Nova licença</Button></div>{licenses.length === 0 ? <div className="admin-empty-state"><KeyRound size={48} /><h3>Sem licenças registadas</h3><p>Crie a primeira licença — a chave de activação é gerada automaticamente.</p><Button size="lg" onClick={() => setShowLicenseForm(true)}><Plus size={16} /> Nova licença</Button></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Chave de activação</th><th>Cliente</th><th>NIF</th><th>Activada</th><th>Expira</th><th>Estado</th><th /></tr></thead><tbody>{licenses.map((license) => <tr key={license.id}><td><code className="license-key">{license.chave_licenca}</code> <button className="icon-btn" title="Copiar chave" onClick={() => copyKey(license.chave_licenca)}><Copy size={13} /></button></td><td>{license.cliente_nome}</td><td>{license.nif || '—'}</td><td>{license.data_ativacao || '—'}</td><td>{license.data_expiracao || 'Sem prazo'}</td><td><span className={`active-pill ${license.status === 'activa' ? '' : 'inactive'}`}>{labelLicenca(license.status)}</span></td><td className="row-actions">{license.status === 'activa' ? <button className="icon-btn" title="Cancelar licença" onClick={() => updateLicenseStatus(license, 'cancelada')}><Power size={15} /></button> : <button className="icon-btn" title="Reactivar licença" onClick={() => updateLicenseStatus(license, 'activa')}><Check size={15} /></button>}<button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingLicenseId(license.id)}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>}</Card>}
@@ -1521,6 +1658,21 @@ export default function AdminDashboard() {
       onClose: () => setShowSoftwareForm(false),
       onSubmit: handleSoftwareSubmit,
     })}
+
+    {showDestaqueForm && <div className="admin-modal-backdrop" onMouseDown={() => setShowDestaqueForm(false)}><div className="admin-modal admin-modal--lg" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">{editingDestaque ? 'EDITAR ANÚNCIO' : 'NOVO ANÚNCIO'}</span><h2>{editingDestaque ? `Editar "${editingDestaque.titulo.slice(0, 24)}${editingDestaque.titulo.length > 24 ? '…' : ''}"` : 'Novo destaque para o site'}</h2></div><button onClick={() => setShowDestaqueForm(false)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><form className="admin-modal-body" onSubmit={(e) => { e.preventDefault(); saveDestaque() }}>
+              <fieldset className="admin-form-section"><legend>Conteúdo</legend><div className="admin-form-grid" style={{ gridTemplateColumns: '1fr' }}><label>Título<input value={destaqueForm.titulo} onChange={(e) => setDestaqueForm(f => ({ ...f, titulo: e.target.value }))} placeholder="Ex.: Lançada a versão 2.5 do PalancaSoft!" required maxLength={120} autoFocus /></label>
+              <label>Descrição<textarea value={destaqueForm.descricao} onChange={(e) => setDestaqueForm(f => ({ ...f, descricao: e.target.value }))} placeholder="Ex.: novo módulo de inventário, integração AGT e relatórios em tempo real." required maxLength={400} rows={2} /></label></div></fieldset>
+              <fieldset className="admin-form-section"><legend>Imagem & chamada</legend><div className="admin-form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <label className="full-width destaque-upload">{destaqueForm.imagemNome ? destaqueForm.imagemNome : editingDestaque ? `Actual: ${editingDestaque.imagem_url.split('/').pop()?.slice(0, 40) || 'imagem'}` : 'Escolher imagem (JPEG/PNG/WebP até 10 MB)'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => selectDestaqueImage(e.target.files?.[0] || null)} /></label>
+              <label>Ordem de exibição<input type="number" min={1} max={99} value={destaqueForm.ordem} onChange={(e) => setDestaqueForm(f => ({ ...f, ordem: e.target.value }))} /></label>
+              <label className="checkbox-label"><input type="checkbox" checked={destaqueForm.ativo} onChange={(e) => setDestaqueForm(f => ({ ...f, ativo: e.target.checked }))} /> Activo no site</label>
+              <label>Texto do botão<input value={destaqueForm.textoBotao} onChange={(e) => setDestaqueForm(f => ({ ...f, textoBotao: e.target.value }))} placeholder="Saber Mais" maxLength={40} /></label>
+              <label>Link do botão (opcional)<input value={destaqueForm.linkBotao} onChange={(e) => setDestaqueForm(f => ({ ...f, linkBotao: e.target.value }))} placeholder="https://wa.me/244933609090 ou /#softwares" maxLength={300} /></label>
+              </div></fieldset>
+              <p className="admin-field-hint" style={{ margin: 0 }}>Dica: para o WhatsApp use o formato https://wa.me/244933609090.</p>
+              <div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowDestaqueForm(false)}>Cancelar</Button><Button type="submit" disabled={savingDestaque}><Check size={15} /> {savingDestaque ? 'A guardar…' : editingDestaque ? 'Guardar alterações' : 'Publicar destaque'}</Button></div></form></div></div>}
+
+    {deletingDestaqueId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingDestaqueId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar destaque</h2></div><button onClick={() => setDeletingDestaqueId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este destaque? Ele desaparece do carrossel do site imediatamente. Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingDestaqueId(null)}>Cancelar</Button><Button variant="dark" onClick={handleDestaqueDelete}><Trash2 size={15} /> Eliminar destaque</Button></div></div></div>}
 
     {showServiceForm !== false && <div className="admin-modal-backdrop" onMouseDown={() => setShowServiceForm(false)}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">NOVO REGISTO</span><h2>{showServiceForm ? 'Editar serviço' : 'Novo serviço'}</h2></div><button onClick={() => setShowServiceForm(false)}><X size={18} /></button></div><form onSubmit={(e) => handleServiceSubmit(e, showServiceForm)}><div className="admin-form-grid"><label>Título<input name="title" placeholder="Ex.: Desenvolvimento à medida" defaultValue={showServiceForm?.title || ''} required autoFocus /></label><label>Slug (URL)<input name="slug" placeholder="Gerado automaticamente" defaultValue={showServiceForm?.slug || ''} disabled /></label><label>Ícone<select name="icon" defaultValue={showServiceForm?.icon || 'Code2'}>{Object.keys(serviceIcons).map((key) => <option key={key} value={key}>{key}</option>)}</select></label><label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={showServiceForm?.is_active !== false} /> Activo no site público</label></div><label>Descrição curta<input name="short_description" placeholder="Descrição breve para listagens" defaultValue={showServiceForm?.short_description || ''} required /></label><label>Descrição completa<textarea name="full_description" rows={4} placeholder="Descrição detalhada para a página do serviço" defaultValue={showServiceForm?.full_description || ''} /></label><div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowServiceForm(false)}>Cancelar</Button><Button type="submit"><Check size={15} /> {showServiceForm ? 'Actualizar serviço' : 'Criar serviço'}</Button></div></form></div></div>}
 

@@ -42,6 +42,7 @@ import {
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import OrderModal from './components/OrderModal'
+import NewsSlider from './components/NewsSlider'
 
 // Fallback data for when API is unavailable
 const fallbackServices = [
@@ -435,6 +436,8 @@ function App() {
         <section className="trust-strip">
           <div className="container trust-inner"><span className="trust-label">A tecnologia por detrás de equipas mais confiantes</span><div className="trust-logos"><span>norte<span className="logo-dot">.</span>lab</span><span>ORBITAL</span><span>atlas /</span><span>kairo</span><span>+ outros</span></div></div>
         </section>
+
+        <NewsSlider />
 
         <section className="section section-about" id="sobre">
           <div className="container">
