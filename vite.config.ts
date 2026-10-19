@@ -15,7 +15,8 @@ process.on('uncaughtException', (error) => {
 })
 
 // Load environment variables for server middleware
-dotenv.config()
+// override=true: edições ao .env têm efeito imediato mesmo em restarts no mesmo processo
+dotenv.config({ override: true })
 
 type ContactPayload = { name?: string; email?: string; phone?: string; interest?: string; message?: string }
 type AdminLevel = 'super_admin' | 'gestor' | 'tecnico'
