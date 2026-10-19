@@ -615,3 +615,21 @@
   .admin-modal--confirm{border-radius:22px 22px 0 0;margin-bottom:0}
   @keyframes mSheet{from{transform:translateY(60px);opacity:.4}to{transform:none;opacity:1}}
 }
+
+
+/* Definições — site público */
+.settings-card--portal{grid-column:1/-1}
+.settings-site-link{display:inline-flex;align-items:center;gap:3px;color:#2563eb;font:700 .64rem Manrope,sans-serif;white-space:nowrap}
+.settings-site-link:hover{color:#1d4ed8;text-decoration:underline}
+.settings-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.settings-field{display:flex;flex-direction:column;gap:6px;font:700 .68rem Manrope,sans-serif;color:#334155}
+.settings-field input{padding:11px 13px;border:1px solid #e2e8f0;border-radius:10px;outline:0;background:#fbfdff;color:#0f172a;font-size:.73rem;transition:border-color .15s ease,box-shadow .15s ease}
+.settings-field input:focus{border-color:#2563eb;background:#fff;box-shadow:0 4px 14px rgba(37,99,235,.12)}
+.settings-field input:disabled{opacity:.5;background:#f1f5f9}
+.settings-field small{font:600 .56rem Manrope,sans-serif;color:#94a3b8;letter-spacing:.01em}
+.settings-field--full{grid-column:1/-1}
+.iban-input{font-family:DM Mono,monospace;letter-spacing:.06em}
+.settings-checkbox{display:flex;align-items:center;gap:9px;justify-content:flex-start;flex-direction:row!important;padding:11px 13px;background:#f8fafc;border:1px solid #eef2f7;border-radius:10px;font:700 .68rem Manrope,sans-serif;color:#0f172a;cursor:pointer}
+.settings-checkbox input{width:16px;height:16px;accent-color:#2563eb}
+.settings-banner-checkbox{grid-column:1/-1}
+@media (max-width:720px){.settings-grid-2{grid-template-columns:1fr}}

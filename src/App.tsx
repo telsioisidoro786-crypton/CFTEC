@@ -213,6 +213,12 @@ function App() {
   const [loadingServices, setLoadingServices] = useState(true)
   const [loadingSoftware, setLoadingSoftware] = useState(true)
   const [banner, setBanner] = useState<{ active: boolean; message: string }>({ active: false, message: '' })
+  // Configuração viva do painel admin → site (rodapé, contactos, redes)
+  const SITE_DEFAULTS = { whatsapp: '+244 923 000 000', email: 'hello@cftec.co', linkedin: 'https://www.linkedin.com', x: 'https://x.com' }
+  const [siteCfg, setSiteCfg] = useState(SITE_DEFAULTS)
+  const siteWhatsNumber = (siteCfg.whatsapp || SITE_DEFAULTS.whatsapp).replace(/[^\d]/g, '')
+  const siteWhatsHREF = `https://wa.me/${siteWhatsNumber.startsWith('244') ? siteWhatsNumber : '244' + siteWhatsNumber}`
+  const siteTelHREF = `tel:${siteCfg.whatsapp.startsWith('+') ? siteCfg.whatsapp.replace(/\s/g, '') : '+244' + siteWhatsNumber}`
   const [partnerSent, setPartnerSent] = useState(false)
 
   const fetchServices = async () => {
@@ -251,6 +257,13 @@ function App() {
       .then(data => {
         if (data.ok && data.settings) {
           setBanner({ active: String(data.settings.banner_activo) === 'true', message: data.settings.banner_mensagem || '' })
+          const s = data.settings as Record<string, string>
+          setSiteCfg({
+            whatsapp: s.whatsapp_comercial || SITE_DEFAULTS.whatsapp,
+            email: s.email_contacto || SITE_DEFAULTS.email,
+            linkedin: s.linkedin_url || SITE_DEFAULTS.linkedin,
+            x: s.x_url || SITE_DEFAULTS.x,
+          })
         }
       })
       .catch(() => {})
@@ -531,13 +544,13 @@ function App() {
 
         <section className="section section-contact" id="contacto">
           <div className="container contact-layout">
-            <div className="contact-copy reveal"><span className="section-kicker">05 / Vamos conversar</span><h2>O próximo passo<br /><em>começa aqui.</em></h2><p>Tem um desafio em mente ou quer perceber por onde começar? Conte-nos o contexto. Nós tratamos de encontrar o caminho mais claro.</p><div className="contact-details"><a href="mailto:hello@cftec.co"><Mail size={17} /><span><small>Escreva-nos</small>hello@cftec.co</span></a><a href="tel:+244923000000"><Phone size={17} /><span><small>Ligue-nos</small>+244 923 000 000</span></a><div><MapPin size={17} /><span><small>Visite-nos</small>Luanda, Angola</span></div><div><Clock3 size={17} /><span><small>Horário</small>Seg — Sex, 08:00 — 17:00</span></div></div></div>
+            <div className="contact-copy reveal"><span className="section-kicker">05 / Vamos conversar</span><h2>O próximo passo<br /><em>começa aqui.</em></h2><p>Tem um desafio em mente ou quer perceber por onde começar? Conte-nos o contexto. Nós tratamos de encontrar o caminho mais claro.</p><div className="contact-details"><a href={`mailto:${siteCfg.email}`}><Mail size={17} /><span><small>Escreva-nos</small>{siteCfg.email}</span></a><a href={siteWhatsHREF} target="_blank" rel="noreferrer noopener"><Phone size={17} /><span><small>WhatsApp / Ligue-nos</small>{siteCfg.whatsapp}</span></a><div><MapPin size={17} /><span><small>Visite-nos</small>Luanda, Angola</span></div><div><Clock3 size={17} /><span><small>Horário</small>Seg — Sex, 08:00 — 17:00</span></div></div></div>
             <Card className="contact-card reveal"><div className="form-heading"><div><span className="form-step">COMECE POR AQUI</span><h3>Fale com a CFTEC</h3></div><Send size={20} /></div>{formSent ? <div className="form-success"><div className="success-icon"><BadgeCheck size={28} /></div><h3>Mensagem recebida.</h3><p>Obrigado por confiar na CFTEC. Em breve um especialista da nossa equipa entra em contacto consigo.</p><Button variant="outline" onClick={() => setFormSent(false)}>Enviar outra mensagem</Button></div> : <form onSubmit={handleSubmit}><div className="form-row"><label>Nome<input name="name" placeholder="O seu nome" required /></label><label>E-mail<input name="email" type="email" placeholder="nome@empresa.com" required /></label></div><div className="form-row"><label>Telefone<input name="phone" placeholder="+244 900 000 000" /></label><label>Interesse<select name="interest" defaultValue=""><option value="" disabled>Seleccione uma opção</option>{contactOptions.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}</select></label></div><label>Mensagem<textarea name="message" rows={4} placeholder="Conte-nos brevemente o que precisa de resolver..." required /></label><div className="form-footer"><span><LockKeyhole size={13} /> Os seus dados estão seguros.</span><Button type="submit">Enviar pedido <ArrowRight size={16} /></Button></div></form>}</Card>
           </div>
         </section>
       </main>
 
-      <footer className="site-footer"><div className="container footer-top"><div><BrandMark inverse /><p>Tecnologia que simplifica.<br />Resultados que ficam.</p></div><div className="footer-links"><div><span>Navegar</span><a href="#sobre">Sobre nós</a><a href="#servicos">Serviços</a><a href="#softwares">Softwares</a></div><div><span>Fale connosco</span><a href="mailto:hello@cftec.co">hello@cftec.co</a><a href="tel:+244923000000">+244 923 000 000</a><a href="#contacto">Pedir contacto</a></div><div><span>Social</span><a href="https://www.linkedin.com" target="_blank" rel="noreferrer"><Linkedin size={14} /> LinkedIn</a><a href="https://x.com" target="_blank" rel="noreferrer"><Twitter size={14} /> Twitter / X</a></div></div></div><div className="container footer-bottom"><span>© 2025 CFTEC. Todos os direitos reservados.</span><div><a href="mailto:hello@cftec.co?subject=Política%20de%20Privacidade">Privacidade</a><a href="mailto:hello@cftec.co?subject=Termos%20de%20Utilização">Termos</a><span>Feito com intenção <Sparkles size={12} /></span></div></div></footer>
+      <footer className="site-footer"><div className="container footer-top"><div><BrandMark inverse /><p>Tecnologia que simplifica.<br />Resultados que ficam.</p></div><div className="footer-links"><div><span>Navegar</span><a href="#sobre">Sobre nós</a><a href="#servicos">Serviços</a><a href="#softwares">Softwares</a></div><div><span>Fale connosco</span><a href={`mailto:${siteCfg.email}`}>{siteCfg.email}</a><a href={siteWhatsHREF} target="_blank" rel="noreferrer noopener">{siteCfg.whatsapp}</a><a href="#contacto">Pedir contacto</a></div><div><span>Social</span><a href={siteCfg.linkedin} target="_blank" rel="noreferrer noopener"><Linkedin size={14} /> LinkedIn</a><a href={siteCfg.x} target="_blank" rel="noreferrer noopener"><Twitter size={14} /> Twitter / X</a></div></div></div><div className="container footer-bottom"><span>© 2025 CFTEC. Todos os direitos reservados.</span><div><a href={`mailto:${siteCfg.email}?subject=Política%20de%20Privacidade`}>Privacidade</a><a href={`mailto:${siteCfg.email}?subject=Termos%20de%20Utilização`}>Termos</a><span>Feito com intenção <Sparkles size={12} /></span></div></div></footer>
     </div>
   )
 }

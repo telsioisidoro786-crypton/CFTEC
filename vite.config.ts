@@ -852,10 +852,14 @@ function adminApi(): Plugin {
               const payload = await readBody(req) as { entries?: { key: string; value: string }[] }
               const entries = (payload.entries || []).filter((e) => e && e.key && typeof e.value === 'string').slice(0, 20)
               if (!entries.length) return json(res, 400, { ok: false, error: 'Envie pelo menos uma chave/valor.' })
+              // chaves visíveis no site público (GET /api/settings → is_public)
+              const PUBLIC_KEYS = ['whatsapp_comercial', 'email_contacto', 'telefone_directorio', 'banner_activo', 'banner_mensagem', 'linkedin_url', 'x_url']
               for (const entry of entries) {
+                const row: Record<string, unknown> = { key: entry.key.trim().slice(0, 80), value: entry.value.slice(0, 2000) }
+                if (PUBLIC_KEYS.includes(row.key as string)) row.is_public = true
                 const { error } = await supabase
                   .from('settings')
-                  .upsert({ key: entry.key.trim().slice(0, 80), value: entry.value.slice(0, 2000) }, { onConflict: 'key' })
+                  .upsert(row, { onConflict: 'key' })
                 if (error) return json(res, 500, { ok: false, error: error.message })
               }
               return json(res, 200, { ok: true })
