@@ -151,3 +151,14 @@ Necessário decidir: (a) **React passa a ser o site oficial** (porting do conte�
 ## 6. Estado do repo Git
 - Modificações não commitadas na parte React: `App.tsx`, `AdminDashboard.tsx`, `components/sections/ITServices.tsx`, `components/sections/SystemsSoftware.tsx`, `components/ui/MediaTile.tsx`, `supabase-schema.sql`, `vite.config.ts`; não seguidos: `src/lucide-fix.d.ts` + lixo (`server.log`, `cookies.txt`, `test-*`).
 - **Importante**: `.env` existe na raiz — confirmar que está listado no `.gitignore` antes de commitar nada.
+
+---
+
+## 9. Fase 4 — Checkout B2B & Pedidos de Licença (19 Out 2026)
+
+- Nova tabela **pedidos_licencas** (supabase-pedidos-licencas.sql): software, empresa, NIF, responsável, WhatsApp, província, forma de pagamento e **status** (Pendente/Em Verificação/Aprovado/Rejeitado) + settings iban_cftec (IBAN da CFTEC), whtasapp_comercial público.
+- **Site**: cartões com preço > 0 passam a ter botão **Adquirir Licença** → OrderModal (3 secções: Empresa / Responsável / Licença) → POST /api/license-orders (público, validado) → ecrã de confirmação com **número do pedido**, IBAN da CFTEC (copiável) e botão WhatsApp com mensagem pré-formatada.
+- **Admin**: nova secção **Pedidos de Licença** (Super Admin + Gestor) com filtros Todos/Pendentes/Aprovados, acções **Confirmar & Aprovar**, **Em Verificação**, **Rejeitar**, **Falar no WhatsApp** (wa.me do responsável) e eliminação com confirmação.
+- Nota de arquitectura: sem chaves do Supabase no browser — o modal fala com a API do middleware (service role), mesmo fluxo e segurança.
+- Health passa a avisar quando existem pedidos B2B pendentes de confirmação.
+- **Onboarding falta**: correr supabase-pedidos-licencas.sql e definir preços > 0 nos softwares PaginaSoft/Negomil para o checkout aparecer nos cards.
