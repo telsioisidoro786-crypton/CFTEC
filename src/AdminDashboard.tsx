@@ -146,18 +146,39 @@ function AdminMark() {
   return <a href="/" className="admin-brand"><span className="admin-brand-mark"><span /><span /><span /></span><span><strong>CFTEC</strong><small>Painel Admin</small></span></a>
 }
 
-function StatCard({ label, value, sub, badge, icon: Icon, tone, onClick }: { label: string; value: number; sub: string; badge?: number; icon: typeof Users; tone: string; onClick?: () => void }) {
+function useCountUp(value: number, duration = 1100) {
+  const [display, setDisplay] = useState(0)
+  useEffect(() => {
+    let raf = 0
+    const start = performance.now()
+    const step = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setDisplay(Math.round(value * eased))
+      if (t < 1) raf = requestAnimationFrame(step)
+    }
+    raf = requestAnimationFrame(step)
+    // garantia: rAF pode não correr em tabs em segundo plano
+    const fallback = window.setTimeout(() => setDisplay(value), duration + 80)
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(fallback) }
+  }, [value, duration])
+  return display
+}
+
+function StatCard({ label, value, sub, badge, icon: Icon, tone, onClick, index = 0, share = 0 }: { label: string; value: number; sub: string; badge?: number; icon: typeof Users; tone: string; onClick?: () => void; index?: number; share?: number }) {
+  const shown = useCountUp(value)
   return (
-    <Card className={`admin-stat ${onClick ? 'admin-stat--link' : ''}`} onClick={onClick}>
+    <Card className="admin-stat admin-stat--link admin-stat--in" style={{ animationDelay: `${index * 110}ms` }} onClick={onClick}>
       {badge != null && badge > 0 && <span className="admin-stat-badge" title={`${badge} por tratar`}>{badge > 9 ? '9+' : badge}</span>}
       <div className="admin-stat-head">
         <span>{label}</span>
         <span className={`admin-stat-icon admin-stat-icon--${tone}`}><Icon size={17} /></span>
       </div>
       <div className="admin-stat-value">
-        <strong>{value}</strong>
+        <strong>{shown}</strong>
         <small>{sub}</small>
       </div>
+      <span className="admin-stat-bar"><i style={{ width: `${Math.round(share * 100)}%` }} /></span>
     </Card>
   )
 }
@@ -1354,6 +1375,27 @@ export default function AdminDashboard() {
   }) : []
   const dlMax = Math.max(1, ...dlDays.map(x => x.n))
 
+  // Linha do tempo — eventos de todos os módulos (mais recentes primeiro)
+  const timeAgo = (iso: string) => {
+    const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+    if (s < 60) return 'agora mesmo'
+    if (s < 3600) return `há ${Math.floor(s / 60)} min`
+    if (s < 86400) return `há ${Math.floor(s / 3600)} h`
+    if (s < 172800) return 'ontem'
+    return new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: 'short' })
+  }
+  type TimelineEvent = { id: string; at: string; icon: typeof Users; title: string; desc: string; tone: string; section: AdminSection; badge: string | null }
+  const statMax = Math.max(1, summary.orders || 0, summary.contacts || 0, summary.softwares || 0, summary.licenses || 0)
+  const timelineEvents: TimelineEvent[] = ([
+    ...contacts.map(c => ({ id: 'ct-' + c.id, at: c.created_at, icon: Users, title: `Novo contacto · ${c.name}`, desc: `${c.email}${c.service_interest ? ' · ' + c.service_interest : ''}`, tone: 'lime', section: 'contactos' as AdminSection, badge: contactStatusLabel(c.status) || c.status })),
+    ...licenseOrders.map(o => ({ id: 'or-' + o.id, at: o.created_at, icon: ShoppingCart, title: `Pedido de licença · ${o.nome_empresa}`, desc: `${o.software_nome} · ${o.forma_pagamento}`, tone: 'blue', section: 'pedidos' as AdminSection, badge: orderLabelStatus(o.status) })),
+    ...partners.map(p => ({ id: 'pv-' + p.id, at: p.created_at, icon: Network, title: `Candidatura de revenda · ${p.nome_responsavel}`, desc: `${p.modalidade}${p.provincia ? ' · ' + p.provincia : ''}`, tone: 'violet', section: 'parceiros' as AdminSection, badge: p.status === 'pendente' ? 'Pendente' : p.status })),
+    ...licenses.map(l => ({ id: 'lc-' + l.id, at: l.created_at, icon: KeyRound, title: `Licença criada · ${l.cliente_nome}`, desc: `${l.chave_licenca} · activa até ${l.data_expiracao || '—'}`, tone: 'lime', section: 'licencas' as AdminSection, badge: l.status === 'activa' ? 'Activa' : l.status })),
+    ...media.map(m => ({ id: 'md-' + m.id, at: m.uploaded_at, icon: FileImage, title: `Upload de mídia · ${m.filename}`, desc: `${Math.round(m.file_size / 1024)} KB · ${m.mime_type}`, tone: 'cyan', section: 'media' as AdminSection, badge: null as string | null })),
+    ...software.map(s => ({ id: 'sw-' + s.id, at: s.created_at, icon: Package, title: `Software no catálogo · ${s.name}`, desc: `${s.version}${s.description ? ' · ' + s.description : ''}`, tone: 'blue', section: 'software' as AdminSection, badge: null as string | null })),
+    ...services.map(s => ({ id: 'sv-' + s.id, at: s.created_at, icon: Code2, title: `Serviço · ${s.title}`, desc: s.short_description, tone: 'violet', section: 'services' as AdminSection, badge: null as string | null })),
+  ]).sort((a, b) => +new Date(b.at) - +new Date(a.at)).slice(0, 18)
+
   if (authStatus === 'loading') return <div className="admin-auth-shell"><div className="admin-auth-loading"><span className="admin-loading-dot" /> A validar sessão…</div></div>
   if (authStatus === 'unauthenticated') return <AdminLogin onAuthenticated={(user) => { setAdminUser(user); setProfileName(p => p || user.name || ''); setAuthStatus('authenticated') }} />
 
@@ -1372,16 +1414,13 @@ export default function AdminDashboard() {
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
         {activeSection === 'dashboard' && <>
-          <div className="admin-stats-grid admin-stats-grid--seven">
-            <StatCard label="Serviços" value={summary.services || 0} sub={`${summary.servicesActive ?? 0} activo(s) no site`} icon={Code2} tone="violet" onClick={() => setActiveSection('services')} />
-            <StatCard label="Mídias" value={summary.media || 0} sub="ficheiros na galeria" icon={FileImage} tone="cyan" onClick={() => setActiveSection('media')} />
-            <StatCard label="Softwares" value={summary.softwares || 0} sub={`${summary.softwaresActive ?? 0} publicado(s)`} icon={Package} tone="blue" onClick={() => setActiveSection('software')} />
-            <StatCard label="Licenças" value={summary.licenses || 0} sub={`${summary.licensesActivas ?? 0} activa(s)`} badge={summary.licensesExpiring} icon={KeyRound} tone="lime" onClick={() => setActiveSection('licencas')} />
-            <StatCard label="Pedidos" value={summary.orders || 0} sub={`${summary.ordersPending ?? 0} pendente(s) · ${summary.ordersApproved ?? 0} aprovado(s)`} badge={(summary.ordersPending || 0) + (summary.ordersVerificacao || 0)} icon={ShoppingCart} tone="blue" onClick={() => setActiveSection('pedidos')} />
-            <StatCard label="Revenda" value={summary.partners || 0} sub={`${summary.partnersPending ?? 0} candidatura(s) pendente(s)`} badge={summary.partnersPending} icon={Network} tone="violet" onClick={() => setActiveSection('parceiros')} />
-            <StatCard label="Contactos" value={summary.contacts || 0} sub={`${summary.contactsUnread ?? 0} novo(s) por responder`} badge={summary.contactsUnread} icon={Users} tone="lime" onClick={() => setActiveSection('contactos')} />
+          <div className="admin-stats-grid admin-stats-grid--four">
+            <StatCard index={0} label="Pedidos de Licença" value={summary.orders || 0} sub={`${summary.ordersPending ?? 0} pendente(s) · ${summary.ordersApproved ?? 0} aprovado(s)`} badge={(summary.ordersPending || 0) + (summary.ordersVerificacao || 0)} icon={ShoppingCart} tone="blue" share={(summary.orders || 0) / statMax} onClick={() => setActiveSection('pedidos')} />
+            <StatCard index={1} label="Contactos" value={summary.contacts || 0} sub={`${summary.contactsUnread ?? 0} novo(s) por responder`} badge={summary.contactsUnread} icon={Users} tone="cyan" share={(summary.contacts || 0) / statMax} onClick={() => setActiveSection('contactos')} />
+            <StatCard index={2} label="Softwares" value={summary.softwares || 0} sub={`${downloadMetrics?.total30 ?? 0} download(s) · 30 dias`} icon={Package} tone="violet" share={(summary.softwares || 0) / statMax} onClick={() => setActiveSection('software')} />
+            <StatCard index={3} label="Licenças" value={summary.licenses || 0} sub={`${summary.licensesActivas ?? 0} activa(s)`} badge={summary.licensesExpiring} icon={KeyRound} tone="lime" share={(summary.licenses || 0) / statMax} onClick={() => setActiveSection('licencas')} />
           </div>
-          <div className="admin-dashboard-grid"><Card className="admin-panel admin-panel--activity"><div className="admin-panel-head"><div><span className="admin-panel-kicker">ACTIVIDADE</span><h2>Pedidos recentes</h2></div><button onClick={() => setActiveSection('contactos')}>Ver todos <ChevronRight size={14} /></button></div><div className="contact-list">{contacts.map((contact) => <div className="contact-row" key={contact.id}><span className="contact-initials">{contact.name.split(' ').map((name) => name[0]).join('').slice(0, 2)}</span><div className="contact-main"><strong>{contact.name}</strong><span>{contact.email}</span></div><span className="contact-interest">{contact.service_interest || 'Pedido geral'}</span><span className={`contact-status contact-status--${contactStatusTone(contact.status)}`}>{contactStatusLabel(contact.status)}</span><time>{formatDate(contact.created_at)}</time><MoreHorizontal size={17} className="row-more" /></div>)}</div></Card><Card className="admin-panel admin-panel--health"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SISTEMA</span><h2>Saúde do workspace</h2></div><div className="health-actions"><button className="icon-btn" title="Verificar agora" onClick={refreshHealth}>{refreshingHealth ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={15} />}</button><Activity size={18} className="panel-accent" /></div></div>
+          <div className="admin-dashboard-grid"><Card className="admin-panel admin-panel--activity"><div className="admin-panel-head"><div><span className="admin-panel-kicker">LINHA DO TEMPO</span><h2>Actividade do workspace</h2></div><div className="timeline-chips">{['Pedidos', 'Revenda', 'Licenças'].map(chip => <button key={chip} className="order-filter-tab" onClick={() => setActiveSection(chip === 'Pedidos' ? 'pedidos' : chip === 'Revenda' ? 'parceiros' : 'licencas')}>{chip}</button>)}</div></div><div className="timeline">{timelineEvents.length === 0 ? <div className="admin-empty-state"><Sparkles size={40} /><h3>Sem eventos ainda</h3><p>Assim que houver pedidos, contactos, uploads ou alterações, aparecem aqui por ordem cronológica.</p></div> : timelineEvents.map((event, i) => { const Icon = event.icon as React.ComponentType<{ size?: number }>; return <button type="button" className={`timeline-row timeline-tone--${event.tone}`} style={{ animationDelay: `${Math.min(i * 45, 500)}ms` }} key={event.id} onClick={() => setActiveSection(event.section)}><span className="timeline-icon"><Icon size={15} /></span><div className="timeline-main"><strong>{event.title}</strong><span>{event.desc}</span></div><span className="timeline-when"><i />{timeAgo(event.at)}</span>{event.badge && <span className={`timeline-badge tl-badge-${String(event.badge).toLowerCase().replace(/[^a-zA-Z0-9]/g, '')}`}>{String(event.badge)}</span>}</button> })}</div></Card><Card className="admin-panel admin-panel--health"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SISTEMA</span><h2>Saúde do workspace</h2></div><div className="health-actions"><button className="icon-btn" title="Verificar agora" onClick={refreshHealth}>{refreshingHealth ? <Loader2 size={16} className="animate-spin" /> : <RefreshCw size={15} />}</button><Activity size={18} className="panel-accent" /></div></div>
               <>
               {health ? (
                 <>

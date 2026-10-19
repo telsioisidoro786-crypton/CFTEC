@@ -111,7 +111,13 @@
 .admin-stats-grid--seven{grid-template-columns:repeat(auto-fit,minmax(168px,1fr))}
 .admin-stat--link{cursor:pointer}
 .admin-stat-badge{position:absolute;top:14px;right:16px;min-width:19px;height:19px;display:grid;place-items:center;padding:0 6px;border-radius:999px;background:#ef4444;color:#fff;font:800 .58rem/1 'Manrope',sans-serif;box-shadow:0 3px 8px rgba(239,68,68,.4)}
-.admin-stat{position:relative}
+.admin-stat{position:relative;overflow:hidden}
+.admin-stats-grid--four{grid-template-columns:repeat(4,1fr)}
+.admin-stat--in{animation:statIn .55s cubic-bezier(.22,1,.36,1) both}
+@keyframes statIn{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.admin-stat-bar{position:absolute;left:0;bottom:0;display:block;width:100%;height:4px;background:rgba(15,23,42,.06)}
+.admin-stat-bar i{display:block;height:100%;border-radius:0 4px 0 0;background:linear-gradient(90deg,#3b82f6,#22d3ee);transform:scaleX(0);transform-origin:left;transition:transform 1s cubic-bezier(.22,1,.36,1) .4s;animation:barGrow .02s 1 forwards}
+@keyframes barGrow{to{transform:scaleX(1)}}
 .admin-nav-badge{margin-left:auto;min-width:17px;height:17px;display:grid;place-items:center;padding:0 5px;border-radius:999px;background:#ef4444;color:#fff;font:800 .54rem/1 'Manrope',sans-serif;animation:navBadge 1.2s ease}
 @keyframes navBadge{from{transform:scale(0)}to{transform:scale(1)}}
 .admin-dashboard-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:24px}
@@ -552,3 +558,40 @@
 .order-live-note{display:inline-flex;align-items:center;gap:5px;color:#16a34a;font:700 .56rem 'Manrope',sans-serif}
 .order-live-note i{width:6px;height:6px;border-radius:50%;background:#22c55e;animation:orderPulse 2s infinite}
 @keyframes orderPulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+
+/* Linha do tempo */
+.timeline-chips{display:flex;gap:7px}
+.timeline{display:flex;flex-direction:column;max-height:460px;overflow-y:auto;position:relative}
+.timeline-row{position:relative;display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:11px 44px 11px 26px;background:none;border:0;border-radius:11px;cursor:pointer;transition:background .15s ease;animation:tlIn .5s cubic-bezier(.22,1,.36,1) both}
+@keyframes tlIn{from{opacity:0;transform:translateX(-14px)}to{opacity:1;transform:none}}
+.timeline-row:hover{background:#f8fafc}
+.timeline-row::before{content:'';position:absolute;left:12px;top:0;bottom:0;width:2px;background:#e2e8f0;border-radius:2px}
+.timeline-row:first-child::before{top:24px}
+.timeline-row:last-child::before{bottom:auto;height:24px}
+.timeline-icon{position:relative;z-index:2;flex:0 0 auto;display:grid;place-items:center;width:30px;height:30px;margin-left:-15px;border-radius:50%;background:#fff;box-shadow:0 0 0 3px #f1f5f9,0 2px 6px rgba(15,23,42,.08)}
+.timeline-tone--blue .timeline-icon{color:#2563eb}
+.timeline-tone--cyan .timeline-icon{color:#0891b2}
+.timeline-tone--violet .timeline-icon{color:#7c3aed}
+.timeline-tone--lime .timeline-icon{color:#65a30d}
+.timeline-main{min-width:0;display:flex;flex-direction:column;gap:2px}
+.timeline-main strong{font:700 .73rem 'Manrope',sans-serif;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.timeline-main span{font:500 .62rem 'Manrope',sans-serif;color:#94a3b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.timeline-when{margin-left:auto;flex:0 0 auto;display:inline-flex;align-items:center;gap:5px;color:#64748b;font:700 .6rem 'Manrope',sans-serif}
+.timeline-when i{width:6px;height:6px;border-radius:50%;background:#cbd5e1}
+.timeline-row:hover .timeline-when i{background:#3b82f6}
+.timeline-badge{flex:0 0 auto;padding:3px 8px;border-radius:999px;font:800 .54rem 'Manrope',sans-serif;white-space:nowrap}
+.timeline-badge--Pendente{background:#fef9c3;color:#a16207}
+.timeline-badge--Aprovado,.timeline-badge--activa{background:#dcfce7;color:#15803d}
+.timeline-badge--Rejeitado{background:#fee2e2;color:#b91c1c}
+.timeline-badge--EmVerificação{background:#dbeafe;color:#1d4ed8}
+.timeline-badge--unread,.timeline-badge--new{background:#ffedd5;color:#c2410c}
+.timeline-badge--read{background:#f1f5f9;color:#64748b}
+.timeline-badge{background:#f1f5f9;color:#475569}
+.tl-badge-pendente{background:#fef9c3;color:#a16207}
+.tl-badge-emverificao{background:#dbeafe;color:#1d4ed8}
+.tl-badge-aprovado,.tl-badge-aprovada,.tl-badge-activa{background:#dcfce7;color:#15803d}
+.tl-badge-rejeitado,.tl-badge-rejeitada,.tl-badge-fechado{background:#fee2e2;color:#b91c1c}
+.tl-badge-novo{background:#ffedd5;color:#c2410c}
+.tl-badge-lido{background:#eef2f7;color:#64748b}
+.tl-badge-arquivado{background:#e2e8f0;color:#64748b}
