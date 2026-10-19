@@ -595,3 +595,23 @@
 .tl-badge-novo{background:#ffedd5;color:#c2410c}
 .tl-badge-lido{background:#eef2f7;color:#64748b}
 .tl-badge-arquivado{background:#e2e8f0;color:#64748b}
+/* ============ MODAIS — polimento global ============ */
+.admin-modal-backdrop{backdrop-filter:blur(7px) saturate(1.15);background:rgba(15,23,42,.55);animation:mFade .22s ease}
+@keyframes mFade{from{opacity:0}to{opacity:1}}
+.admin-modal{border-radius:20px;border:1px solid rgba(15,23,42,.08);box-shadow:0 30px 90px rgba(15,23,42,.32),0 4px 18px rgba(15,23,42,.14);animation:mPop .38s cubic-bezier(.2,1.35,.42,1) both}
+@keyframes mPop{from{opacity:0;transform:translateY(22px) scale(.955)}to{opacity:1;transform:none}}
+.admin-modal-head{align-items:center;gap:12px;background:linear-gradient(180deg,#fbfdff 0%,#fff 100%);position:relative;z-index:2}
+.admin-modal .admin-modal-actions{position:sticky;bottom:-24px;margin:24px -24px -24px;padding:16px 24px 24px;background:linear-gradient(180deg,rgba(255,255,255,0) 0%,#fff 24%);z-index:2}
+.admin-modal-warn{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:#fef2f2;color:#dc2626;flex:0 0 auto;animation:warnPulse 1.6s ease infinite}
+@keyframes warnPulse{0%,100%{box-shadow:0 0 0 0 rgba(220,38,38,.16)}50%{box-shadow:0 0 0 7px rgba(220,38,38,0)}}
+.admin-modal--confirm .admin-panel-kicker{color:#be123c}
+.admin-modal--confirm p{color:#475569;font-size:.75rem;line-height:1.6;margin:18px 24px 6px}
+.admin-modal--confirm .admin-modal-actions{margin:0;padding:18px 24px 24px;background:none;border-top:1px solid #f1f5f9;position:static;justify-content:flex-end;gap:10px}
+.admin-modal .admin-form-grid input,.admin-modal .admin-form-grid select,.admin-modal .admin-form-grid textarea{transition:border-color .15s ease,box-shadow .15s ease,background .15s ease}
+.admin-modal .admin-form-grid input:focus,.admin-modal .admin-form-grid select:focus,.admin-modal .admin-form-grid textarea:focus{background:#fff;border-color:#2563eb;box-shadow:0 4px 14px rgba(37,99,235,.14),0 0 0 3px rgba(37,99,235,.12)}
+@media (max-width:640px){
+  .admin-modal-backdrop{align-items:flex-end;padding:0}
+  .admin-modal{border-radius:22px 22px 0 0;width:100%;max-height:94vh;animation:mSheet .32s cubic-bezier(.2,1.1,.4,1) both}
+  .admin-modal--confirm{border-radius:22px 22px 0 0;margin-bottom:0}
+  @keyframes mSheet{from{transform:translateY(60px);opacity:.4}to{transform:none;opacity:1}}
+}
