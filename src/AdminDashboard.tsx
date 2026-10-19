@@ -54,6 +54,8 @@ import {
   Loader2,
   FileText,
   Hash,
+  ShoppingCart,
+  MessageCircle,
 } from 'lucide-react'
 
 // Icon mapping for services
@@ -72,7 +74,7 @@ const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
   UsersRound: UsersRound as any,
 }
 
-type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'parceiros' | 'contactos' | 'settings'
+type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'parceiros' | 'contactos' | 'settings'
 
 type Summary = { softwares: number; media: number; services: number; contacts: number }
 type Contact = { id: string; name: string; email: string; phone: string | null; service_interest: string; message: string; status: string; created_at: string }
@@ -81,6 +83,8 @@ type Service = { id: string; title: string; slug: string; short_description: str
 export type Media = { id: string; filename: string; file_path: string; file_size: number; mime_type: string; alt_text: string | null; uploaded_at: string }
 type AdminUser = { name: string; email: string; level?: 'super_admin' | 'gestor' | 'tecnico' }
 type AdminUserRow = { id: string; name: string; email: string; role: string; is_active: boolean; created_at: string }
+type LicenseOrder = { id: string; created_at: string; software_nome: string; nome_empresa: string; nif: string; nome_responsavel: string; telefone_whatsapp: string; email: string | null; provincia: string; forma_pagamento: string; status: string; observacoes: string | null }
+const ORDER_STATUSES = ['Pendente', 'Em Verificação', 'Aprovado', 'Rejeitado'] as const
 type Partner = { id: string; nome_responsavel: string; empresa_nif: string | null; telefone_whatsapp: string; provincia: string | null; modalidade: string; status: string; nota: string | null; volume_vendas: number; clientes_angariados: number; created_at: string }
 type License = { id: string; cliente_nome: string; nif: string | null; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }
 
@@ -120,6 +124,7 @@ const navItems: { id: AdminSection; label: string; icon: typeof LayoutDashboard;
   { id: 'media', label: 'Gestão de Mídias', icon: FileImage, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'software', label: 'Softwares & Downloads', icon: Package, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'licencas', label: 'Licenças PalancaSoft', icon: KeyRound, levels: ['super_admin', 'gestor'] },
+  { id: 'pedidos', label: 'Pedidos de Licença', icon: ShoppingCart, levels: ['super_admin', 'gestor'] },
   { id: 'parceiros', label: 'Revenda Negomil', icon: Network, levels: ['super_admin', 'gestor'] },
   { id: 'contactos', label: 'Contactos', icon: UsersRound, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'settings', label: 'Definições', icon: Settings, levels: ['super_admin', 'gestor', 'tecnico'] },
@@ -219,6 +224,9 @@ export default function AdminDashboard() {
   const [deletingUserId, setDeletingUserId] = useState<string | null>(null)
   const [pwResetUser, setPwResetUser] = useState<AdminUserRow | null>(null)
   const [pwResetForm, setPwResetForm] = useState({ pw: '', pw2: '' })
+  const [licenseOrders, setLicenseOrders] = useState<LicenseOrder[]>([])
+  const [orderFilter, setOrderFilter] = useState<'Todos' | 'Pendente' | 'Aprovado'>('Todos')
+  const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
 
   useEffect(() => {
     fetch('/api/admin/session', { credentials: 'include' }).then((response) => {
@@ -235,7 +243,7 @@ export default function AdminDashboard() {
     if (authStatus !== 'authenticated') return
     
     try {
-      const [summaryRes, contactsRes, softwareRes, servicesRes, mediaRes, healthRes, licensesRes, partnersRes, downloadsRes, settingsRes, usersRes] = await Promise.all([
+      const [summaryRes, contactsRes, softwareRes, servicesRes, mediaRes, healthRes, licensesRes, partnersRes, downloadsRes, settingsRes, usersRes, ordersRes] = await Promise.all([
         fetch('/api/admin/summary', { credentials: 'include' }),
         fetch('/api/admin/contacts', { credentials: 'include' }),
         fetch('/api/admin/software', { credentials: 'include' }),
@@ -247,9 +255,10 @@ export default function AdminDashboard() {
         fetch('/api/admin/downloads', { credentials: 'include' }),
         fetch('/api/admin/settings', { credentials: 'include' }),
         fetch('/api/admin/users', { credentials: 'include' }),
+        fetch('/api/admin/license-orders', { credentials: 'include' }),
       ])
 
-      const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData] = await Promise.all([
+      const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData, ordersData] = await Promise.all([
         summaryRes.ok ? summaryRes.json() : fallbackSummary,
         contactsRes.ok ? contactsRes.json() : fallbackContacts,
         softwareRes.ok ? softwareRes.json() : fallbackSoftware,
@@ -261,6 +270,7 @@ export default function AdminDashboard() {
         downloadsRes.ok ? downloadsRes.json() : null,
         settingsRes.ok ? settingsRes.json() : null,
         usersRes.ok ? usersRes.json() : [],
+        ordersRes.ok ? ordersRes.json() : [],
       ])
       
       const resolvedSoftware = Array.isArray(softwareData) && softwareData.length > 0 ? softwareData : fallbackSoftware
@@ -276,6 +286,7 @@ export default function AdminDashboard() {
       setPartners(Array.isArray(partnersData) ? partnersData : [])
       setDownloadMetrics(downloadsData && downloadsData.ok ? { total30: downloadsData.total30, porDia: downloadsData.porDia || {}, topo: downloadsData.topo || [] } : null)
       setUsers(Array.isArray(usersData) ? usersData : [])
+      setLicenseOrders(Array.isArray(ordersData) ? ordersData : [])
       if (settingsData && settingsData.ok) {
         const map: Record<string, string> = {}
         for (const entry of settingsData.settings || []) map[entry.key] = entry.value
@@ -833,6 +844,46 @@ export default function AdminDashboard() {
     }
   }
 
+  // Pedidos de licença B2B (Super Admin + Gestor Comercial)
+  const orderLabelStatus = (status: string) => ({ Pendente: 'Pendente', 'Em Verificação': 'Em verificação', Aprovado: 'Aprovado', Rejeitado: 'Rejeitado' } as Record<string, string>)[status] || status
+  const waLinkAdmin = (phone: string, order: LicenseOrder) => {
+    const num = phone.replace(/[^\d]/g, '')
+    const full = num.startsWith('244') ? num : '244' + num
+    return `https://wa.me/${full}?text=${encodeURIComponent(`Olá ${order.nome_responsavel}! Falamos da CFTEC sobre o pedido de licença ${order.id.slice(0, 8).toUpperCase()} (${order.software_nome}) para ${order.nome_empresa}.`)}`.replace(/'/g, '%27')
+  }
+
+  const updateOrderStatus = async (order: LicenseOrder, status: string) => {
+    try {
+      const response = await fetch(`/api/admin/license-orders/${order.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao actualizar o pedido')
+      setLicenseOrders(prev => prev.map(o => o.id === order.id ? { ...o, ...body.pedido } : o))
+      notify(`Pedido ${order.id.slice(0, 8).toUpperCase()} → ${status}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao actualizar o pedido')
+    }
+  }
+
+  const handleOrderDelete = async () => {
+    if (!deletingOrderId) return
+    try {
+      const response = await fetch(`/api/admin/license-orders/${deletingOrderId}`, { method: 'DELETE', credentials: 'include' })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao eliminar o pedido')
+      setLicenseOrders(prev => prev.filter(o => o.id !== deletingOrderId))
+      notify('Pedido eliminado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao eliminar o pedido')
+    } finally {
+      setDeletingOrderId(null)
+    }
+  }
+
   // Software Modal Handlers
   const [softwareFormState, setSoftwareFormState] = useState({
     name: '',
@@ -1328,6 +1379,11 @@ export default function AdminDashboard() {
 
         {activeSection === 'contactos' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PEDIDOS DE CONTACTO</span><h2>Contactos recebidos</h2></div><span className="admin-muted">{contacts.length} contacto(s) · últimos 30</span></div>{visibleContacts.length === 0 ? <div className="admin-empty-state"><UsersRound size={48} /><h3>{contacts.length ? 'Sem correspondências' : 'Sem contactos ainda'}</h3><p>{contacts.length ? `Nenhum contacto corresponde a "${search}".` : 'Quando alguém submeter o formulário do site, o pedido aparece aqui.'}</p></div> : <div className="contact-list">{visibleContacts.map((contact) => <div key={contact.id} className={`contact-item ${selectedContactId === contact.id ? 'contact-item--open' : ''}`}><button type="button" className="contact-item-head" onClick={() => setSelectedContactId(selectedContactId === contact.id ? null : contact.id)} aria-expanded={selectedContactId === contact.id}><span className="contact-initials">{contact.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}</span><span className="contact-main"><strong>{contact.name}</strong><small>{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</small></span><span className="contact-interest">{contact.service_interest}</span><span className={`contact-status contact-status--${contactStatusTone(contact.status)}`}>{contactStatusLabel(contact.status)}</span><time>{formatDate(contact.created_at)}</time><ChevronRight size={16} className="contact-chevron" /></button>{selectedContactId === contact.id && <div className="contact-detail"><p>{contact.message || '(Sem mensagem.)'}</p><div className="contact-detail-actions">{contact.status !== 'read' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'read')}><Check size={14} /> Marcar como lido</Button>}{contact.status !== 'unread' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'unread')}><Bell size={14} /> Marcar como novo</Button>}{contact.status !== 'em_contacto' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'em_contacto')}><Headphones size={14} /> Em contacto</Button>}{contact.status !== 'proposta' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'proposta')}><FilePlus2 size={14} /> Proposta enviada</Button>}{contact.status !== 'fechado' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'fechado')}><Check size={14} /> Fechar</Button>}<Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'archived')}><Archive size={14} /> Arquivar</Button><Button size="sm" variant="dark" className="btn-danger" onClick={() => setDeletingContactId(contact.id)}><Trash2 size={14} /> Eliminar</Button></div></div>}</div>)}</div>}</Card>}
 
+        {activeSection === 'pedidos' && (() => {
+          const filtered = licenseOrders.filter(o => orderFilter === 'Todos' ? true : o.status === orderFilter)
+          return <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CHECKOUT B2B</span><h2>Pedidos de licença</h2></div><div className="order-filter-tabs">{(['Todos', 'Pendente', 'Aprovado'] as const).map(f => <button key={f} className={orderFilter === f ? 'order-filter-tab is-active' : 'order-filter-tab'} onClick={() => setOrderFilter(f)}>{f === 'Pendente' ? `Pendentes (${licenseOrders.filter(o => o.status === 'Pendente').length})` : f === 'Aprovado' ? `Aprovados (${licenseOrders.filter(o => o.status === 'Aprovado').length})` : `Todos (${licenseOrders.length})`}</button>)}</div></div>{filtered.length === 0 ? <div className="admin-empty-state"><ShoppingCart size={48} /><h3>Sem pedidos {orderFilter !== 'Todos' ? `"${orderFilter === 'Pendente' ? 'Pendentes' : 'Aprovados'}"` : 'nesta vista'}</h3><p>Assim que clientes registarem pedidos pelo checkout do site, aparecem aqui em tempo real.</p></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Data</th><th>Empresa / NIF</th><th>Software</th><th>Responsável / WhatsApp</th><th>Província</th><th>Pagamento</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td>{new Date(order.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })}<small className="order-time">{new Date(order.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</small></td><td><strong>{order.nome_empresa}</strong><small className="order-sub">{order.nif}</small></td><td>{order.software_nome}</td><td>{order.nome_responsavel}<small className="order-sub">{order.telefone_whatsapp}</small>{order.email && <small className="order-sub">{order.email}</small>}</td><td>{order.provincia}</td><td>{order.forma_pagamento === 'Multicaixa Express' ? 'Multicaixa Express' : 'Transferência / IBAN'}</td><td><span className={`order-status-pill order-status--${order.status.replace(/\s/g, '')}`}>{orderLabelStatus(order.status)}</span></td><td className="row-actions">{(order.status === 'Pendente' || order.status === 'Em Verificação' || order.status === 'Rejeitado') && <button className="icon-btn order-btn--ok" title="Confirmar & Aprovar" onClick={() => updateOrderStatus(order, 'Aprovado')}><Check size={15} /></button>}{order.status === 'Pendente' && <button className="icon-btn" title="Marcar Em Verificação" onClick={() => updateOrderStatus(order, 'Em Verificação')}><Loader2 size={15} /></button>}{(order.status === 'Pendente' || order.status === 'Em Verificação') && <button className="icon-btn" title="Rejeitar" onClick={() => updateOrderStatus(order, 'Rejeitado')}><X size={15} /></button>}<a className="icon-btn" title="Falar no WhatsApp" href={waLinkAdmin(order.telefone_whatsapp, order)} target="_blank" rel="noreferrer noopener"><MessageCircle size={15} /></a><button className="icon-btn danger" title="Eliminar pedido" onClick={() => setDeletingOrderId(order.id)}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>}</Card>
+        })()}
+
         {activeSection === 'settings' && <div className="settings-grid"><Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTA</span><h2>Perfil do administrador</h2></div></div><p>Actualize o nome exibido no painel. O e-mail de acesso é fixo.</p><div className="settings-profile"><Avatar className="admin-avatar-large"><AvatarFallback>{(profileName.trim()[0] || adminUser?.name?.[0] || 'A').toUpperCase()}</AvatarFallback></Avatar><form className="settings-form" onSubmit={handleProfileSave}><label className="settings-field">Nome de exibição<input value={profileName} onChange={(e) => setProfileName(e.target.value)} required maxLength={120} /></label><label className="settings-field">E-mail de acesso<input value={adminUser?.email || ''} disabled /><small className="settings-hint">Não é alterável nesta versão.</small></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingProfile}>{savingProfile ? 'A guardar…' : <><Check size={14} /> Guardar perfil</>}</Button></div></form></div></Card><Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA</span><h2>Mudar password</h2></div></div><p>A password actual é verificada (bcrypt) antes de qualquer alteração. Mínimo 8 caracteres.</p><form className="settings-form" onSubmit={handlePasswordChange}><label className="settings-field">Password actual<input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} required autoComplete="current-password" /></label><div className="settings-row"><label className="settings-field">Nova password<input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} required minLength={8} autoComplete="new-password" /></label><label className="settings-field">Confirmar nova<input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} required minLength={8} autoComplete="new-password" /></label></div>{pwNew && pwConfirm && pwNew !== pwConfirm && <p className="settings-warn">As passwords não coincidem.</p>}{pwNew && pwNew.length < 8 && <p className="settings-warn">A nova password precisa de pelo menos 8 caracteres.</p>}<div className="settings-actions"><Button type="submit" size="sm" disabled={savingPassword || (pwNew.length > 0 && pwNew !== pwConfirm)}>{savingPassword ? 'A alterar…' : <><Check size={14} /> Alterar password</>}</Button></div></form><div className="security-list"><div className="security-item"><ShieldCheck size={18} /><div><span>Autenticação de administrador</span><small>Protegida por JWT + cookie HttpOnly</small></div><span className="security-badge security-badge--ok">Activa</span></div><div className="security-item"><Database size={18} /><div><span>Base de dados gerida</span><small>Conexão activa e monitorizada</small></div><span className="security-badge security-badge--ok">Ligada</span></div></div></Card>{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PORTAL PÚBLICO</span><h2>Configuração do site</h2></div></div><p>Directório telefónico, WhatsApp comercial e o banner de avisos exibido no topo do site.</p><form className="settings-form" onSubmit={handlePortalSave}><div className="settings-row"><label className="settings-field">Telefone do directório<input value={portalSettings['telefone_directorio'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, telefone_directorio: e.target.value }))} placeholder="+244 900 000 000" maxLength={40} /></label><label className="settings-field">WhatsApp comercial (só dígitos)<input value={portalSettings['whatsapp_comercial'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, whatsapp_comercial: e.target.value }))} placeholder="244900000000" maxLength={25} /></label></div><label className="settings-field">Mensagem do banner<input value={portalSettings['banner_mensagem'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, banner_mensagem: e.target.value }))} placeholder="Ex.: Nova versão do PalancaSoft disponível!" maxLength={140} /></label><label className="settings-field">Banner no site<select value={portalSettings['banner_activo'] || 'false'} onChange={(e) => setPortalSettings(f => ({ ...f, banner_activo: e.target.value }))}><option value="false">Desactivado</option><option value="true">Activado</option></select></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar configuração</>}</Button></div></form></Card>}{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">GESTÃO DE ACESSOS</span><h2>Utilizadores do painel</h2></div><Button size="sm" onClick={() => setShowUserForm(true)}><Plus size={15} /> Novo utilizador</Button></div><p>Níveis: <strong>Super Admin</strong> (tudo), <strong>Gestor Comercial</strong> (contactos, licenças, parceiros, catálogo) e <strong>Técnico de Suporte</strong> (contactos, catálogo e mídias).</p><div className="user-admin-list">{users.map((user) => { const isSelf = adminUser?.email?.toLowerCase() === user.email.toLowerCase(); return <div key={user.id} className="user-admin-row"><div className="user-main"><strong>{user.name}{isSelf && <small> (você)</small>}</strong><span>{user.email}</span></div><select className="user-role-select" value={user.role} disabled={isSelf} onChange={(e) => updateUser(user, { role: e.target.value })}>{ROLES.map(r => <option key={r} value={r}>{labelRole(r)}</option>)}</select><span className={`active-pill ${user.is_active ? '' : 'inactive'}`}>{user.is_active ? 'Activo' : 'Desactivado'}</span><div className="service-admin-actions">{!isSelf && <button className="icon-btn" title={user.is_active ? 'Desactivar' : 'Activar'} onClick={() => updateUser(user, { is_active: !user.is_active })}><Power size={16} /></button>}<button className="icon-btn" title="Redefinir password" onClick={() => { setPwResetUser(user); setPwResetForm({ pw: '', pw2: '' }) }}><KeyRound size={16} /></button>{!isSelf && <button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingUserId(user.id)}><Trash2 size={16} /></button>}</div></div> })}</div></Card>}</div>}
       </main>
     </div>
@@ -1344,6 +1400,8 @@ export default function AdminDashboard() {
     {showServiceForm !== false && <div className="admin-modal-backdrop" onMouseDown={() => setShowServiceForm(false)}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">NOVO REGISTO</span><h2>{showServiceForm ? 'Editar serviço' : 'Novo serviço'}</h2></div><button onClick={() => setShowServiceForm(false)}><X size={18} /></button></div><form onSubmit={(e) => handleServiceSubmit(e, showServiceForm)}><div className="admin-form-grid"><label>Título<input name="title" placeholder="Ex.: Desenvolvimento à medida" defaultValue={showServiceForm?.title || ''} required /></label><label>Slug (URL)<input name="slug" placeholder="Gerado automaticamente" defaultValue={showServiceForm?.slug || ''} disabled /></label><label>Ícone<select name="icon" defaultValue={showServiceForm?.icon || 'Code2'}>{Object.keys(serviceIcons).map((key) => <option key={key} value={key}>{key}</option>)}</select></label><label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={showServiceForm?.is_active !== false} /> Activo no site público</label></div><label>Descrição curta<input name="short_description" placeholder="Descrição breve para listagens" defaultValue={showServiceForm?.short_description || ''} required /></label><label>Descrição completa<textarea name="full_description" rows={4} placeholder="Descrição detalhada para a página do serviço" defaultValue={showServiceForm?.full_description || ''} /></label><div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowServiceForm(false)}>Cancelar</Button><Button type="submit"><Check size={15} /> {showServiceForm ? 'Actualizar serviço' : 'Criar serviço'}</Button></div></form></div></div>}
 
     {deletingServiceId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingServiceId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar serviço</h2></div><button onClick={() => setDeletingServiceId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este serviço? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingServiceId(null)}>Cancelar</Button><Button variant="dark" onClick={handleServiceDelete}><Trash2 size={15} /> Eliminar permanentemente</Button></div></div></div>}
+
+    {deletingOrderId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingOrderId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar pedido</h2></div><button onClick={() => setDeletingOrderId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este pedido de licença? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingOrderId(null)}>Cancelar</Button><Button variant="dark" onClick={handleOrderDelete}><Trash2 size={15} /> Eliminar pedido</Button></div></div></div>}
 
     {deletingContactId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingContactId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar contacto</h2></div><button onClick={() => setDeletingContactId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este contacto? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingContactId(null)}>Cancelar</Button><Button variant="dark" onClick={handleContactDelete}><Trash2 size={15} /> Eliminar permanentemente</Button></div></div></div>}
 

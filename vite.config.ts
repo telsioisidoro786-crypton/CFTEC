@@ -416,6 +416,76 @@ function adminApi(): Plugin {
             return json(res, 201, { ok: true, message: 'Candidatura recebida. A equipa CFTEC entrará em contacto.' })
           }
 
+          // PEDIDO DE LICENÇA B2B (checkout PalancaSoft / Negomil — sem auth)
+          if (path === '/api/license-orders' && req.method === 'POST') {
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const payload = await readBody(req) as Partial<{
+              software_nome: string; nome_empresa: string; nif: string; nome_responsavel: string
+              telefone_whatsapp: string; email: string; provincia: string; forma_pagamento: string; observacoes: string
+            }>
+            const softwareNome = String(payload.software_nome || '').trim()
+            const nomeEmpresa = String(payload.nome_empresa || '').trim()
+            const nif = String(payload.nif || '').trim()
+            const responsavel = String(payload.nome_responsavel || '').trim()
+            const telefone = String(payload.telefone_whatsapp || '').trim()
+            const email = String(payload.email || '').trim()
+            const provincia = String(payload.provincia || '').trim()
+            const formaPagamento = String(payload.forma_pagamento || '').trim()
+            const observacoes = String(payload.observacoes || '').trim()
+
+            if (!softwareNome || softwareNome.length > 120)
+              return json(res, 400, { ok: false, error: 'Software inválido.' })
+            if (!nomeEmpresa || nomeEmpresa.length > 160)
+              return json(res, 400, { ok: false, error: 'Nome da empresa é obrigatório.' })
+            if (!nif || nif.length < 9 || nif.length > 20)
+              return json(res, 400, { ok: false, error: 'O NIF deve ter pelo menos 9 dígitos.' })
+            if (!responsavel || responsavel.length > 150)
+              return json(res, 400, { ok: false, error: 'Nome do responsável é obrigatório.' })
+            if (!/[\d+\s()-]{9,20}/.test(telefone) || telefone.length > 20)
+              return json(res, 400, { ok: false, error: 'Telefone inválido (mínimo 9 dígitos).' })
+            if (!provincia || provincia.length > 60)
+              return json(res, 400, { ok: false, error: 'Província/Cidade é obrigatória.' })
+            if (email && (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 160))
+              return json(res, 400, { ok: false, error: 'E-mail inválido.' })
+            if (!['Transferência Bancária / IBAN', 'Multicaixa Express'].includes(formaPagamento))
+              return json(res, 400, { ok: false, error: 'Forma de pagamento inválida.' })
+
+            const { data, error } = await supabase
+              .from('pedidos_licencas')
+              .insert({
+                software_nome: softwareNome.slice(0, 120),
+                nome_empresa: nomeEmpresa.slice(0, 160),
+                nif: nif.slice(0, 20),
+                nome_responsavel: responsavel.slice(0, 150),
+                telefone_whatsapp: telefone.slice(0, 20),
+                email: email || null,
+                provincia: provincia.slice(0, 60),
+                forma_pagamento: formaPagamento,
+                observacoes: observacoes.slice(0, 1000) || null,
+              })
+              .select('id, created_at')
+              .single()
+            if (error) {
+              // Fallback se a migração ainda não correu (tabela inexistente)
+              if (String(error.message).includes('pedidos_licencas'))
+                return json(res, 503, { ok: false, error: 'O sistema de pedidos será activado em breve. Fale connosco pelo WhatsApp.' })
+              return json(res, 500, { ok: false, error: error.message })
+            }
+
+            // Instruções de pagamento (settings do portal)
+            const { data: cfg } = await supabase.from('settings').select('key, value').in('key', ['iban_cftec', 'whatsapp_comercial'])
+            const getCfg = (k: string) => (cfg || []).find((c: { key: string; value: string }) => c.key === k)?.value || ''
+            return json(res, 201, {
+              ok: true,
+              pedido_id: data.id,
+              payment: {
+                iban: getCfg('iban_cftec'),
+                whatsapp: getCfg('whatsapp_comercial'),
+                forma: formaPagamento,
+              },
+            })
+          }
+
           // REGISTO DE DOWNLOAD PÚBLICO (incrementa contador + evento para métricas)
           if (path.match(/^\/api\/software\/([a-f0-9-]+)\/download$/) && req.method === 'POST') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
@@ -456,13 +526,14 @@ function adminApi(): Plugin {
               const storageLatency = Date.now() - storageStart
 
               const contentStart = Date.now()
-              const [{ count: activeServices }, { count: activeSoftware }, { count: unreadCount }, { count: inactiveSoftware }, { count: pendingPartners }, { count: expiringLicenses }] = await Promise.all([
+              const [{ count: activeServices }, { count: activeSoftware }, { count: unreadCount }, { count: inactiveSoftware }, { count: pendingPartners }, { count: expiringLicenses }, { count: pendingOrders }] = await Promise.all([
                 supabase.from('services').select('*', { count: 'exact', head: true }).eq('is_active', true),
                 supabase.from('softwares').select('*', { count: 'exact', head: true }).eq('is_active', true),
                 supabase.from('contacts').select('*', { count: 'exact', head: true }).in('status', ['unread', 'new']),
                 supabase.from('softwares').select('*', { count: 'exact', head: true }).eq('is_active', false),
                 supabase.from('parceiros_candidaturas').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
                 supabase.from('licencas_palancasoft').select('*', { count: 'exact', head: true }).eq('status', 'activa').lte('data_expiracao', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)),
+                supabase.from('pedidos_licencas').select('*', { count: 'exact', head: true }).eq('status', 'Pendente'),
               ])
               const contentLatency = Date.now() - contentStart
 
@@ -494,6 +565,11 @@ function adminApi(): Plugin {
                 warnings.push({
                   level: (pendingPartners || 0) > 5 ? 'warning' : 'info',
                   message: `${pendingPartners} candidatura(s) de sub-parceiro pendente(s) de análise.`,
+                })
+              if ((pendingOrders || 0) > 0)
+                warnings.push({
+                  level: (pendingOrders || 0) > 5 ? 'warning' : 'info',
+                  message: `${pendingOrders} pedido(s) de licença B2B a aguardar confirmação de pagamento.`,
                 })
               if ((expiringLicenses || 0) > 0)
                 warnings.push({
@@ -605,6 +681,53 @@ function adminApi(): Plugin {
               return json(res, 200, { ok: true })
             }
 
+            // PEDIDOS DE LICENÇA B2B (checkout PalancaSoft / Negomil)
+            if (path === '/api/admin/license-orders' && req.method === 'GET') {
+              const orderBy = ((req.url || '').split('status=')[1] || '').split('&')[0]
+              const allowed = ['Pendente', 'Em Verificação', 'Aprovado', 'Rejeitado']
+              let query = supabase
+                .from('pedidos_licencas')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(500)
+              if (orderBy && allowed.includes(decodeURIComponent(orderBy))) query = query.eq('status', decodeURIComponent(orderBy))
+              const { data, error } = await query
+              if (error) {
+                if (String(error.message).includes('pedidos_licencas')) return json(res, 200, [])
+                return json(res, 500, { ok: false, error: error.message })
+              }
+              return json(res, 200, data || [])
+            }
+
+            if (path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
+              const id = path.split('/').pop()
+              const payload = await readBody(req) as Partial<{ status: string; observacoes: string }>
+              const updates: Record<string, unknown> = {}
+              if (payload.status !== undefined) {
+                const st = String(payload.status).trim()
+                if (!['Pendente', 'Em Verificação', 'Aprovado', 'Rejeitado'].includes(st))
+                  return json(res, 400, { ok: false, error: 'Status inválido. Use: Pendente, Em Verificação, Aprovado ou Rejeitado.' })
+                updates.status = st
+              }
+              if (payload.observacoes !== undefined) updates.observacoes = String(payload.observacoes).slice(0, 1000)
+              if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
+              const { data, error } = await supabase
+                .from('pedidos_licencas')
+                .update(updates)
+                .eq('id', id)
+                .select('*')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true, pedido: data })
+            }
+
+            if (path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
+              const id = path.split('/').pop()
+              const { error } = await supabase.from('pedidos_licencas').delete().eq('id', id)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true })
+            }
+
             // LICENÇAS PALANCASOFT
             if (path === '/api/admin/licenses' && req.method === 'GET') {
               const { data, error } = await supabase
@@ -706,7 +829,7 @@ function adminApi(): Plugin {
               if (level && level !== 'super_admin')
                 return json(res, 403, { ok: false, error: 'Apenas o Super Admin gere utilizadores.' })
             }
-            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path.match(/^\/api\/admin\/(licenses|partners)\/[a-f0-9-]+$/)) {
+            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path.match(/^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/)) {
               const level = currentAdmin(req)?.level
               if (level && level !== 'super_admin' && level !== 'gestor')
                 return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })
@@ -814,7 +937,7 @@ function adminApi(): Plugin {
             if (path === '/api/admin/users' || path.match(/^\/api\/admin\/users\/[a-f0-9-]+$/)) {
               // trata nos blocos acima via isSuperAdmin
             }
-            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path.match(/^\/api\/admin\/(licenses|partners)\/[a-f0-9-]+$/)) {
+            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path.match(/^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/)) {
               const level = currentAdmin(req)?.level
               if (level && level !== 'super_admin' && level !== 'gestor')
                 return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })

@@ -41,6 +41,7 @@ import {
 } from 'lucide-react'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
+import OrderModal from './components/OrderModal'
 
 // Fallback data for when API is unavailable
 const fallbackServices = [
@@ -333,6 +334,8 @@ function App() {
 
   const handleLogin = () => showToast('A Área do Cliente está a ser preparada. Fale connosco para obter acesso antecipado.')
 
+  const [orderProduct, setOrderProduct] = useState<SiteProduct | null>(null)
+
   const handleDownload = async (product: SiteProduct) => {
     try {
       const r = await fetch(`/api/software/${product.id}/download`, { method: 'POST' })
@@ -369,6 +372,7 @@ function App() {
   return (
     <div className={`site-shell ${banner.active && banner.message ? 'site-shell--banner' : ''}`}>
       {toast && <div className="toast" role="status"><BadgeCheck size={18} />{toast}</div>}
+      {orderProduct && <OrderModal product={orderProduct} onClose={() => setOrderProduct(null)} />}
       {banner.active && banner.message && <div className="site-banner"><Sparkles size={14} /> {banner.message}</div>}
 
       <header className="site-header">
@@ -496,7 +500,9 @@ function App() {
                     <p>{product.description || 'Descrição em actualização.'}</p>
                     {product.changelog && <small className="product-changelog">{product.changelog}</small>}
                     <ul>{features.map((feature, i) => <li key={i}><Check size={14} /> {feature}</li>)}</ul>
-                    {product.file_url ? <button type="button" className="product-link product-download" onClick={() => handleDownload(product)}>Download <Download size={15} /></button> : <a href="#contacto" className="product-link">Solicitar demonstração <ArrowRight size={15} /></a>}
+                    {product.price != null && product.price > 0 ? (
+                      <button type="button" className="product-link product-buy" onClick={() => setOrderProduct(product)}>Adquirir Licença <ArrowRight size={15} /></button>
+                    ) : product.file_url ? <button type="button" className="product-link product-download" onClick={() => handleDownload(product)}>Download <Download size={15} /></button> : <a href="#contacto" className="product-link">Solicitar demonstração <ArrowRight size={15} /></a>}
                   </Card>
                 )
               })}

@@ -527,3 +527,19 @@
 .admin-upload-progress-bar{height:8px;background:#e2e8f0;border-radius:6px;overflow:hidden}
 .admin-upload-progress-bar i{display:block;height:100%;background:linear-gradient(90deg,#3b82f6,#22c55e);border-radius:6px;transition:width .25s ease}
 .admin-upload-progress span{display:block;margin-top:5px;font:600 .62rem 'Manrope',sans-serif;color:#2563eb}
+
+/* Pedidos de licença B2B */
+.order-filter-tabs{display:flex;gap:7px}
+.order-filter-tab{padding:7px 13px;border:1px solid #e2e8f0;border-radius:9px;background:#fff;color:#475569;font:700 .62rem 'Manrope',sans-serif;transition:all .15s ease}
+.order-filter-tab:hover{border-color:#93c5fd;color:#2563eb}
+.order-filter-tab.is-active{background:#0f172a;border-color:#0f172a;color:#fff}
+.order-sub{display:block;color:#94a3b8;font-size:.6rem}
+.order-time{display:block;color:#94a3b8;font-size:.58rem}
+.order-status-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;font:700 .58rem 'Manrope',sans-serif;white-space:nowrap}
+.order-status-pill::before{content:'';width:5px;height:5px;border-radius:50%;background:currentColor}
+.order-status--Pendente{background:#fef9c3;color:#a16207}
+.order-status--EmVerificação{background:#dbeafe;color:#1d4ed8}
+.order-status--Aprovado{background:#dcfce7;color:#15803d}
+.order-status--Rejeitado{background:#fee2e2;color:#b91c1c}
+.order-btn--ok{color:#16a34a}
+.order-btn--ok:hover{background:#dcfce7;color:#15803d;border-color:#86efac}
