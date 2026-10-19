@@ -346,8 +346,6 @@ function App() {
     currentForm.reset()
   }
 
-  const handleLogin = () => showToast('A Área do Cliente está a ser preparada. Fale connosco para obter acesso antecipado.')
-
   const [orderProduct, setOrderProduct] = useState<SiteProduct | null>(null)
 
   const handleDownload = async (product: SiteProduct) => {
@@ -399,7 +397,6 @@ function App() {
             <a href="#softwares" onClick={closeMenu}>Softwares</a>
             <a href="#parcerias" onClick={closeMenu}>Parcerias</a>
             <a href="#contacto" onClick={closeMenu}>Contacto</a>
-            <Button variant="dark" size="sm" onClick={handleLogin}>Área do Cliente <ArrowRight size={15} /></Button>
           </nav>
           <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuOpen}>
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
