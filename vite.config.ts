@@ -298,6 +298,7 @@ function cookies(req: IncomingMessage): Record<string, string> {
 // lista; os tokens de pré-deploy expiram naturalmente (8 h).
 // ============================================================
 const sessionRegistry = new Map<string, Map<string, number>>() // sub → (jti → emitido em ts)
+const chamadoRate = new Map<string, number[]>() // limitação pública: ip → timestamps de chamados submissos
 
 function registerSessionJti(sub: string, jti: string) {
   const own = sessionRegistry.get(sub) || new Map<string, number>()
@@ -621,6 +622,35 @@ function adminApi(): Plugin {
           }
 
           // PEDIDO DE LICENÇA B2B (checkout PalancaSoft / Negomil — sem auth)
+          // CHAMADOS DE SUPORTE — formulário público do site (alimentação directa ao painel do técnico)
+          if (path === '/api/chamados' && req.method === 'POST') {
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            // limitação simples: máx. 5 chamados por IP por hora
+            const ip = (req.socket.remoteAddress || 'desconhecido').replace(/^::ffff:/, '')
+            const agora = Date.now()
+            const hist = (chamadoRate.get(ip) || []).filter(ts => agora - ts < 60 * 60 * 1000)
+            if (hist.length >= 5) return json(res, 429, { ok: false, error: 'Muitas solicitações seguidas — entre em contacto via WhatsApp.' })
+            hist.push(agora)
+            chamadoRate.set(ip, hist)
+            const payload = await readBody(req) as { nome_empresa?: string; nif?: string; telefone_whatsapp?: string; software?: string; descricao_problema?: string }
+            const nomeEmpresa = String(payload.nome_empresa || '').trim()
+            const telefone = String(payload.telefone_whatsapp || '').trim()
+            const descricao = String(payload.descricao_problema || '').trim()
+            if (nomeEmpresa.length < 2 || nomeEmpresa.length > 150) return json(res, 400, { ok: false, error: 'Indique o nome da empresa.' })
+            if (!/[\d+\s()-]{9,20}/.test(telefone)) return json(res, 400, { ok: false, error: 'Telefone/WhatsApp inválido (mínimo 9 dígitos).' })
+            if (descricao.length < 10 || descricao.length > 1200) return json(res, 400, { ok: false, error: 'Descreve o problema com pelo menos 10 caracteres.' })
+            const nif = String(payload.nif || '').trim().slice(0, 20) || null
+            const software = String(payload.software || '').trim().slice(0, 120) || 'Outro'
+            const { data, error } = await supabase.from('chamados_suporte')
+              .insert({ cliente: nomeEmpresa, nif, telefone: telefone.slice(0, 20), software, problema: descricao, estado: 'Pendente', prioridade: 'Média', origem: 'site' })
+              .select('id').single()
+            if (error) {
+              if (String(error.message).includes('chamados_suporte')) return json(res, 503, { ok: false, error: 'A central de suporte será activada em breve. Entre em contacto com a CFTEC via WhatsApp.' })
+              return json(res, 500, { ok: false, error: error.message })
+            }
+            return json(res, 201, { ok: true, chamado_id: data?.id })
+          }
+
           if (path === '/api/license-orders' && req.method === 'POST') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             const payload = await readBody(req) as Partial<{
@@ -1203,7 +1233,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const entries = (payload.entries || []).filter((e) => e && e.key && typeof e.value === 'string').slice(0, 20)
               if (!entries.length) return json(res, 400, { ok: false, error: 'Envie pelo menos uma chave/valor.' })
               // chaves visíveis no site público (GET /api/settings → is_public)
-              const PUBLIC_KEYS = ['whatsapp_comercial', 'email_contacto', 'telefone_directorio', 'banner_activo', 'banner_mensagem', 'linkedin_url', 'x_url']
+              const PUBLIC_KEYS = ['whatsapp_comercial', 'whatsapp_tecnico', 'email_contacto', 'telefone_directorio', 'banner_activo', 'banner_mensagem', 'linkedin_url', 'x_url']
               for (const entry of entries) {
                 const row: Record<string, unknown> = { key: entry.key.trim().slice(0, 80), value: entry.value.slice(0, 2000) }
                 if (PUBLIC_KEYS.includes(row.key as string)) row.is_public = true
@@ -1354,7 +1384,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             }
 
             if (path === '/api/admin/chamados' && req.method === 'POST') {
-              const payload = await readBody(req) as { cliente?: string; nif?: string; software?: string; problema?: string; estado?: string; prioridade?: string }
+              const payload = await readBody(req) as { cliente?: string; nif?: string; telefone?: string; software?: string; problema?: string; estado?: string; prioridade?: string }
               const cliente = String(payload.cliente || '').trim()
               const problema = String(payload.problema || '').trim()
               if (!cliente || cliente.length > 150) return json(res, 400, { ok: false, error: 'Indique o cliente/empresa.' })
@@ -1364,9 +1394,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const estado = ESTADOS.includes(payload.estado || '') ? payload.estado! : 'Pendente'
               const prioridade = PRIOS.includes(payload.prioridade || '') ? payload.prioridade! : 'Média'
               const nif = String(payload.nif || '').trim().slice(0, 30) || null
+              const telefone = String(payload.telefone || '').trim().slice(0, 20) || null
               const software = String(payload.software || '').trim().slice(0, 120) || null
               const { data, error } = await supabase.from('chamados_suporte')
-                .insert({ cliente, nif, software, problema, estado, prioridade })
+                .insert({ cliente, nif, telefone, software, problema, estado, prioridade, origem: 'painel' })
                 .select('*').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
               return json(res, 201, { ok: true, chamado: data })

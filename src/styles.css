@@ -309,3 +309,26 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .blog-head-rule i{height:1px;width:58px;background:linear-gradient(90deg,transparent,rgba(29,78,216,.55));border-radius:2px}
 .blog-head-rule i:last-child{background:linear-gradient(90deg,rgba(29,78,216,.55),transparent)}
 @media (max-width:640px){.blog-head-rule span{display:none}.blog-head-rule i{width:40px}}
+
+/* ===== SEC��O SUPORTE T�CNICO (#suporte) � chamados + WhatsApp t�cnico + FAQ ===== */
+.section-support { background: #fff; }
+.support-layout { display: grid; grid-template-columns: .75fr 1.25fr; gap: 95px; align-items: center; }
+.section-support .support-actions { display: flex; flex-direction: column; gap: 12px; margin-bottom: 27px; max-width: 390px; }
+.support-wa { display: flex; align-items: center; gap: 13px; padding: 15px 18px; border: 1px solid #dcfce7; border-radius: 14px; background: linear-gradient(120deg, #f0fdf4, #fbfdff); color: var(--navy,#0f172a); text-decoration: none; transition: border .2s ease, box-shadow .2s ease, transform .2s ease; }
+.support-wa:hover { border-color: #16a34a; box-shadow: 0 12px 30px rgba(22,163,74,.14); transform: translateY(-1px); }
+.support-wa svg { color: #16a34a; flex: 0 0 auto; }
+.support-wa small { display: block; color: #16a34a; font: 600 .56rem "DM Mono",monospace; text-transform: uppercase; letter-spacing: .12em; margin-bottom: 2px; }
+.support-wa span { font-size: .78rem; font-weight: 800; letter-spacing: -.02em; }
+/* FAQ � acorde�o nativo */
+.faq-list { display: flex; flex-direction: column; gap: 9px; }
+.faq-item { border: 1px solid #e2e8f0; border-radius: 12px; background: #fbfdff; overflow: hidden; transition: border .2s ease; }
+.faq-item:hover { border-color: #bfdbfe; }
+.faq-item[open] { border-color: var(--blue,#3b82f6); background: #fff; }
+.faq-item summary { display: flex; align-items: center; gap: 10px; padding: 13px 15px; cursor: pointer; list-style: none; color: var(--navy,#0f172a); font-size: .74rem; font-weight: 800; letter-spacing: -.015em; line-height: 1.45; }
+.faq-item summary::-webkit-details-marker { display: none; }
+.faq-item summary::before { content: '+'; flex: 0 0 auto; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; background: #eff6ff; color: var(--blue,#3b82f6); font: 700 .8rem 'Space Grotesk',sans-serif; }
+.faq-item[open] summary::before { content: '-'; background: var(--blue,#3b82f6); color: #fff; }
+.faq-item summary:hover { color: #1d4ed8; }
+.faq-item p { margin: 0; padding: 0 15px 14px 45px; color: #64748b; font-size: .7rem; line-height: 1.75; }
+@media (max-width: 900px) { .support-layout { grid-template-columns: 1fr !important; gap: 46px !important; } .support-layout .contact-copy > p { max-width: none; } }
+@media (max-width: 430px) { .support-wa { padding: 13px 14px; } }
