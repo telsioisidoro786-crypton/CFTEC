@@ -20,7 +20,7 @@ dotenv.config({ override: true })
 
 type ContactPayload = { name?: string; email?: string; phone?: string; interest?: string; message?: string }
 type AdminLevel = 'super_admin' | 'gestor' | 'tecnico'
-type AdminClaims = { sub: string; email: string; name: string; role: 'admin'; level?: AdminLevel }
+type AdminClaims = { sub: string; email: string; name: string; role: 'admin'; level?: AdminLevel; jti?: string }
 
 // Supabase client (using service role for admin operations)
 const supabaseUrl = process.env.SUPABASE_URL || ''
@@ -210,13 +210,51 @@ function cookies(req: IncomingMessage): Record<string, string> {
   return parsed
 }
 
+// ============================================================
+// REVOGAÇÃO DE SESSÕES EM MEMÓRIA — logout / mudança de password
+// invalidam os JWT emitidos (jti). Reiniciar o servidor limpa a
+// lista; os tokens de pré-deploy expiram naturalmente (8 h).
+// ============================================================
+const sessionRegistry = new Map<string, Map<string, number>>() // sub → (jti → emitido em ts)
+
+function registerSessionJti(sub: string, jti: string) {
+  const own = sessionRegistry.get(sub) || new Map<string, number>()
+  own.set(jti, Date.now())
+  // basta o último token do utilizador + poucos anteriores; cap de 20 registos/sub
+  while (own.size > 20) {
+    let oldestKey = ''; let oldestTs = Infinity
+    own.forEach((t, k) => { if (t < oldestTs) { oldestTs = t; oldestKey = k } })
+    own.delete(oldestKey)
+  }
+  sessionRegistry.set(sub, own)
+}
+
+function revokeSessionTokenByReq(req: IncomingMessage) {
+  try {
+    const token = cookies(req)[authCookieName]
+    if (!token) return
+    const payload = jwt.decode(token) as { sub?: string; jti?: string } | null
+    if (payload?.sub && payload.jti) {
+      const own = sessionRegistry.get(payload.sub)
+      if (own) { own.delete(payload.jti); if (!own.size) sessionRegistry.delete(payload.sub) }
+    }
+  } catch { /* logout nunca deve falhar por isto */ }
+}
+
+function revokeAllSessionsForUser(sub: string) { sessionRegistry.delete(sub) }
+
+function isJtiRevoked(sub: string, jti: string) { return !sessionRegistry.get(sub)?.has(jti) }
+
 function currentAdmin(req: IncomingMessage): AdminClaims | null {
   const token = cookies(req)[authCookieName]
   const secret = JWT_SECRET
   if (!token || !secret) return null
   try {
     const claims = jwt.verify(token, secret, { algorithms: ['HS256'] }) as AdminClaims
-    return claims.role === 'admin' ? claims : null
+    if (claims.role !== 'admin') return null
+    // token sem jti = pré-deploy (expira sozinho); com jti = tem de estar registado (não revogado/logout)
+    if (claims.jti && isJtiRevoked(claims.sub, claims.jti)) return null
+    return claims
   } catch (e) {
     console.error('[AUTH] Verify error:', e)
     return null
@@ -303,11 +341,13 @@ function adminApi(): Plugin {
             if (!admin || !(await bcrypt.compare(password, admin.password_hash)))
               return json(res, 401, { ok: false, error: 'E-mail ou password incorrectos.' })
 
+            const jti = crypto.randomUUID()
             const token = jwt.sign(
-              { sub: admin.id, email: admin.email, name: admin.name, role: 'admin', level: admin.level } satisfies AdminClaims,
+              { sub: admin.id, email: admin.email, name: admin.name, role: 'admin', level: admin.level, jti } satisfies AdminClaims,
               JWT_SECRET,
               { algorithm: 'HS256', expiresIn: sessionMaxAge }
             )
+            registerSessionJti(admin.id, jti)
             setSessionCookie(res, token)
             return json(res, 200, { ok: true, user: { name: admin.name, email: admin.email, level: admin.level } })
           }
@@ -337,11 +377,13 @@ function adminApi(): Plugin {
               return json(res, 500, { ok: false, error: updated.error.message })
             }
             // Re-emitir o token para o header levar o nome actualizado
+            const jti2 = crypto.randomUUID()
             const token = jwt.sign(
-              { sub: row.id, email: row.email, name: row.name, role: 'admin', level } satisfies AdminClaims,
+              { sub: row.id, email: row.email, name: row.name, role: 'admin', level, jti: jti2 } satisfies AdminClaims,
               JWT_SECRET,
               { algorithm: 'HS256', expiresIn: sessionMaxAge },
             )
+            registerSessionJti(row.id, jti2)
             setSessionCookie(res, token)
             return json(res, 200, { ok: true, user: { name: row.name, email: row.email, level } })
           }
@@ -372,10 +414,22 @@ function adminApi(): Plugin {
             const table = own.data ? 'admin_users' : 'admins'
             const { error: upErr } = await supabase.from(table).update({ password_hash: hash }).eq('id', row.id)
             if (upErr) return json(res, 500, { ok: false, error: upErr.message })
+            // todas as sessões anteriores desta conta tornam-se inválidas (novo ciclo de tokens)
+            revokeAllSessionsForUser(admin.sub)
+            const jti3 = crypto.randomUUID()
+            const token = jwt.sign(
+              { sub: admin.sub, email: admin.email, name: admin.name, role: 'admin', level: admin.level, jti: jti3 } satisfies AdminClaims,
+              JWT_SECRET,
+              { algorithm: 'HS256', expiresIn: sessionMaxAge },
+            )
+            registerSessionJti(admin.sub, jti3)
+            setSessionCookie(res, token)
             return json(res, 200, { ok: true })
           }
           
           if (path === '/api/admin/logout' && req.method === 'POST') {
+            // mata o token desta sessão no servidor (não apenas no browser)
+            revokeSessionTokenByReq(req)
             clearSessionCookie(res)
             return json(res, 200, { ok: true })
           }
@@ -1077,6 +1131,8 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 updates.password_hash = await bcrypt.hash(String(payload.password), 12)
               }
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
+              // password/desactivação/nível alterados → a(s) sessão(ões) do utilizador perdido/degradado morrem já
+              if (updates.password_hash || updates.is_active === false || updates.role) revokeAllSessionsForUser(String(id))
               const { data, error } = await supabase
                 .from('admin_users')
                 .update(updates)
@@ -1094,6 +1150,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 400, { ok: false, error: 'Não pode eliminar a sua própria conta.' })
               const { error } = await supabase.from('admin_users').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              revokeAllSessionsForUser(String(id))
               return json(res, 200, { ok: true })
             }
 

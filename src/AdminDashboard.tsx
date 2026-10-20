@@ -213,6 +213,25 @@ function AdminLogin({ onAuthenticated }: { onAuthenticated: (user: AdminUser) =>
   return <div className="admin-auth-shell"><Card className="admin-auth-card"><AdminMark /><div className="admin-auth-heading"><span className="admin-kicker">ÁREA RESTRITA</span><h1>Entrar no painel.</h1><p>Use as credenciais de administrador da CFTEC para continuar.</p></div><form onSubmit={submit} className="admin-auth-form"><label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@cftec.co" autoComplete="username" required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="A sua password" autoComplete="current-password" required /></label>{error && <div className="admin-auth-error" role="alert">{error}</div>}<Button type="submit" size="lg" disabled={submitting}>{submitting ? 'A validar…' : 'Entrar no painel'} <ChevronRight size={16} /></Button></form><div className="admin-auth-note"><ShieldCheck size={15} /> Sessão protegida por JWT e cookie HttpOnly.</div><a href="/" className="admin-back-link">← Voltar ao website público</a></Card></div>
 }
 
+// INTERCEPTOR DE SESSÃO (equivalente ao onAuthStateChange do Supabase):
+// qualquer resposta admin com 401 → sessão morreu/foi revogada → volta ao login
+let sessionExpiredHandler: (() => void) | null = null
+
+function installSessionInterceptor() {
+  if ((window as { __cftecSessionHooked?: boolean }).__cftecSessionHooked) return
+  ;(window as { __cftecSessionHooked?: boolean }).__cftecSessionHooked = true
+  const originalFetch = window.fetch.bind(window)
+  window.fetch = async (input, init) => {
+    const response = await originalFetch(input as RequestInfo, init)
+    try {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : String((input as Request).url)
+      if (url.includes('/api/admin/') && !url.includes('/api/admin/login') && !url.includes('/api/admin/session') && response.status === 401)
+        sessionExpiredHandler?.()
+    } catch { /* nunca interromper a resposta original */ }
+    return response
+  }
+}
+
 export default function AdminDashboard() {
   const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
@@ -268,6 +287,16 @@ export default function AdminDashboard() {
   const [showDestaqueForm, setShowDestaqueForm] = useState(false)
   const [deletingDestaqueId, setDeletingDestaqueId] = useState<string | null>(null)
   const [savingDestaque, setSavingDestaque] = useState(false)
+
+  useEffect(() => {
+    installSessionInterceptor()
+    sessionExpiredHandler = () => {
+      // sessão expirada/revogada a meio do trabalho → deITA a UI e mostra o login
+      setAdminUser(null)
+      setAuthStatus(prev => prev === 'authenticated' ? 'unauthenticated' : prev)
+    }
+    return () => { sessionExpiredHandler = null }
+  }, [])
 
   useEffect(() => {
     fetch('/api/admin/session', { credentials: 'include' }).then((response) => {
@@ -1573,7 +1602,7 @@ export default function AdminDashboard() {
     </aside>
 
     <div className="admin-main">
-      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><span className="admin-separator" /><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
+      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
