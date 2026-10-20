@@ -295,3 +295,17 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .blog-modal-cta p{margin:0;color:#94a3b8;font-size:.74rem}
 @media (max-width:900px){.blog-grid{grid-template-columns:1fr 1fr}}
 @media (max-width:640px){.blog-grid{grid-template-columns:1fr}.blog-modal-backdrop{padding:0}.blog-modal{border-radius:0;min-height:100vh}}
+
+/* Cabeçalho moderno do Blog (fundo claro) */
+.blog-head{position:relative;text-align:center;max-width:780px;margin:0 auto 8px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.blog-head::before{content:"";position:absolute;top:-56px;left:50%;transform:translateX(-50%);width:420px;height:170px;background:radial-gradient(closest-side,rgba(29,78,216,.14),transparent 72%);pointer-events:none}
+.blog-head-chip{display:inline-flex;align-items:center;gap:7px;padding:9px 20px;border-radius:99px;color:#1d4ed8;background:linear-gradient(120deg,#fff,#f0f6ff);border:1px solid rgba(29,78,216,.28);box-shadow:0 10px 26px rgba(15,23,42,.09),inset 0 1px 0 #fff;font:700 .6rem "DM Mono",monospace;letter-spacing:.18em;text-transform:uppercase}
+.blog-head-chip svg{color:#1d4ed8;filter:drop-shadow(0 0 5px rgba(29,78,216,.45))}
+.blog-title{font-family:'Space Grotesk',sans-serif;font-size:clamp(1.65rem,3.6vw,2.4rem);font-weight:700;letter-spacing:-.04em;line-height:1.14;margin:0;color:var(--navy,#0f172a)}
+.blog-title-grad{background:linear-gradient(95deg,#1d4ed8 5%,#0ea5f5 55%,#1d4ed8 95%);-webkit-background-clip:text;background-clip:text;color:transparent}
+.blog-desc{max-width:56ch;margin:0;color:#5b6b81;font-size:.8rem;line-height:1.75}
+.blog-desc strong{color:#0f172a;font-weight:700}
+.blog-head-rule{display:flex;align-items:center;gap:12px;margin-top:2px;color:#8b98ab;font:600 .56rem "DM Mono",monospace;letter-spacing:.16em;text-transform:uppercase}
+.blog-head-rule i{height:1px;width:58px;background:linear-gradient(90deg,transparent,rgba(29,78,216,.55));border-radius:2px}
+.blog-head-rule i:last-child{background:linear-gradient(90deg,rgba(29,78,216,.55),transparent)}
+@media (max-width:640px){.blog-head-rule span{display:none}.blog-head-rule i{width:40px}}

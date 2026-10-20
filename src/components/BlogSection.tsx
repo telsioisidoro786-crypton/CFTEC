@@ -44,10 +44,14 @@ export default function BlogSection({ onOpen }: { onOpen: (post: BlogFull) => vo
   return (
     <section className="section section-blog" id="blog">
       <div className="container">
-        <div className="section-head">
-          <span className="section-kicker"><FileText size={12} /> ARTIGOS & GUIAS</span>
-          <h2 className="section-title">Estudos que ajudam Angola<br />a faturar melhor.</h2>
-          <p className="section-desc">Guias de faturação, novidades fiscais da AGT e lições dos projectos CFTEC — escritas sem jargão.</p>
+        <div className="section-head blog-head">
+          <div className="blog-head-chip"><FileText size={12} /> ARTIGOS & GUIAS</div>
+          <h2 className="section-title blog-title">
+            Estudos que ajudam Angola<br />
+            a <span className="blog-title-grad">faturar melhor</span>.
+          </h2>
+          <p className="section-desc blog-desc">Guias de faturação, novidades fiscais da <strong>AGT</strong> e lições dos projectos CFTEC — escritas sem jargão, diretas ao essencial.</p>
+          <div className="blog-head-rule" aria-hidden="true"><i /><span>Autoctone · Escrito por quem implementa</span><i /></div>
         </div>
 
         {categorias.length > 1 && (
