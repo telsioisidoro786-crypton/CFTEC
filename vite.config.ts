@@ -230,6 +230,89 @@ function buildProformaPdf(o: {
   return Buffer.from(pdf, 'latin1')
 }
 
+/** Fatura interna (FT) — emissão automática após confirmação do pagamento. Não é a factura AGT certificada. */
+function buildFaturaPdf(o: {
+  numero: string; pedido: string; data: string
+  empresa: string; nif: string; responsavel: string; email: string; provincia: string
+  software: string; forma: string; preco: number | null; iban: string
+}): Buffer {
+  const L: string[] = []
+  let y = 772
+  const tx = (x: number, size: number, bold: boolean, text: string, yy?: number, color?: string) => {
+    if (yy !== undefined) y = yy
+    const c = color ? ` ${color} rg` : ''
+    L.push(c ? `q${c} BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${escPdf(text)}) Tj ET Q` : `BT /${bold ? 'F2' : 'F1'} ${size} Tf ${x} ${y} Td (${escPdf(text)}) Tj ET`)
+  }
+  const hr = () => L.push(`0.88 0.89 0.91 RG 1.2 w 60 ${y} m 535 ${y} l S`)
+
+  // cabeçalho
+  L.push('0.059 0.09 0.165 rg 0 760 595 82 re f')   // fundo navy top
+  tx(60, 24, true, 'CFTEC', 800, '1 1 1')
+  tx(60, 8.5, false, 'cftec.co  ·  Engenharia digital para negocios que avançam', 779, '0.48 0.74 1')
+  tx(440, 15, true, 'FATURA INTERNA', 800, '0.34 0.94 0.65')
+  tx(440, 8.5, false, `N.º ${o.numero}`, 779, '0.68 0.81 0.94')
+
+  y = 700
+  tx(62, 8.5, false, 'Pagamento confirmado — documento de conferência interna da equipa CFTEC.', y)
+  y -= 16
+  tx(62, 9, true, 'DADOS DO CLIENTE', y)
+  y -= 16
+  tx(62, 11.5, true, o.empresa, y); y -= 14
+  tx(62, 9.5, false, `NIF: ${o.nif || '—'}   ·   Responsável: ${o.responsavel || '—'}`, y); y -= 13
+  tx(62, 9.5, false, `E-mail: ${o.email}   ·   Província: ${o.provincia}`, y)
+  tx(435, 8.5, false, 'Data da fatura:', 716)
+  tx(505, 8.5, true, o.data, 716)
+
+  y -= 26; hr(); y -= 26
+  // tabela
+  tx(62, 8, true, 'DESCRIÇÃO', y); tx(392, 8, true, 'QTD', y); tx(490, 8, true, 'VALOR (Kz)', y)
+  y -= 18; hr(); y -= 22
+  tx(62, 10.5, false, `${o.software} — licença comercial (instalador + actualizações + suporte)`, y)
+  tx(400, 10.5, false, '1', y)
+  tx(474, 11.5, true, o.preco !== null ? `${new Intl.NumberFormat('pt-PT').format(o.preco)}` : 'Sob consulta', y)
+  y -= 20; hr(); y -= 6; hr()
+  tx(400, 12.5, true, 'Total pago:', y - 24)
+  tx(474, 13.5, true, o.preco !== null ? `${new Intl.NumberFormat('pt-PT').format(o.preco)} Kz` : 'Sob consulta', y - 24)
+  y = y - 62
+
+  // pagamento
+  tx(62, 9, true, 'PAGAMENTO CONFIRMADO', y); y -= 16
+  tx(62, 9.5, false, `Forma de pagamento: ${o.forma}`, y); y -= 13
+  tx(62, 9.5, false, `Recebido em: IBAN ${o.iban}`, y); y -= 13
+  tx(62, 9.5, false, `Referência do pedido: ${o.pedido} — comprovativo arquivado pela equipa comercial`, y); y -= 26; hr()
+
+  // notas
+  y -= 26
+  tx(62, 9, true, 'NOTAS', y); y -= 15
+  tx(62, 8.5, false, '· Documento interno de confirmação — não é uma factura fiscal certificada AGT.', y); y -= 12
+  tx(62, 8.5, false, '· Inclui activação de licença, actualizações de versão e suporte técnico da equipa CFTEC.', y); y -= 12
+  tx(62, 8.5, false, '· Licença e instalador oficial entregues ou em processo de entrega ao cliente.', y); y -= 12
+  tx(62, 8.5, false, '· Factura fiscal definitiva emitida por software certificado AGT quando aplicável.', y)
+
+  // rodapé
+  L.push('0.059 0.09 0.165 rg 0 0 595 54 re f')
+  tx(62, 8.5, false, 'CFTEC — Consultoria, Formação & Tecnologia  ·  Angola', 30, '1 1 1')
+  tx(62, 8.5, false, 'Suporte: suporte@cftec.co   ·   Comercial: hello@cftec.co', 17, '0.48 0.74 1')
+
+  const content = L.join('\n')
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+    `<< /Length ${Buffer.byteLength(content, 'latin1')} >>\nstream\n${content}\nendstream`,
+  ]
+  let pdf = '%PDF-1.4\n'
+  const offsets: number[] = []
+  objs.forEach((obj, i) => { offsets.push(Buffer.byteLength(pdf, 'latin1')); pdf += `${i + 1} 0 obj\n${obj}\nendobj\n` })
+  const xrefStart = Buffer.byteLength(pdf, 'latin1')
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n`
+  for (const off of offsets) pdf += String(off).padStart(10, '0') + ' 00000 n \n'
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`
+  return Buffer.from(pdf, 'latin1')
+}
+
 function emailShell(titulo: string, corpoHtml: string): string {
   return `<!doctype html><html><body style="margin:0;padding:24px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif">
 <div style="max-width:580px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;border:1px solid #e2e8f0">
@@ -1119,14 +1202,47 @@ function adminApi(): Plugin {
               return res.end(pdf)
             }
 
+            // FATURA INTERNA PDF — só para pedidos com pagamento confirmado (status Pago)
+            const faturaMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/fatura/)
+            if (faturaMatch && req.method === 'GET') {
+              const nivelFat = currentAdmin(req)?.level
+              if (nivelFat && nivelFat !== 'super_admin' && nivelFat !== 'gestor')
+                return json(res, 403, { ok: false, error: 'Sem permissão para emitir faturas internas.' })
+              const { data: order } = await supabase.from('pedidos_licencas').select('*').eq('id', faturaMatch[1]).maybeSingle()
+              if (!order) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
+              if (order.status !== 'Pago')
+                return json(res, 400, { ok: false, error: 'A fatura interna só é emitida depois de confirmar o pagamento (estado Pago).' })
+              // nº sequencial de fatura interna (settings.fatura_seq) — auditoria sem duplicações
+              let seq = 1
+              const { data: curSeqF } = await supabase.from('settings').select('value').eq('key', 'fatura_seq').maybeSingle()
+              if (curSeqF?.value && !isNaN(parseInt(curSeqF.value))) seq = parseInt(curSeqF.value)
+              const numeroF = `FT-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`
+              await supabase.from('settings').upsert({ key: 'fatura_seq', value: String(seq + 1), description: 'Contador de faturas internas emitidas no painel' }, { onConflict: 'key' })
+              const { data: catalogoF } = await supabase.from('softwares').select('name, price')
+              const nomeLowerF = String(order.software_nome || '').toLowerCase().trim()
+              const matchF = (catalogoF || []).find(s => s.price && (s.name.toLowerCase() === nomeLowerF || s.name.toLowerCase().includes(nomeLowerF) || nomeLowerF.includes(s.name.toLowerCase().split(' ')[0])))
+              const { data: ibanRowF } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
+              const pdfF = buildFaturaPdf({
+                numero: numeroF,
+                pedido: String(order.id).slice(0, 8).toUpperCase(),
+                data: new Date().toLocaleDateString('pt-PT'),
+                empresa: order.nome_empresa, nif: order.nif, responsavel: order.nome_responsavel,
+                email: order.email || '—', provincia: order.provincia || '—',
+                software: order.software_nome, forma: order.forma_pagamento || 'Transferência / IBAN',
+                preco: matchF?.price ?? null, iban: ibanRowF?.value || '(ver IBAN válido no painel de definições)',
+              })
+              res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fatura-interna-${numeroF}.pdf"` })
+              return res.end(pdfF)
+            }
+
             if (path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
               const id = path.split('/').pop()
               const payload = await readBody(req) as Partial<{ status: string; observacoes: string }>
               const updates: Record<string, unknown> = {}
               if (payload.status !== undefined) {
                 const st = String(payload.status).trim()
-                if (!['Pendente', 'Em Verificação', 'Aprovado', 'Rejeitado'].includes(st))
-                  return json(res, 400, { ok: false, error: 'Status inválido. Use: Pendente, Em Verificação, Aprovado ou Rejeitado.' })
+                if (!['Pendente', 'Em Verificação', 'Aprovado', 'Pago', 'Rejeitado'].includes(st))
+                  return json(res, 400, { ok: false, error: 'Status inválido. Use: Pendente, Em Verificação, Aprovado, Pago ou Rejeitado.' })
                 updates.status = st
               }
               if (payload.observacoes !== undefined) updates.observacoes = String(payload.observacoes).slice(0, 1000)
