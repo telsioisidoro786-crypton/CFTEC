@@ -5,6 +5,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import dotenv from 'dotenv'
+import webpush from 'web-push'
 
 // Prevent process crashes from unhandled rejections
 process.on('unhandledRejection', (reason, promise) => {
@@ -33,6 +34,39 @@ const JWT_SECRET = process.env.CFTEC_JWT_SECRET || process.env.MANUS_JWT_SECRET 
 
 const authCookieName = 'cftec_admin_session'
 const sessionMaxAge = 60 * 60 * 8
+
+// Web Push (VAPID) — gratuito: o envio é feito pelo serviço de push do
+// próprio browser, o middleware só assina o payload. Sem chaves → desligado.
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || ''
+const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || ''
+const pushActivo = !!(VAPID_PUBLIC && VAPID_PRIVATE)
+if (pushActivo) webpush.setVapidDetails('mailto:suporte@cftec.co', VAPID_PUBLIC, VAPID_PRIVATE)
+
+// Envia Web Push a toda a equipa elegível para o tipo de evento
+// (pedido → comercial+super | chamado → técnico+super) e limpa subscrições mortas
+async function pushNotifyEquipa(tipo: 'pedido' | 'chamado', titulo: string, corpo: string) {
+  if (!pushActivo || !supabase) return
+  try {
+    const niveis = tipo === 'pedido' ? ['gestor', 'super_admin'] : ['tecnico', 'super_admin']
+    const { data: subs } = await supabase
+      .from('push_subscriptions')
+      .select('endpoint, p256dh, auth_key')
+      .in('user_level', niveis)
+    for (const s of subs || []) {
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth_key } },
+          JSON.stringify({ type: tipo, title: titulo, body: corpo, url: '/admin' }))
+      } catch (err: { statusCode?: number } | any) {
+        // 404/410 = endpoint expirado; remove para não sujar a tabela
+        if (err?.statusCode === 404 || err?.statusCode === 410) {
+          await supabase.from('push_subscriptions').delete().eq('endpoint', s.endpoint)
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[PUSH] falha silenciosa:', err instanceof Error ? err.message : err)
+  }
+}
 
 // Helper functions for Supabase
 async function sbQuery<T>(query: Promise<{ data: T[] | null; error: any }>): Promise<T[]> {
@@ -648,6 +682,8 @@ function adminApi(): Plugin {
               if (String(error.message).includes('chamados_suporte')) return json(res, 503, { ok: false, error: 'A central de suporte será activada em breve. Entre em contacto com a CFTEC via WhatsApp.' })
               return json(res, 500, { ok: false, error: error.message })
             }
+            // Web Push ao técnico (fire-and-forget: não atrasa a resposta ao cliente)
+            void pushNotifyEquipa('chamado', '🛠️ Novo chamado de suporte', `${nomeEmpresa} pediu apoio (${software}) — verifique no painel.`)
             return json(res, 201, { ok: true, chamado_id: data?.id })
           }
 
@@ -715,6 +751,8 @@ function adminApi(): Plugin {
 <table style="border-collapse:collapse">${emailLinha('Software', escHtml(softwareNome))}${emailLinha('Empresa', escHtml(nomeEmpresa))}${emailLinha('NIF', escHtml(nif))}${emailLinha('Responsável', escHtml(responsavel))}${emailLinha('WhatsApp', escHtml(telefone))}${emailLinha('E-mail', email ? `<a href="mailto:${escHtml(email)}" style="color:#1d4ed8">${escHtml(email)}</a>` : '—')}${emailLinha('Província', escHtml(provincia))}${emailLinha('Forma de pagamento', escHtml(formaPagamento))}${emailLinha('Observações', observacoes ? escHtml(observacoes).slice(0, 600).replace(/\n/g, '<br />') : '—')}${emailLinha('Ref.', `<code>#${String(data.id).slice(0, 8).toUpperCase()}</code>`)}</table>
 <p style="margin:18px 0 0">Trate no painel CFTEC → Secção «Pedidos de Licença».</p>`),
             )
+            // Web Push ao comercial (fire-and-forget)
+            void pushNotifyEquipa('pedido', '📋 Novo pedido de licença', `${nomeEmpresa} pediu ${softwareNome} — verifique no painel.`)
             return json(res, 201, {
               ok: true,
               pedido_id: data.id,
@@ -1421,6 +1459,50 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 if (error) return json(res, 500, { ok: false, error: error.message })
                 return json(res, 200, { ok: true })
               }
+            }
+
+            // WEB PUSH — chave pública VAPID para o banner do painel assinar o dispositivo
+            if (path === '/api/admin/push-key' && req.method === 'GET') {
+              if (!pushActivo) return json(res, 501, { ok: false, error: 'Web Push não configurado (.env sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY).' })
+              return json(res, 200, { ok: true, publicKey: VAPID_PUBLIC })
+            }
+
+            // WEB PUSH — grava/atualiza a subscrição do browser que pediu para receber alertas
+            if (path === '/api/admin/push-subscribe' && req.method === 'POST') {
+              const payload = await readBody(req) as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
+              const endpoint = String(payload.endpoint || '').trim()
+              const p256dh = String(payload.keys?.p256dh || '').trim()
+              const auth = String(payload.keys?.auth || '').trim()
+              if (!/^https?:\/\//.test(endpoint) || endpoint.length > 1024) return json(res, 400, { ok: false, error: 'Endpoint de subscrição inválido.' })
+              if (!p256dh || !auth || p256dh.length > 300 || auth.length > 300) return json(res, 400, { ok: false, error: 'Chaves de encriptação ausentes na subscrição.' })
+              const sub = await currentAdmin(req)
+              const row = { endpoint, p256dh, auth_key: auth, user_email: sub?.email || null, user_level: sub?.level || 'super_admin' }
+              const { error } = await supabase.from('push_subscriptions')
+                .upsert({ ...row, updated_at: new Date().toISOString() }, { onConflict: 'endpoint' })
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true })
+            }
+
+            // WEB PUSH — disparo de teste (email/level do próprio admin autenticado)
+            if (path === '/api/admin/push-test' && req.method === 'POST') {
+              const sub = await currentAdmin(req)
+              if (!pushActivo) return json(res, 501, { ok: false, error: 'Web Push não configurado.' })
+              const { data: subs } = await supabase.from('push_subscriptions')
+                .select('endpoint, p256dh, auth_key').eq('user_email', sub?.email || '')
+              let enviadas = 0
+              for (const s of subs || []) {
+                try {
+                  await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth_key } },
+                    JSON.stringify({ type: sub?.level === 'tecnico' ? 'chamado' : 'pedido', title: '🔔 CFTEC — alertas activos', body: 'Web Push operacional: será notificado de novos pedidos/chamados.', url: '/admin' }))
+                  enviadas++
+                } catch (err: { statusCode?: number } | any) {
+                  if (err?.statusCode === 404 || err?.statusCode === 410) {
+                    await supabase.from('push_subscriptions').delete().eq('endpoint', s.endpoint)
+                  }
+                }
+              }
+              if (!enviadas) return json(res, 404, { ok: false, error: 'Nenhuma subscrição activa para o seu dispositivo.' })
+              return json(res, 200, { ok: true, enviadas })
             }
 
             // MÉTRICAS DE DOWNLOADS — os eventuais últimos 30 dias (agregado)

@@ -61,6 +61,7 @@ import {
   LifeBuoy,
   Undo2,
 } from 'lucide-react'
+import PushNotificationBanner from './components/PushNotificationBanner'
 
 // Icon mapping for services
 const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
@@ -299,6 +300,32 @@ export default function AdminDashboard() {
   const [orderFilter, setOrderFilter] = useState<'Todos' | 'Pendente' | 'Em Verificação' | 'Aprovado' | 'Rejeitado'>('Todos')
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
   const knownOrderIdsRef = useRef<string[]>([])
+  const knownChamadosRef = useRef<string[]>([])
+  const audioCtxRef = useRef<AudioContext | null>(null)
+
+  // Odd alerta no dispositivo quando o painel está aberto: notificação nativa
+  // do sistema + som suave (Web Push via SW cobre o caso do painel fechado)
+  const alertaDispositivo = (tipo: 'pedido' | 'chamado', titulo: string, corpo: string) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return
+    try {
+      const n = new Notification(titulo, { body: corpo, icon: '/cftec-icon.svg', tag: tipo })
+      n.onclick = () => { window.focus(); n.close() }
+    } catch { /* alguns navegadores exigem SW — sem problema, o push cobre */ }
+    try {
+      if (!audioCtxRef.current) audioCtxRef.current = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)()
+      const ctx = audioCtxRef.current
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = 'sine'
+      osc.frequency.value = tipo === 'chamado' ? 660 : 880
+      gain.gain.setValueAtTime(0.001, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.06, ctx.currentTime + 0.02)
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35)
+      osc.connect(gain).connect(ctx.destination)
+      osc.start()
+      osc.stop(ctx.currentTime + 0.36)
+    } catch { /* áudio bloqueado até 1.ª interacção — ignora */ }
+  }
   const [destaques, setDestaques] = useState<Destaque[]>([])
   const [destaqueForm, setDestaqueForm] = useState({ ...emptyDestaqueForm, imagem: null as File | null, imagemNome: '' })
   const [editingDestaque, setEditingDestaque] = useState<Destaque | null>(null)
@@ -392,6 +419,7 @@ export default function AdminDashboard() {
       setDestaques(Array.isArray(destaquesData) ? destaquesData : [])
       setBlogPosts(Array.isArray(blogData) ? blogData : [])
       setChamados(Array.isArray(chamadosData) ? chamadosData : [])
+      knownChamadosRef.current = (Array.isArray(chamadosData) ? chamadosData : []).map((c: { id: string }) => c.id)
       if (settingsData && settingsData.ok) {
         const map: Record<string, string> = {}
         for (const entry of settingsData.settings || []) map[entry.key] = entry.value
@@ -1065,7 +1093,11 @@ export default function AdminDashboard() {
       if (!Array.isArray(data)) return
       const known = new Set(knownOrderIdsRef.current)
       const novos = known.size ? data.filter(o => !known.has(o.id)) : []
-      if (novos.length && !silent) notify(`Novo(s) pedido(s) de licença recebido(s): ${novos.map(n => n.id.slice(0, 8).toUpperCase()).join(', ')}`)
+      if (novos.length) {
+        const nomes = novos.map(n => n.empresa || n.id.slice(0, 8).toUpperCase()).join(', ')
+        notify(`Novo(s) pedido(s) de licença recebido(s): ${nomes}`)
+        alertaDispositivo('pedido', '📋 Novo pedido de licença', `${nomes} — verifique na secção Pedidos.`)
+      }
       setLicenseOrders(data)
       knownOrderIdsRef.current = data.map(o => o.id)
     } catch { /* silencioso */ }
@@ -1074,7 +1106,17 @@ export default function AdminDashboard() {
   const loadChamadosLeve = async () => {
     try {
       const r = await fetch('/api/admin/chamados', { credentials: 'include' })
-      if (r.ok) setChamados(await r.json())
+      if (!r.ok) return
+      const data = await r.json()
+      const known = new Set(knownChamadosRef.current)
+      const novos = known.size ? data.filter((c: { id: string }) => !known.has(c.id)) : []
+      if (novos.length) {
+        const nomes = novos.map((c: { cliente?: string; id: string }) => c.cliente || c.id.slice(0, 8).toUpperCase()).join(', ')
+        notify(`Novo(s) chamado(s) de suporte: ${nomes}`)
+        alertaDispositivo('chamado', '🛠️ Novo chamado de suporte', `${nomes} — verifique na secção Chamados.`)
+      }
+      setChamados(data)
+      knownChamadosRef.current = data.map((c: { id: string }) => c.id)
     } catch { /* silencioso */ }
   }
 
@@ -1828,6 +1870,7 @@ export default function AdminDashboard() {
     <div className="admin-main">
       <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
+        <PushNotificationBanner />
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && role !== 'gestor' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
         {activeSection === 'dashboard' && <>

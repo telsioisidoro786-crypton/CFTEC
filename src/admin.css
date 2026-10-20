@@ -743,3 +743,15 @@
 
 /* pill de origem do chamado (formulario do site) */
 .chamado-origem{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:20px;background:#dbeafe;color:#1d4ed8;font:700 .52rem 'DM Mono',monospace;letter-spacing:.08em;text-transform:uppercase;vertical-align:1px}
+
+/* ===== BANNER WEB PUSH (activação discreta de alertas) ===== */
+.push-banner{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 15px;margin:0 0 18px;border:1px solid #dbeafe;border-radius:12px;background:linear-gradient(110deg,#eff6ff,#f8fafc);color:#1e293b;font-size:.68rem}
+.push-banner svg{color:#1d4ed8;flex:0 0 auto}
+.push-banner span{display:flex;align-items:center;gap:6px;flex:1;min-width:200px;line-height:1.5}
+.push-banner strong{color:#0f172a}
+.push-banner small{width:100%;color:#64748b;font-size:.62rem;margin-top:-4px}
+.push-banner--on{border-color:#bbf7d0;background:linear-gradient(110deg,#f0fdf4,#f8fafc)}
+.push-banner--on svg{color:#16a34a}
+.push-banner--on strong{color:#14532d}
+.push-banner .ui-button{margin-left:auto}
+@media (max-width:640px){.push-banner .ui-button{margin-left:0;width:100%}}
