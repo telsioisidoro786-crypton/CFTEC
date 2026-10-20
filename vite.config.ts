@@ -20,7 +20,7 @@ process.on('uncaughtException', (error) => {
 dotenv.config({ override: true })
 
 type ContactPayload = { name?: string; email?: string; phone?: string; interest?: string; message?: string }
-type AdminLevel = 'super_admin' | 'gestor' | 'tecnico'
+type AdminLevel = 'super_admin' | 'gestor' | 'tecnico' | 'developer'
 type AdminClaims = { sub: string; email: string; name: string; role: 'admin'; level?: AdminLevel; jti?: string }
 
 // Supabase client (using service role for admin operations)
@@ -47,7 +47,7 @@ if (pushActivo) webpush.setVapidDetails('mailto:suporte@cftec.co', VAPID_PUBLIC,
 async function pushNotifyEquipa(tipo: 'pedido' | 'chamado', titulo: string, corpo: string) {
   if (!pushActivo || !supabase) return
   try {
-    const niveis = tipo === 'pedido' ? ['gestor', 'super_admin'] : ['tecnico', 'super_admin']
+    const niveis = tipo === 'pedido' ? ['gestor', 'super_admin', 'developer'] : ['tecnico', 'super_admin', 'developer']
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth_key')
@@ -474,6 +474,31 @@ function clearSessionCookie(res: ServerResponse) {
   res.setHeader('Set-Cookie', `${authCookieName}=; Path=/; ${isProd ? 'HttpOnly; Secure; SameSite=None' : 'SameSite=Lax'}; Max-Age=0`)
 }
 
+// Developer (Master Admin) tem acesso pleno igual ao super_admin — mas só ele gere a licença
+const nivelPleno = (nivel?: string | null) => nivel === 'super_admin' || nivel === 'developer'
+
+// Chaves de licenciamento — geridas EXCLUSIVAMENTE pelo developer
+// (nunca aparecem no painel de Definições do super_admin, que não as altera nem vê)
+const CHAVES_LICENCA = ['licenca_ativa', 'modulo_comercial', 'modulo_tecnico', 'modulo_novidades', 'licenca_expira_em', 'msg_licenca']
+const MSG_SEM_MODULO = 'Módulo não contratado — contacte o Developer da plataforma (Nexora Systems).'
+
+type EstadoLicenca = { licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string }
+
+async function licencaAtual(): Promise<EstadoLicenca> {
+  const base: EstadoLicenca = { licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: MSG_SEM_MODULO }
+  if (!supabase) return base
+  const { data } = await supabase.from('settings').select('key, value').in('key', CHAVES_LICENCA)
+  const g = (k: string) => (data || []).find((c: { key: string; value: string }) => c.key === k)?.value
+  return {
+    licencaAtiva: g('licenca_ativa') !== 'false',
+    moduloComercial: g('modulo_comercial') !== 'false',
+    moduloTecnico: g('modulo_tecnico') !== 'false',
+    moduloNovidades: g('modulo_novidades') !== 'false',
+    expiraEm: g('licenca_expira_em') || '',
+    mensagem: g('msg_licenca') || base.mensagem,
+  }
+}
+
 function adminApi(): Plugin {
   return {
     name: 'cftec-admin-api',
@@ -508,7 +533,7 @@ function adminApi(): Plugin {
                   name: row.name,
                   email: row.email,
                   password_hash: row.password_hash,
-                  level: (['super_admin', 'gestor', 'tecnico'].includes(row.role) ? row.role : 'gestor') as AdminLevel,
+                  level: (['super_admin', 'gestor', 'tecnico', 'developer'].includes(row.role) ? row.role : 'gestor') as AdminLevel,
                 }
               } else {
                 // Compatibilidade: tabela admins antiga (utilizador único = super admin)
@@ -557,6 +582,26 @@ function adminApi(): Plugin {
             return admin ? json(res, 200, { ok: true, user: { name: admin.name, email: admin.email, level: admin.level || 'super_admin' } }) : json(res, 401, { ok: false })
           }
 
+          // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API antes de qualquer handler admin
+          // (rota /api/admin/system-license vem depois; o developer escreve livremente)
+          if (path.startsWith('/api/admin/') && path !== '/api/admin/system-license') {
+            const nivelMod = currentAdmin(req)?.level
+            if (nivelMod && nivelMod !== 'developer') {
+              const lic = await licencaAtual()
+              if (!lic.licencaAtiva)
+                return json(res, 403, { ok: false, error: lic.mensagem })
+              const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/?/.test(path)
+              if (isComercial && !lic.moduloComercial)
+                return json(res, 403, { ok: false, error: lic.mensagem })
+              const isTecnico = path === '/api/admin/chamados' || /^\/api\/admin\/chamados\//.test(path) || path === '/api/admin/wiki' || /^\/api\/admin\/wiki\//.test(path)
+              if (isTecnico && !lic.moduloTecnico)
+                return json(res, 403, { ok: false, error: lic.mensagem })
+              const isNovidadeEscrita = (path === '/api/admin/blog' || /^\/api\/admin\/blog\//.test(path) || path === '/api/admin/destaques' || /^\/api\/admin\/destaques\//.test(path)) && req.method !== 'GET'
+              if (isNovidadeEscrita && !lic.moduloNovidades)
+                return json(res, 403, { ok: false, error: lic.mensagem })
+            }
+          }
+
           if (path === '/api/admin/profile' && req.method === 'PATCH') {
             const admin = currentAdmin(req)
             if (!admin) return json(res, 401, { ok: false })
@@ -568,7 +613,7 @@ function adminApi(): Plugin {
             let updated = await supabase.from('admin_users').update({ name }).eq('id', admin.sub).select('id, name, email, role').maybeSingle()
             let row: { id: string; name: string; email: string; role?: string } | null = updated.data
             let level: AdminLevel = admin.level || 'super_admin'
-            if (row && row.role && ['super_admin', 'gestor', 'tecnico'].includes(String(row.role))) level = row.role as AdminLevel
+            if (row && row.role && ['super_admin', 'gestor', 'tecnico', 'developer'].includes(String(row.role))) level = row.role as AdminLevel
             if (!row) {
               const legacy = await supabase.from('admins').update({ name }).eq('id', admin.sub).select('id, name, email').single()
               if (legacy.error) return json(res, 500, { ok: false, error: legacy.error.message })
@@ -742,6 +787,9 @@ function adminApi(): Plugin {
           // CHAMADOS DE SUPORTE — formulário público do site (alimentação directa ao painel do técnico)
           if (path === '/api/chamados' && req.method === 'POST') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            // módulo técnico suspenso pelo developer → formulário público encerrado
+            if (!(await licencaAtual()).moduloTecnico)
+              return json(res, 403, { ok: false, error: 'A central de suporte está temporariamente suspensa. Entre em contacto por WhatsApp.' })
             // limitação simples: máx. 5 chamados por IP por hora
             const ip = (req.socket.remoteAddress || 'desconhecido').replace(/^::ffff:/, '')
             const agora = Date.now()
@@ -772,6 +820,9 @@ function adminApi(): Plugin {
 
           if (path === '/api/license-orders' && req.method === 'POST') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            // módulo comercial suspenso pelo developer → checkout encerrado
+            if (!(await licencaAtual()).moduloComercial)
+              return json(res, 403, { ok: false, error: 'Os pedidos de licença estão temporariamente suspensos. Entre em contacto com a CFTEC por WhatsApp.' })
             const payload = await readBody(req) as Partial<{
               software_nome: string; nome_empresa: string; nif: string; nome_responsavel: string
               telefone_whatsapp: string; email: string; provincia: string; forma_pagamento: string; observacoes: string
@@ -874,6 +925,8 @@ function adminApi(): Plugin {
           // DESTAQUES & NOVIDADES (slider da página inicial — sem auth)
           if (path === '/api/destaques' && req.method === 'GET') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            // módulo novidades desligado pelo developer → slider vazio no site público
+            if (!(await licencaAtual()).moduloNovidades) return json(res, 200, { ok: true, destaques: [] })
             const { data, error } = await supabase
               .from('novidades_destaques')
               .select('id, titulo, descricao, imagem_url, link_botao, texto_botao')
@@ -891,6 +944,8 @@ function adminApi(): Plugin {
           // BLOG PÚBLICO — artigos publicados (sem auth)
           if (path === '/api/blog' && req.method === 'GET') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            // módulo novidades desligado pelo developer → blog vazio no site público
+            if (!(await licencaAtual()).moduloNovidades) return json(res, 200, { ok: true, posts: [] })
             const { data, error } = await supabase
               .from('blog_posts')
               .select('id, slug, title, excerpt, cover_url, category, author, published_at')
@@ -907,6 +962,8 @@ function adminApi(): Plugin {
           // BLOG PÚBLICO — artigo completo por slug
           if (path.match(/^\/api\/blog\/([a-z0-9-]+)$/) && req.method === 'GET') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            // módulo novidades desligado pelo developer → artigo indisponível no site público
+            if (!(await licencaAtual()).moduloNovidades) return json(res, 404, { ok: false, error: 'Artigo não encontrado.' })
             const slug = decodeURIComponent(path.split('/').pop() || '')
             const { data, error } = await supabase
               .from('blog_posts')
@@ -1106,6 +1163,7 @@ function adminApi(): Plugin {
             // (colocado antes de qualquer handler destes paths, senão a cadeia de ifs devolve antes)
             // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
             // O técnico tem acesso apenas de SÓ LEITURA às licenças (consulta de clientes/chaves para suporte)
+            // + módulo comercial desligado pelo developer → bloqueio geral (o developer vê sempre tudo)
             {
               const comercialLevel = currentAdmin(req)?.level
               const isCommercialPath = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/.test(path)
@@ -1173,7 +1231,7 @@ function adminApi(): Plugin {
             const proformaMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/proforma/)
             if (proformaMatch && req.method === 'GET') {
               const nivelPro = currentAdmin(req)?.level
-              if (nivelPro && nivelPro !== 'super_admin' && nivelPro !== 'gestor')
+              if (nivelPro && !nivelPleno(nivelPro) && nivelPro !== 'gestor')
                 return json(res, 403, { ok: false, error: 'Sem permissão para emitir proformas.' })
               const { data: order } = await supabase.from('pedidos_licencas').select('*').eq('id', proformaMatch[1]).maybeSingle()
               if (!order) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
@@ -1206,7 +1264,7 @@ function adminApi(): Plugin {
             const faturaMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/fatura/)
             if (faturaMatch && req.method === 'GET') {
               const nivelFat = currentAdmin(req)?.level
-              if (nivelFat && nivelFat !== 'super_admin' && nivelFat !== 'gestor')
+              if (nivelFat && !nivelPleno(nivelFat) && nivelFat !== 'gestor')
                 return json(res, 403, { ok: false, error: 'Sem permissão para emitir faturas internas.' })
               const { data: order } = await supabase.from('pedidos_licencas').select('*').eq('id', faturaMatch[1]).maybeSingle()
               if (!order) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
@@ -1373,22 +1431,27 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             // SETTINGS DO PORTAL (config geral) — alteração restrita ao Super Admin
             if (path === '/api/admin/settings' && req.method !== 'GET') {
               const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin')
-                return json(res, 403, { ok: false, error: 'Apenas o Super Admin altera a configuração do portal.' })
+              if (level && !nivelPleno(level))
+                return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou o Developer alteram a configuração do portal.' })
             }
             if (path === '/api/admin/settings' && req.method === 'GET') {
-              // IBAN/notify/etc. são sensíveis — apenas o Super Admin lê a configuração
+              // IBAN/notify/etc. são sensíveis — apenas o Super Admin/Developer lê a configuração
               const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin') return json(res, 403, { ok: false, error: 'Apenas o Super Admin vê a configuração do portal.' })
+              if (level && !nivelPleno(level)) return json(res, 403, { ok: false, error: 'Apenas o Super Admin vê a configuração do portal.' })
               const { data, error } = await supabase.from('settings').select('key, value, description').order('key')
               if (error) return json(res, 500, { ok: false, error: error.message })
-              return json(res, 200, { ok: true, settings: data || [] })
+              // chaves de licenciamento ficam visíveis APENAS ao próprio developer
+              const lidas = level === 'developer' ? (data || []) : (data || []).filter((s: { key: string }) => !CHAVES_LICENCA.includes(s.key))
+              return json(res, 200, { ok: true, settings: lidas })
             }
 
             if (path === '/api/admin/settings' && req.method === 'PATCH') {
               const payload = await readBody(req) as { entries?: { key: string; value: string }[] }
               const entries = (payload.entries || []).filter((e) => e && e.key && typeof e.value === 'string').slice(0, 20)
               if (!entries.length) return json(res, 400, { ok: false, error: 'Envie pelo menos uma chave/valor.' })
+              // chaves de licenciamento: tentativa do super_admin (ou outro) é recusada
+              if (currentAdmin(req)?.level !== 'developer' && entries.some((e) => CHAVES_LICENCA.includes(e.key.trim())))
+                return json(res, 403, { ok: false, error: 'As chaves de licenciamento da plataforma são geridas exclusivamente pelo Developer.' })
               // chaves visíveis no site público (GET /api/settings → is_public)
               const PUBLIC_KEYS = ['whatsapp_comercial', 'whatsapp_tecnico', 'email_contacto', 'telefone_directorio', 'banner_activo', 'banner_mensagem', 'linkedin_url', 'x_url']
               for (const entry of entries) {
@@ -1402,14 +1465,15 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, { ok: true })
             }
 
-            // GUARDAS DE NÍVEL
+            // GUARDS DE NÍVEL — utilizadores: super_admin + developer (developer só gere developers)
             if (path === '/api/admin/users' || path.match(/^\/api\/admin\/users\/[a-f0-9-]+$/)) {
               const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin')
-                return json(res, 403, { ok: false, error: 'Apenas o Super Admin gere utilizadores.' })
+              if (level && !nivelPleno(level))
+                return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou o Developer gere utilizadores.' })
             }
             // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
             // O técnico tem acesso apenas de SÓ LEITURA às licenças (consulta de clientes/chaves para suporte)
+            // + módulo comercial desligado pelo developer → bloqueio geral (o developer vê sempre tudo)
             {
               const comercialLevel = currentAdmin(req)?.level
               const isCommercialPath = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/.test(path)
@@ -1418,10 +1482,60 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })
             }
 
+            // LICENCIAMENTO DA PLATAFORMA — leitura para todos os admins; escrita EXCLUSIVA do Developer
+            if (path === '/api/admin/system-license' && req.method === 'GET') {
+              if (!currentAdmin(req)) return json(res, 401, { ok: false })
+              return json(res, 200, { ok: true, ...(await licencaAtual()) })
+            }
+            if (path === '/api/admin/system-license' && req.method === 'PATCH') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) gere a licença da plataforma.' })
+              const payload = await readBody(req) as Partial<{ licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string }>
+              const boolOf = (v?: boolean) => (typeof v === 'boolean' ? (v ? 'true' : 'false') : null)
+              const descr: Record<string, string> = {
+                licenca_ativa: 'Licença da plataforma — false suspende o painel para todos excepto developers',
+                modulo_comercial: 'Módulo Comercial: pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil',
+                modulo_tecnico: 'Módulo Técnico: chamados de suporte e wiki técnica',
+                modulo_novidades: 'Módulo Novidades: blog/CMS e destaques (site + painel)',
+                licenca_expira_em: 'Data de validade da licença de manutenção (YYYY-MM-DD; vazio = sem prazo)',
+                msg_licenca: 'Mensagem exibida quando um módulo/licença está bloqueado',
+              }
+              const atual: { key: string; value: string; description: string }[] = []
+              const la = boolOf(payload.licencaAtiva); if (la) atual.push({ key: 'licenca_ativa', value: la, description: descr.licenca_ativa })
+              const mc = boolOf(payload.moduloComercial); if (mc) atual.push({ key: 'modulo_comercial', value: mc, description: descr.modulo_comercial })
+              const mt = boolOf(payload.moduloTecnico); if (mt) atual.push({ key: 'modulo_tecnico', value: mt, description: descr.modulo_tecnico })
+              const mn = boolOf(payload.moduloNovidades); if (mn) atual.push({ key: 'modulo_novidades', value: mn, description: descr.modulo_novidades })
+              if (payload.expiraEm !== undefined) atual.push({ key: 'licenca_expira_em', value: String(payload.expiraEm).slice(0, 10), description: descr.licenca_expira_em })
+              if (payload.mensagem !== undefined) atual.push({ key: 'msg_licenca', value: String(payload.mensagem).slice(0, 300), description: descr.msg_licenca })
+              for (const a of atual) {
+                const { error } = await supabase.from('settings').upsert(a, { onConflict: 'key' })
+                if (error) return json(res, 500, { ok: false, error: error.message })
+              }
+              return json(res, 200, { ok: true, ...(await licencaAtual()) })
+            }
+
+            // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API além do UI (o Developer vê sempre tudo)
+            {
+              const nivelNow = currentAdmin(req)?.level
+              if (nivelNow !== 'developer') {
+                const lic = await licencaAtual()
+                const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\//.test(path)
+                if (isComercial && !lic.moduloComercial)
+                  return json(res, 403, { ok: false, error: lic.mensagem })
+                const isTecnico = path === '/api/admin/chamados' || /^\/api\/admin\/chamados\//.test(path) || path === '/api/admin/wiki' || /^\/api\/admin\/wiki\//.test(path)
+                if (isTecnico && !lic.moduloTecnico)
+                  return json(res, 403, { ok: false, error: lic.mensagem })
+                const isNovidadeEscrita = (path === '/api/admin/blog' || /^\/api\/admin\/blog\//.test(path) || path === '/api/admin/destaques' || /^\/api\/admin\/destaques\//.test(path)) && req.method !== 'GET'
+                if (isNovidadeEscrita && !lic.moduloNovidades)
+                  return json(res, 403, { ok: false, error: lic.mensagem })
+              }
+            }
+
             // UTILIZADORES DO PAINEL — gestão restrita ao super_admin
-            const ROLES = ['super_admin', 'gestor', 'tecnico']
+            const ROLES = ['super_admin', 'gestor', 'tecnico', 'developer']
             const isSuperAdmin = currentAdmin(req)?.level !== undefined
-              ? currentAdmin(req)!.level === 'super_admin'
+              ? nivelPleno(currentAdmin(req)!.level)
               : true // tokens antigos (sem nível) = admin único = super admin
 
             // UTILIZADORES DO PAINEL (endpoint handlers)
@@ -1448,7 +1562,14 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (password.length < 8)
                 return json(res, 400, { ok: false, error: 'A password precisa de pelo menos 8 caracteres.' })
               if (!ROLES.includes(role))
-                return json(res, 400, { ok: false, error: 'Nível inválido. Use: super_admin, gestor ou tecnico.' })
+                return json(res, 400, { ok: false, error: 'Nível inválido. Use: super_admin, gestor, tecnico ou developer.' })
+
+              // bootstrap: ninguém fora do círculo developer cria contas developer
+              // EXCEPTO na fase inicial — sem nenhum developer, o super_admin cria a PRIMEIRA
+              if (role === 'developer' && currentAdmin(req)?.level !== 'developer') {
+                const { data: devs0 } = await supabase.from('admin_users').select('id').eq('role', 'developer').limit(1)
+                if (devs0 && devs0.length) return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) cria contas developer.' })
+              }
 
               const { data: existing } = await supabase.from('admin_users').select('id').eq('email', email).maybeSingle()
               if (existing) return json(res, 409, { ok: false, error: 'Já existe um utilizador com este e-mail.' })
@@ -1466,6 +1587,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             if (path.match(/^\/api\/admin\/users\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
               const id = path.split('/').pop()
               if (!isSuperAdmin) return json(res, 403, { ok: false, error: 'Apenas o Super Admin gere utilizadores.' })
+              // contas developer não são editáveis por quem não é developer (o Master Admin é intocável)
+              const { data: alvoDev } = await supabase.from('admin_users').select('role').eq('id', id).maybeSingle()
+              if (alvoDev?.role === 'developer' && currentAdmin(req)?.level !== 'developer')
+                return json(res, 403, { ok: false, error: 'A conta Developer (Master Admin) só é gerida por outra conta Developer.' })
               const payload = await readBody(req) as Partial<{ name: string; role: string; is_active: boolean; password: string }>
               const updates: Record<string, unknown> = {}
               if (payload.name !== undefined) {
@@ -1475,9 +1600,14 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               }
               if (payload.role !== undefined) {
                 if (!ROLES.includes(String(payload.role)))
-                  return json(res, 400, { ok: false, error: 'Nível inválido. Use: super_admin, gestor ou tecnico.' })
+                  return json(res, 400, { ok: false, error: 'Nível inválido. Use: super_admin, gestor, tecnico ou developer.' })
                 if (id === currentAdmin(req)!.sub)
                   return json(res, 400, { ok: false, error: 'Não pode alterar o seu próprio nível.' })
+                // garantir bootstrap: nível developer → só developers promote, embora super possa so quando nenum developer existe ainda
+                if (String(payload.role) === 'developer' && currentAdmin(req)!.level !== 'developer') {
+                  const { data: devs0 } = await supabase.from('admin_users').select('id').eq('role', 'developer').limit(1)
+                  if (devs0 && devs0.length) return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) promove contas a developer.' })
+                }
                 updates.role = String(payload.role)
               }
               if (payload.is_active !== undefined) {
@@ -1506,6 +1636,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             if (path.match(/^\/api\/admin\/users\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
               const id = path.split('/').pop()
               if (!isSuperAdmin) return json(res, 403, { ok: false, error: 'Apenas o Super Admin gere utilizadores.' })
+              // não eliminar a conta developer (só a própria conta developer o faria)
+              const { data: alvoDel } = await supabase.from('admin_users').select('role').eq('id', id).maybeSingle()
+              if (alvoDel?.role === 'developer' && currentAdmin(req)?.level !== 'developer')
+                return json(res, 403, { ok: false, error: 'A conta Developer (Master Admin) só é gerida por outra conta Developer.' })
               if (id === currentAdmin(req)!.sub)
                 return json(res, 400, { ok: false, error: 'Não pode eliminar a sua própria conta.' })
               const { error } = await supabase.from('admin_users').delete().eq('id', id)
@@ -1517,14 +1651,15 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             // GUARDAS DE NÍVEL
             if (path === '/api/admin/settings' && req.method !== 'GET') {
               const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin')
-                return json(res, 403, { ok: false, error: 'Apenas o Super Admin altera a configuração do portal.' })
+              if (level && !nivelPleno(level))
+                return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou o Developer alteram a configuração do portal.' })
             }
             if (path === '/api/admin/users' || path.match(/^\/api\/admin\/users\/[a-f0-9-]+$/)) {
               // trata nos blocos acima via isSuperAdmin
             }
             // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
             // O técnico tem acesso apenas de SÓ LEITURA às licenças (consulta de clientes/chaves para suporte)
+            // + módulo comercial desligado pelo developer → bloqueio geral (o developer vê sempre tudo)
             {
               const comercialLevel = currentAdmin(req)?.level
               const isCommercialPath = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/.test(path)
@@ -1626,14 +1761,14 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
 
             // WIKI TÉCNICA — base de conhecimento interna (só super_admin + técnico)
             if (path === '/api/admin/wiki' && req.method === 'GET') {
-              if (!['super_admin', 'tecnico'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
+              if (!['super_admin', 'tecnico', 'developer'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
               const { data, error } = await supabase.from('wiki_tecnica').select('*').order('updated_at', { ascending: false }).limit(200)
               if (error) return json(res, 500, { ok: false, error: error.message })
               return json(res, 200, data || [])
             }
 
             if (path === '/api/admin/wiki' && req.method === 'POST') {
-              if (!['super_admin', 'tecnico'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
+              if (!['super_admin', 'tecnico', 'developer'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
               const payload = await readBody(req) as { titulo?: string; software?: string; problema?: string; solucao?: string; tags?: string }
               const titulo = String(payload.titulo || '').trim()
               const problema = String(payload.problema || '').trim()
@@ -1650,7 +1785,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             }
 
             if (path.match(/^\/api\/admin\/wiki\/[a-f0-9-]+$/)) {
-              if (!['super_admin', 'tecnico'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
+              if (!['super_admin', 'tecnico', 'developer'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
               const id = path.split('/').pop()
               if (req.method === 'PATCH') {
                 const payload = await readBody(req) as { titulo?: string; software?: string; problema?: string; solucao?: string; tags?: string }
