@@ -953,6 +953,8 @@ function adminApi(): Plugin {
               const { count: ordersVer } = await supabase.from('pedidos_licencas').select('*', { count: 'exact', head: true }).eq('status', 'Em Verificação')
               const expiringLim = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
               const { count: licensesExpiringSoon } = await supabase.from('licencas_palancasoft').select('*', { count: 'exact', head: true }).eq('status', 'activa').lte('data_expiracao', expiringLim)
+              // meta mensal (Kz) definida pelo super admin — alimenta a barra de progresso dos relatórios
+              const { data: metaRow } = await supabase.from('settings').select('value').eq('key', 'meta_mensal_kz').limit(1)
 
               // o retorno adapta-se ao nível: técnicos não precisam de números comerciais
               const full = {
@@ -973,6 +975,7 @@ function adminApi(): Plugin {
                 partnersPending,
                 contacts: contactsCount,
                 contactsUnread: (contactsNew || 0) + 0,
+                metaMensal: Number((metaRow?.[0] as { value?: string } | undefined)?.value || 0) || 0,
               }
               const level = currentAdmin(req)?.level
               if (level === 'tecnico') {
@@ -1503,6 +1506,54 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               }
               if (!enviadas) return json(res, 404, { ok: false, error: 'Nenhuma subscrição activa para o seu dispositivo.' })
               return json(res, 200, { ok: true, enviadas })
+            }
+
+            // WIKI TÉCNICA — base de conhecimento interna (só super_admin + técnico)
+            if (path === '/api/admin/wiki' && req.method === 'GET') {
+              if (!['super_admin', 'tecnico'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
+              const { data, error } = await supabase.from('wiki_tecnica').select('*').order('updated_at', { ascending: false }).limit(200)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, data || [])
+            }
+
+            if (path === '/api/admin/wiki' && req.method === 'POST') {
+              if (!['super_admin', 'tecnico'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
+              const payload = await readBody(req) as { titulo?: string; software?: string; problema?: string; solucao?: string; tags?: string }
+              const titulo = String(payload.titulo || '').trim()
+              const problema = String(payload.problema || '').trim()
+              const solucao = String(payload.solucao || '').trim()
+              if (!titulo || titulo.length > 160) return json(res, 400, { ok: false, error: 'Indique um título (máx. 160 caracteres).' })
+              if (!problema || problema.length > 1500) return json(res, 400, { ok: false, error: 'Descreve o problema/sintoma (máx. 1500).' })
+              if (!solucao || solucao.length > 8000) return json(res, 400, { ok: false, error: 'Escreve a solução passo-a-passo (máx. 8000).' })
+              const autor = currentAdmin(req)?.name || currentAdmin(req)?.email || null
+              const { data, error } = await supabase.from('wiki_tecnica')
+                .insert({ titulo, software: String(payload.software || '').trim().slice(0, 120) || null, problema, solucao, tags: String(payload.tags || '').trim().slice(0, 200) || null, autor })
+                .select('*').single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 201, { ok: true, artigo: data })
+            }
+
+            if (path.match(/^\/api\/admin\/wiki\/[a-f0-9-]+$/)) {
+              if (!['super_admin', 'tecnico'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
+              const id = path.split('/').pop()
+              if (req.method === 'PATCH') {
+                const payload = await readBody(req) as { titulo?: string; software?: string; problema?: string; solucao?: string; tags?: string }
+                const update: Record<string, string> = {}
+                if (payload.titulo !== undefined) { const t = payload.titulo.trim(); if (!t || t.length > 160) return json(res, 400, { ok: false, error: 'Título inválido.' }); update.titulo = t }
+                if (payload.software !== undefined) update.software = payload.software.trim().slice(0, 120) || null
+                if (payload.problema !== undefined) { const p = payload.problema.trim(); if (!p || p.length > 1500) return json(res, 400, { ok: false, error: 'Problema inválido (máx. 1500).' }); update.problema = p }
+                if (payload.solucao !== undefined) { const s = payload.solucao.trim(); if (!s || s.length > 8000) return json(res, 400, { ok: false, error: 'Solução inválida (máx. 8000).' }); update.solucao = s }
+                if (payload.tags !== undefined) update.tags = payload.tags.trim().slice(0, 200) || null
+                if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
+                const { data, error } = await supabase.from('wiki_tecnica').update(update).eq('id', id).select('*').single()
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 200, { ok: true, artigo: data })
+              }
+              if (req.method === 'DELETE') {
+                const { error } = await supabase.from('wiki_tecnica').delete().eq('id', id)
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 200, { ok: true })
+              }
             }
 
             // MÉTRICAS DE DOWNLOADS — os eventuais últimos 30 dias (agregado)

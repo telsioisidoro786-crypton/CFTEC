@@ -755,3 +755,56 @@
 .push-banner--on strong{color:#14532d}
 .push-banner .ui-button{margin-left:auto}
 @media (max-width:640px){.push-banner .ui-button{margin-left:0;width:100%}}
+
+/* ===== KANBAN DO PIPELINE COMERCIAL (pedidos de licenca) ===== */
+.kanban-board{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;align-items:start}
+.kanban-col{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px;min-height:220px;transition:background .2s ease, border-color .2s ease}
+.kanban-col:hover{background:#f1f5f9}
+.kanban-col-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.kanban-col-head b{font-size:.66rem;letter-spacing:.02em;text-transform:uppercase;color:#475569}
+.kanban-col-head i{display:grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:20px;background:#fff;border:1px solid #e2e8f0;font:700 .62rem 'Space Grotesk',sans-serif;color:#64748b;font-style:normal}
+.kn--pendente{border-top:3px solid #f59e0b}.kn--verificacao{border-top:3px solid #3b82f6}.kn--aprovado{border-top:3px solid #16a34a}.kn--rejeitado{border-top:3px solid #ef4444}
+.kanban-col-hint{display:block;text-align:center;padding:22px 8px;color:#94a3b8;font-size:.62rem}
+.kanban-card{display:flex;flex-direction:column;gap:3px;background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:11px 12px;margin-bottom:9px;cursor:grab;box-shadow:0 1px 2px rgba(15,23,42,.05);transition:box-shadow .2s ease, transform .2s ease}
+.kanban-card:hover{box-shadow:0 8px 20px rgba(15,23,42,.1);transform:translateY(-1px)}
+.kanban-card:active{cursor:grabbing}
+.kanban-card strong{font-size:.74rem;color:#0f172a;letter-spacing:-.01em}
+.kanban-card>span{font-size:.62rem;color:#1d4ed8;font-weight:700}
+.kanban-card small{font-size:.56rem;color:#94a3b8}
+.kanban-wa{display:inline-flex;align-items:center;gap:4px;margin-top:5px;align-self:flex-start;color:#059669;font:700 .56rem 'Inter',sans-serif;text-decoration:none}
+.kanban-wa:hover{text-decoration:underline}
+@media (max-width:1100px){.kanban-board{grid-template-columns:repeat(2,1fr)}}
+@media (max-width:560px){.kanban-board{grid-template-columns:1fr}}
+/* ===== WIKI TECNICA ===== */
+.wiki-list{display:flex;flex-direction:column;gap:10px}
+.wiki-item{border:1px solid #e2e8f0;border-radius:12px;background:#fbfdff;overflow:hidden}
+.wiki-item[open]{background:#fff;border-color:#cbd5e1}
+.wiki-item summary{display:flex;align-items:center;gap:11px;padding:13px 15px;cursor:pointer;list-style:none;user-select:none}
+.wiki-item summary::-webkit-details-marker{display:none}
+.wiki-software{flex:0 0 auto;display:inline-block;padding:3px 9px;border-radius:8px;background:#eff6ff;color:#1d4ed8;font:600 .56rem 'DM Mono',monospace;letter-spacing:.06em;text-transform:uppercase;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.wiki-item summary strong{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.76rem;color:#0f172a;text-align:left}
+.wiki-item summary small{color:#94a3b8;font-size:.56rem;flex:0 0 auto}
+.wiki-open-hint{color:#94a3b8;font-style:normal;transition:transform .2s ease}
+.wiki-item[open] .wiki-open-hint{transform:rotate(90deg)}
+.wiki-body{padding:0 15px 15px;animation:wikiIn .18s ease}
+@keyframes wikiIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+.wiki-block{border:1px solid #e2e8f0;border-radius:10px;padding:11px 13px;margin-bottom:9px}
+.wiki-block span{display:block;margin-bottom:5px;color:#64748b;font:600 .54rem 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase}
+.wiki-block p{margin:0;white-space:pre-wrap;color:#334155;font-size:.7rem;line-height:1.7}
+.wiki-block--sol{background:#f0fdf4;border-color:#bbf7d0}
+.wiki-block--sol span{color:#15803d}
+.wiki-tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px}
+.wiki-tag b{display:inline-block;padding:2px 8px;border-radius:8px;background:#f1f5f9;color:#475569;font:700 .56rem 'Inter',sans-serif;cursor:pointer;transition:background .15s ease}
+.wiki-tag b:hover{background:#dbeafe;color:#1d4ed8}
+/* ===== META MENSAL (relatorios) ===== */
+.meta-strip{display:flex;align-items:center;gap:14px;padding:13px 17px;margin-bottom:18px;border:1px solid #dbeafe;border-radius:12px;background:linear-gradient(110deg,#eff6ff,#f8fafc)}
+.meta-info{display:flex;flex-direction:column;gap:2px;min-width:220px}
+.meta-info strong{font-size:.68rem;margin-bottom:0;margin-left:0;color:#0f172a;margin:0}
+.meta-info span{color:#64748b;font-size:.62rem}
+.mini-table-bar.meta-bar{height:9px;border-radius:9px;background:#e2e8f0;position:relative;overflow:hidden;display:block;width:100%}
+.mini-table-bar.meta-bar i{position:absolute;left:0;top:0;height:100%;border-radius:9px;background:linear-gradient(90deg,#3b82f6,#22d3ee);transition:width .5s ease}
+.meta-strip b{font:700 .82rem 'Space Grotesk',sans-serif;color:#1d4ed8;flex:0 0 auto}
+.meta-strip b.meta-bateu{color:#16a34a}
+.meta-strip--off{border-style:dashed;border-color:#e2e8f0;background:#f8fafc}
+.meta-strip--off span{color:#94a3b8;font-size:.66rem}
+@media (max-width:640px){.meta-strip{flex-direction:column;align-items:stretch}.meta-strip b{text-align:right}}
