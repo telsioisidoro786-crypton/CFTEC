@@ -868,9 +868,13 @@ function adminApi(): Plugin {
 
             // GUARD COMERCIAL — licenças, pedidos e parceiros são área super_admin + gestor
             // (colocado antes de qualquer handler destes paths, senão a cadeia de ifs devolve antes)
-            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path.match(/^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/)) {
-              const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin' && level !== 'gestor')
+            // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
+            // O técnico tem acesso apenas de SÓ LEITURA às licenças (consulta de clientes/chaves para suporte)
+            {
+              const comercialLevel = currentAdmin(req)?.level
+              const isCommercialPath = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/.test(path)
+              const licensesReadOnly = isCommercialPath && req.method === 'GET' && (path === '/api/admin/licenses' || /^\/api\/admin\/licenses\/[a-f0-9-]+$/.test(path))
+              if (isCommercialPath && comercialLevel === 'tecnico' && !licensesReadOnly)
                 return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })
             }
 
@@ -1102,9 +1106,13 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (level && level !== 'super_admin')
                 return json(res, 403, { ok: false, error: 'Apenas o Super Admin gere utilizadores.' })
             }
-            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path.match(/^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/)) {
-              const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin' && level !== 'gestor')
+            // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
+            // O técnico tem acesso apenas de SÓ LEITURA às licenças (consulta de clientes/chaves para suporte)
+            {
+              const comercialLevel = currentAdmin(req)?.level
+              const isCommercialPath = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/.test(path)
+              const licensesReadOnly = isCommercialPath && req.method === 'GET' && (path === '/api/admin/licenses' || /^\/api\/admin\/licenses\/[a-f0-9-]+$/.test(path))
+              if (isCommercialPath && comercialLevel === 'tecnico' && !licensesReadOnly)
                 return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })
             }
 
@@ -1213,10 +1221,60 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             if (path === '/api/admin/users' || path.match(/^\/api\/admin\/users\/[a-f0-9-]+$/)) {
               // trata nos blocos acima via isSuperAdmin
             }
-            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path.match(/^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/)) {
-              const level = currentAdmin(req)?.level
-              if (level && level !== 'super_admin' && level !== 'gestor')
+            // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
+            // O técnico tem acesso apenas de SÓ LEITURA às licenças (consulta de clientes/chaves para suporte)
+            {
+              const comercialLevel = currentAdmin(req)?.level
+              const isCommercialPath = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/.test(path)
+              const licensesReadOnly = isCommercialPath && req.method === 'GET' && (path === '/api/admin/licenses' || /^\/api\/admin\/licenses\/[a-f0-9-]+$/.test(path))
+              if (isCommercialPath && comercialLevel === 'tecnico' && !licensesReadOnly)
                 return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })
+            }
+
+            // CHAMADOS DE SUPORTE — helpdesk do técnico (todos os níveis de admin)
+            if (path === '/api/admin/chamados' && req.method === 'GET') {
+              const { data, error } = await supabase.from('chamados_suporte').select('*').order('created_at', { ascending: false }).limit(120)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, data || [])
+            }
+
+            if (path === '/api/admin/chamados' && req.method === 'POST') {
+              const payload = await readBody(req) as { cliente?: string; nif?: string; software?: string; problema?: string; estado?: string; prioridade?: string }
+              const cliente = String(payload.cliente || '').trim()
+              const problema = String(payload.problema || '').trim()
+              if (!cliente || cliente.length > 150) return json(res, 400, { ok: false, error: 'Indique o cliente/empresa.' })
+              if (!problema || problema.length > 1200) return json(res, 400, { ok: false, error: 'Descreve o problema entregado.' })
+              const ESTADOS = ['Pendente', 'Em Resolução', 'Resolvido']
+              const PRIOS = ['Baixa', 'Média', 'Crítica']
+              const estado = ESTADOS.includes(payload.estado || '') ? payload.estado! : 'Pendente'
+              const prioridade = PRIOS.includes(payload.prioridade || '') ? payload.prioridade! : 'Média'
+              const nif = String(payload.nif || '').trim().slice(0, 30) || null
+              const software = String(payload.software || '').trim().slice(0, 120) || null
+              const { data, error } = await supabase.from('chamados_suporte')
+                .insert({ cliente, nif, software, problema, estado, prioridade })
+                .select('*').single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 201, { ok: true, chamado: data })
+            }
+
+            if (path.match(/^\/api\/admin\/chamados\/[a-f0-9-]+$/)) {
+              const id = path.split('/').pop()
+              if (req.method === 'PATCH') {
+                const payload = await readBody(req) as { estado?: string; prioridade?: string; resolucao?: string }
+                const update: Record<string, string> = {}
+                if (payload.estado && ['Pendente', 'Em Resolução', 'Resolvido'].includes(payload.estado)) update.estado = payload.estado
+                if (payload.prioridade && ['Baixa', 'Média', 'Crítica'].includes(payload.prioridade)) update.prioridade = payload.prioridade
+                if (typeof payload.resolucao === 'string') update.resolucao = payload.resolucao.trim().slice(0, 1200) || null
+                if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
+                const { data, error } = await supabase.from('chamados_suporte').update(update).eq('id', id).select('*').single()
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 200, { ok: true, chamado: data })
+              }
+              if (req.method === 'DELETE') {
+                const { error } = await supabase.from('chamados_suporte').delete().eq('id', id)
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 200, { ok: true })
+              }
             }
 
             // MÉTRICAS DE DOWNLOADS — os eventuais últimos 30 dias (agregado)
