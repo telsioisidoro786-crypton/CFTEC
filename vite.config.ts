@@ -804,28 +804,33 @@ function adminApi(): Plugin {
               const expiringLim = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
               const { count: licensesExpiringSoon } = await supabase.from('licencas_palancasoft').select('*', { count: 'exact', head: true }).eq('status', 'activa').lte('data_expiracao', expiringLim)
 
-              return json(res, 200, {
-                ok: true,
-                summary: {
-                  services: servicesCount,
-                  servicesActive,
-                  media: mediaCount,
-                  softwares: softwareCount,
-                  software: softwareCount,
-                  softwaresActive: softwareActive,
-                  licenses: licensesCount,
-                  licensesActivas: licensesActivas,
-                  licensesExpiring: (licensesExpiringSoon || 0) + 0,
-                  orders: ordersCount,
-                  ordersPending,
-                  ordersApproved,
-                  ordersVerificacao: ordersVer || 0,
-                  partners: partnersCount,
-                  partnersPending,
-                  contacts: contactsCount,
-                  contactsUnread: (contactsNew || 0) + 0,
-                }
-              })
+              // o retorno adapta-se ao nível: técnicos não precisam de números comerciais
+              const full = {
+                services: servicesCount,
+                servicesActive,
+                media: mediaCount,
+                softwares: softwareCount,
+                software: softwareCount,
+                softwaresActive: softwareActive,
+                licenses: licensesCount,
+                licensesActivas: licensesActivas,
+                licensesExpiring: (licensesExpiringSoon || 0) + 0,
+                orders: ordersCount,
+                ordersPending,
+                ordersApproved,
+                ordersVerificacao: ordersVer || 0,
+                partners: partnersCount,
+                partnersPending,
+                contacts: contactsCount,
+                contactsUnread: (contactsNew || 0) + 0,
+              }
+              const level = currentAdmin(req)?.level
+              if (level === 'tecnico') {
+                const { orders, ordersPending, ordersApproved, ordersVerificacao, partners, partnersPending, licenses, licensesActivas, licensesExpiring, ...tecnico } = full
+                void orders; void ordersPending; void ordersApproved; void ordersVerificacao; void partners; void partnersPending; void licenses; void licensesActivas; void licensesExpiring
+                return json(res, 200, { ok: true, summary: tecnico })
+              }
+              return json(res, 200, { ok: true, summary: full })
             }
             
             if (path === '/api/admin/contacts' && req.method === 'GET') {
@@ -859,6 +864,14 @@ function adminApi(): Plugin {
               const { error } = await supabase.from('contacts').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
               return json(res, 200, { ok: true })
+            }
+
+            // GUARD COMERCIAL — licenças, pedidos e parceiros são área super_admin + gestor
+            // (colocado antes de qualquer handler destes paths, senão a cadeia de ifs devolve antes)
+            if (path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path.match(/^\/api\/admin\/(licenses|partners|license-orders)\/[a-f0-9-]+$/)) {
+              const level = currentAdmin(req)?.level
+              if (level && level !== 'super_admin' && level !== 'gestor')
+                return json(res, 403, { ok: false, error: 'Sem permissão para esta área (apenas Super Admin e Gestor Comercial).' })
             }
 
             // PARCEIROS — candidaturas e carteira de sub-parceiros (revenda Negomil)
@@ -1058,6 +1071,9 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 403, { ok: false, error: 'Apenas o Super Admin altera a configuração do portal.' })
             }
             if (path === '/api/admin/settings' && req.method === 'GET') {
+              // IBAN/notify/etc. são sensíveis — apenas o Super Admin lê a configuração
+              const level = currentAdmin(req)?.level
+              if (level && level !== 'super_admin') return json(res, 403, { ok: false, error: 'Apenas o Super Admin vê a configuração do portal.' })
               const { data, error } = await supabase.from('settings').select('key, value, description').order('key')
               if (error) return json(res, 500, { ok: false, error: error.message })
               return json(res, 200, { ok: true, settings: data || [] })
