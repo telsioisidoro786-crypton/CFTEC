@@ -1,0 +1,19 @@
+{
+  "name": "CFTEC — Software de Gestão",
+  "short_name": "CFTEC",
+  "description": "Site e painel de administração da CFTEC — PalancaSoft, Negomil, suporte técnico e gestão de licenças.",
+  "id": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0e1726",
+  "theme_color": "#0e1726",
+  "lang": "pt-PT",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "/cftec-icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/cftec-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/cftec-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
