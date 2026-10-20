@@ -655,6 +655,40 @@ function adminApi(): Plugin {
             return json(res, 200, { ok: true, destaques: data || [] })
           }
 
+          // BLOG PÚBLICO — artigos publicados (sem auth)
+          if (path === '/api/blog' && req.method === 'GET') {
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const { data, error } = await supabase
+              .from('blog_posts')
+              .select('id, slug, title, excerpt, cover_url, category, author, published_at')
+              .eq('is_published', true)
+              .order('published_at', { ascending: false })
+              .limit(30)
+            if (error) {
+              if (String(error.message).includes('blog_posts')) return json(res, 200, { ok: true, posts: [] })
+              return json(res, 500, { ok: false, error: error.message })
+            }
+            return json(res, 200, { ok: true, posts: data || [] })
+          }
+
+          // BLOG PÚBLICO — artigo completo por slug
+          if (path.match(/^\/api\/blog\/([a-z0-9-]+)$/) && req.method === 'GET') {
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const slug = decodeURIComponent(path.split('/').pop() || '')
+            const { data, error } = await supabase
+              .from('blog_posts')
+              .select('id, slug, title, excerpt, content, cover_url, category, author, published_at')
+              .eq('slug', slug)
+              .eq('is_published', true)
+              .limit(1)
+            if (error) {
+              if (String(error.message).includes('blog_posts')) return json(res, 404, { ok: false, error: 'Artigo não encontrado.' })
+              return json(res, 500, { ok: false, error: error.message })
+            }
+            if (!data || !data.length) return json(res, 404, { ok: false, error: 'Artigo não encontrado.' })
+            return json(res, 200, { ok: true, post: data[0] })
+          }
+
           if (path.startsWith('/api/admin/')) {
             if (!currentAdmin(req)) return json(res, 401, { ok: false, error: 'Sessão de administrador inválida ou expirada.' })
             
@@ -1378,6 +1412,94 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             if (path.match(/^\/api\/admin\/destaques\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
               const id = path.split('/').pop()
               const { error } = await supabase.from('novidades_destaques').delete().eq('id', id)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true })
+            }
+
+            // BLOG — CRUD (mesmos níveis das mídias/serviços: qualquer admin)
+            if (path === '/api/admin/blog' && req.method === 'GET') {
+              const { data, error } = await supabase
+                .from('blog_posts')
+                .select('id, created_at, updated_at, slug, title, excerpt, cover_url, category, author, is_published, published_at')
+                .order('created_at', { ascending: false })
+              if (error) {
+                if (String(error.message).includes('blog_posts')) return json(res, 200, [])
+                return json(res, 500, { ok: false, error: error.message })
+              }
+              return json(res, 200, data || [])
+            }
+
+            if (path === '/api/admin/blog' && req.method === 'POST') {
+              const payload = await readBody(req) as Partial<{ title: string; excerpt: string; content: string; cover_url: string; category: string; author: string; is_published: boolean }>
+              const title = String(payload.title || '').trim()
+              const excerpt = String(payload.excerpt || '').trim()
+              const content = String(payload.content || '').trim()
+              if (!title || title.length > 200) return json(res, 400, { ok: false, error: 'O título é obrigatório (máx. 200 caracteres).' })
+              if (!excerpt || excerpt.length > 300) return json(res, 400, { ok: false, error: 'O resumo é obrigatório (máx. 300 caracteres).' })
+              if (!content || content.length > 40000) return json(res, 400, { ok: false, error: 'O conteúdo é obrigatório (máx. 40.000 caracteres).' })
+              // slug único gerado do título
+              const base = title.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 80) || 'artigo'
+              let slug = base
+              for (let n = 2; n <= 50; n++) {
+                const { data: dupe } = await supabase.from('blog_posts').select('id').eq('slug', slug).maybeSingle()
+                if (!dupe) break
+                slug = `${base}-${n}`
+              }
+              const isPub = payload.is_published !== false
+              const { data, error } = await supabase
+                .from('blog_posts')
+                .insert({
+                  slug,
+                  title: title.slice(0, 200),
+                  excerpt: excerpt.slice(0, 300),
+                  content: content.slice(0, 40000),
+                  cover_url: String(payload.cover_url || '').trim().slice(0, 500) || null,
+                  category: String(payload.category || '').trim().slice(0, 60) || null,
+                  author: String(payload.author || '').trim().slice(0, 80) || 'Equipa CFTEC',
+                  is_published: isPub,
+                  published_at: isPub ? new Date().toISOString() : null,
+                  updated_at: new Date().toISOString(),
+                })
+                .select('id, created_at, updated_at, slug, title, excerpt, cover_url, category, author, is_published, published_at')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 201, { ok: true, post: data })
+            }
+
+            if (path.match(/^\/api\/admin\/blog\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
+              const id = path.split('/').pop()
+              const payload = await readBody(req) as Partial<{ title: string; excerpt: string; content: string; cover_url: string; category: string; author: string; is_published: boolean }>
+              const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+              if (payload.title !== undefined) { const v = String(payload.title).trim(); if (!v || v.length > 200) return json(res, 400, { ok: false, error: 'Título inválido.' }); updates.title = v }
+              if (payload.excerpt !== undefined) { const v = String(payload.excerpt).trim(); if (!v || v.length > 300) return json(res, 400, { ok: false, error: 'Resumo inválido.' }); updates.excerpt = v }
+              if (payload.content !== undefined) { const v = String(payload.content).trim(); if (!v || v.length > 40000) return json(res, 400, { ok: false, error: 'Conteúdo inválido.' }); updates.content = v }
+              if (payload.cover_url !== undefined) updates.cover_url = String(payload.cover_url).trim().slice(0, 500) || null
+              if (payload.category !== undefined) updates.category = String(payload.category).trim().slice(0, 60) || null
+              if (payload.author !== undefined) updates.author = String(payload.author).trim().slice(0, 80) || 'Equipa CFTEC'
+              if (payload.is_published !== undefined) {
+                updates.is_published = !!payload.is_published
+                if (updates.is_published) {
+                  // publicar pela primeira vez → inicia published_at; re-publicar não muda a data
+                  const { data: cur } = await supabase.from('blog_posts').select('published_at').eq('id', id).limit(1)
+                  if (!cur || !cur.length || !cur[0]?.published_at) updates.published_at = new Date().toISOString()
+                } else {
+                  updates.published_at = null
+                }
+              }
+              if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
+              const { data, error } = await supabase
+                .from('blog_posts')
+                .update(updates)
+                .eq('id', id)
+                .select('id, created_at, updated_at, slug, title, excerpt, cover_url, category, author, is_published, published_at')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true, post: data })
+            }
+
+            if (path.match(/^\/api\/admin\/blog\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
+              const id = path.split('/').pop()
+              const { error } = await supabase.from('blog_posts').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
               return json(res, 200, { ok: true })
             }

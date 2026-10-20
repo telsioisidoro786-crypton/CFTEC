@@ -76,8 +76,10 @@ const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
   UsersRound: UsersRound as any,
 }
 
-type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'destaques' | 'parceiros' | 'contactos' | 'settings'
+type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'destaques' | 'blog' | 'parceiros' | 'contactos' | 'settings'
 type Destaque = { id: string; created_at: string; titulo: string; descricao: string; imagem_url: string; link_botao: string | null; texto_botao: string | null; ativo: boolean; ordem: number }
+type BlogPost = { id: string; created_at: string; updated_at: string; slug: string; title: string; excerpt: string; cover_url: string | null; category: string | null; author: string | null; is_published: boolean; published_at: string | null }
+const emptyBlogForm = { title: '', excerpt: '', content: '', category: '', author: 'Equipa CFTEC', isPublished: true }
 const emptyDestaqueForm = { titulo: '', descricao: '', linkBotao: '', textoBotao: 'Saber Mais', ordem: '1', ativo: true }
 
 type Summary = {
@@ -136,6 +138,7 @@ const navItems: { id: AdminSection; label: string; icon: typeof LayoutDashboard;
   { id: 'software', label: 'Softwares & Downloads', icon: Package, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'licencas', label: 'Licenças PalancaSoft', icon: KeyRound, levels: ['super_admin', 'gestor'] },
   { id: 'pedidos', label: 'Pedidos de Licença', icon: ShoppingCart, levels: ['super_admin', 'gestor'] },
+  { id: 'blog', label: 'Blog / CMS', icon: FileText, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'destaques', label: 'Novidades & Destaques', icon: Sparkles, levels: ['super_admin', 'gestor', 'tecnico'] },
   { id: 'parceiros', label: 'Revenda Negomil', icon: Network, levels: ['super_admin', 'gestor'] },
   { id: 'contactos', label: 'Contactos', icon: UsersRound, levels: ['super_admin', 'gestor', 'tecnico'] },
@@ -287,6 +290,12 @@ export default function AdminDashboard() {
   const [showDestaqueForm, setShowDestaqueForm] = useState(false)
   const [deletingDestaqueId, setDeletingDestaqueId] = useState<string | null>(null)
   const [savingDestaque, setSavingDestaque] = useState(false)
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([])
+  const [blogForm, setBlogForm] = useState({ ...emptyBlogForm, cover: null as File | null, coverNome: '' })
+  const [editingBlog, setEditingBlog] = useState<BlogPost | null>(null)
+  const [showBlogForm, setShowBlogForm] = useState(false)
+  const [deletingBlogId, setDeletingBlogId] = useState<string | null>(null)
+  const [savingBlog, setSavingBlog] = useState(false)
 
   useEffect(() => {
     installSessionInterceptor()
@@ -313,7 +322,7 @@ export default function AdminDashboard() {
     if (authStatus !== 'authenticated') return
     
     try {
-      const [summaryRes, contactsRes, softwareRes, servicesRes, mediaRes, healthRes, licensesRes, partnersRes, downloadsRes, settingsRes, usersRes, ordersRes, destaquesRes] = await Promise.all([
+      const [summaryRes, contactsRes, softwareRes, servicesRes, mediaRes, healthRes, licensesRes, partnersRes, downloadsRes, settingsRes, usersRes, ordersRes, destaquesRes, blogRes] = await Promise.all([
         fetch('/api/admin/summary', { credentials: 'include' }),
         fetch('/api/admin/contacts', { credentials: 'include' }),
         fetch('/api/admin/software', { credentials: 'include' }),
@@ -327,9 +336,10 @@ export default function AdminDashboard() {
         fetch('/api/admin/users', { credentials: 'include' }),
         fetch('/api/admin/license-orders', { credentials: 'include' }),
         fetch('/api/admin/destaques', { credentials: 'include' }),
+        fetch('/api/admin/blog', { credentials: 'include' }),
       ])
 
-      const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData, ordersData, destaquesData] = await Promise.all([
+      const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData, ordersData, destaquesData, blogData] = await Promise.all([
         summaryRes.ok ? summaryRes.json() : fallbackSummary,
         contactsRes.ok ? contactsRes.json() : fallbackContacts,
         softwareRes.ok ? softwareRes.json() : fallbackSoftware,
@@ -343,6 +353,7 @@ export default function AdminDashboard() {
         usersRes.ok ? usersRes.json() : [],
         ordersRes.ok ? ordersRes.json() : [],
         destaquesRes.ok ? destaquesRes.json() : [],
+        blogRes.ok ? blogRes.json() : [],
       ])
       
       const resolvedSoftware = Array.isArray(softwareData) && softwareData.length > 0 ? softwareData : fallbackSoftware
@@ -362,6 +373,7 @@ export default function AdminDashboard() {
       const ordersNow = Array.isArray(ordersData) ? ordersData : []
       knownOrderIdsRef.current = ordersNow.map(o => o.id)
       setDestaques(Array.isArray(destaquesData) ? destaquesData : [])
+      setBlogPosts(Array.isArray(blogData) ? blogData : [])
       if (settingsData && settingsData.ok) {
         const map: Record<string, string> = {}
         for (const entry of settingsData.settings || []) map[entry.key] = entry.value
@@ -990,7 +1002,7 @@ export default function AdminDashboard() {
   }, [adminUser])
 
   // Modais — ESC fecha o do topo; backdrop desactiva o scroll da página
-  const anyModalOpen = !!(notifOpen || (showServiceForm !== false) || showUserForm || pwResetUser || showLicenseForm || showSoftwareForm || showDestaqueForm || deletingServiceId || deletingOrderId || deletingContactId || deletingSoftwareId || deletingLicenseId || deletingPartnerId || deletingUserId || deletingDestaqueId)
+  const anyModalOpen = !!(notifOpen || (showServiceForm !== false) || showUserForm || pwResetUser || showLicenseForm || showSoftwareForm || showDestaqueForm || showBlogForm || deletingServiceId || deletingOrderId || deletingContactId || deletingSoftwareId || deletingLicenseId || deletingPartnerId || deletingUserId || deletingDestaqueId || deletingBlogId)
   useEffect(() => {
     document.body.style.overflow = anyModalOpen ? 'hidden' : ''
     return () => { document.body.style.overflow = '' }
@@ -1006,17 +1018,123 @@ export default function AdminDashboard() {
       else if (deletingPartnerId) setDeletingPartnerId(null)
       else if (deletingUserId) setDeletingUserId(null)
       else if (deletingDestaqueId) setDeletingDestaqueId(null)
+      else if (deletingBlogId) setDeletingBlogId(null)
       else if (notifOpen) setNotifOpen(false)
       else if (showServiceForm !== false) setShowServiceForm(false)
       else if (showUserForm) setShowUserForm(false)
       else if (pwResetUser) setPwResetUser(null)
       else if (showLicenseForm) setShowLicenseForm(false)
       else if (showDestaqueForm) setShowDestaqueForm(false)
+      else if (showBlogForm) setShowBlogForm(false)
       else if (showSoftwareForm) setShowSoftwareForm(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [deletingServiceId, deletingOrderId, deletingContactId, deletingSoftwareId, deletingLicenseId, deletingPartnerId, deletingUserId, deletingDestaqueId, notifOpen, showServiceForm, showUserForm, pwResetUser, showLicenseForm, showDestaqueForm, showSoftwareForm])
+  }, [deletingServiceId, deletingOrderId, deletingContactId, deletingSoftwareId, deletingLicenseId, deletingPartnerId, deletingUserId, deletingDestaqueId, deletingBlogId, notifOpen, showServiceForm, showUserForm, pwResetUser, showLicenseForm, showDestaqueForm, showBlogForm, showSoftwareForm])
+
+  // Blog / CMS
+  const openBlogForm = (post: BlogPost | null) => {
+    setEditingBlog(post)
+    setBlogForm(post ? {
+      title: post.title, excerpt: post.excerpt, content: '',
+      category: post.category || '', author: post.author || 'Equipa CFTEC', isPublished: post.is_published,
+      cover: null, coverNome: '',
+    } : { ...emptyBlogForm, cover: null, coverNome: '' })
+    setShowBlogForm(true)
+  }
+
+  const selectBlogCover = (file: File | null) => {
+    if (!file) { setBlogForm(f => ({ ...f, cover: null, coverNome: '' })); return }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { notify('Formato inválido — use JPEG, PNG ou WebP'); return }
+    if (file.size > 10 * 1024 * 1024) { notify('Imagem excede 10 MB'); return }
+    setBlogForm(f => ({ ...f, cover: file, coverNome: file.name }))
+  }
+
+  const saveBlogPost = async () => {
+    const form = document.getElementById('modal-blog') as HTMLDivElement | null
+    if (!editingBlog) {
+      const content = (form?.querySelector('textarea[name="blog-content"]') as HTMLTextAreaElement | null)?.value || ''
+      blogForm.content = content
+    }
+    if (!blogForm.title.trim()) { notify('Escreva o título do artigo'); return }
+    if (!editingBlog && (!blogForm.excerpt.trim() || !blogForm.content.trim())) { notify('Resumo e conteúdo são obrigatórios no novo artigo'); return }
+    setSavingBlog(true)
+    try {
+      let coverUrl = editingBlog?.cover_url || ''
+      if (blogForm.cover) {
+        const fd = new FormData()
+        fd.append('file', blogForm.cover)
+        const mediaRes = await fetch('/api/admin/media', { method: 'POST', credentials: 'include', body: fd })
+        const mediaBody = await mediaRes.json().catch(() => ({}))
+        if (!mediaRes.ok) throw new Error(mediaBody.error || 'Falha no upload da capa')
+        coverUrl = mediaBody.media?.file_path || ''
+        if (!coverUrl) throw new Error('O upload não devolveu o URL da capa')
+      }
+      if (editingBlog) {
+        const response = await fetch(`/api/admin/blog/${editingBlog.id}`, {
+          method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: blogForm.title.trim(), excerpt: blogForm.excerpt.trim(),
+            category: blogForm.category.trim(), author: blogForm.author.trim(), is_published: blogForm.isPublished,
+            ...(coverUrl ? { cover_url: coverUrl } : {}),
+          }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || 'Falha ao actualizar o artigo')
+        setBlogPosts(prev => prev.map(p => p.id === editingBlog.id ? { ...p, ...body.post } : p))
+        notify(body.post.is_published ? 'Artigo actualizado — publicado no site' : 'Artigo actualizado (rascunho)')
+      } else {
+        const response = await fetch('/api/admin/blog', {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: blogForm.title.trim(), excerpt: blogForm.excerpt.trim(), content: blogForm.content,
+            category: blogForm.category.trim(), author: blogForm.author.trim(), is_published: blogForm.isPublished,
+            cover_url: coverUrl || undefined,
+          }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || 'Falha ao criar o artigo')
+        setBlogPosts(prev => [body.post, ...prev])
+        notify(body.post.is_published ? 'Artigo publicado no site' : 'Rascunho guardado')
+      }
+      setShowBlogForm(false)
+      setEditingBlog(null)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao guardar o artigo')
+    } finally {
+      setSavingBlog(false)
+    }
+  }
+
+  const toggleBlogPublish = async (post: BlogPost) => {
+    try {
+      const response = await fetch(`/api/admin/blog/${post.id}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_published: !post.is_published }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao publicar o artigo')
+      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, ...body.post } : p))
+      notify(body.post.is_published ? 'Artigo publicado — visível no site' : 'Artigo despublicado (apenas rascunho no painel)')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao alternar publicação')
+    }
+  }
+
+  const handleBlogDelete = async () => {
+    if (!deletingBlogId) return
+    try {
+      const response = await fetch(`/api/admin/blog/${deletingBlogId}`, { method: 'DELETE', credentials: 'include' })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao eliminar o artigo')
+      setBlogPosts(prev => prev.filter(p => p.id !== deletingBlogId))
+      notify('Artigo eliminado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao eliminar o artigo')
+    } finally {
+      setDeletingBlogId(null)
+    }
+  }
 
   // Destaques & Novidades (carrossel do site)
   const openDestaqueForm = (item: Destaque | null) => {
@@ -1650,6 +1768,8 @@ export default function AdminDashboard() {
 
         {activeSection === 'media' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">ASSETS DIGITAIS</span><h2>Gestão de mídias</h2></div><span className="admin-muted">{media.length} ficheiros no storage</span></div><label className={`upload-zone ${dragActive ? 'upload-zone--active' : ''}`} onDragOver={(event) => { event.preventDefault(); setDragActive(true) }} onDragLeave={() => setDragActive(false)} onDrop={(event) => { event.preventDefault(); handleFiles(event.dataTransfer.files) }}><input type="file" accept="image/*" multiple onChange={(event) => handleFiles(event.target.files)} /><span className="upload-cloud"><UploadCloud size={28} /></span><strong>Arraste imagens para aqui</strong><span>ou clique para seleccionar ficheiros · PNG, JPG, WebP até 10 MB</span><Button type="button" variant="outline" size="sm"><FolderOpen size={14} /> Seleccionar ficheiros</Button></label>{visibleMedia.length === 0 && <div className="admin-empty-state"><FileImage size={48} /><h3>{media.length ? 'Sem correspondências' : 'Nenhuma mídia ainda'}</h3><p>{media.length ? `Nenhum ficheiro corresponde a "${search}".` : 'Faça upload da primeira imagem para começar a galeria.'}</p></div>}<div className="media-preview-grid">{visibleMedia.map((item) => <MediaTile key={item.id} item={item} onDelete={handleMediaDelete} notify={notify} />)}</div></Card>}
 
+        {activeSection === 'blog' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">BLOG / CMS</span><h2>Artigos & guias</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><a className="settings-site-link" href="/#blog" target="_blank" rel="noreferrer noopener">Ver no site <ChevronRight size={14} /></a><Button size="sm" onClick={() => openBlogForm(null)}><Plus size={15} /> Novo artigo</Button></div></div><p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Publicados aparecem em <b>#blog</b> no site; rascunhos ficam só no painel. No conteúdo use <b>## título</b>, <b>**negrito**</b>, <b>*itálico*</b>, listas com <b>-</b> e links <b>[texto](url)</b>.</p>{blogPosts.length === 0 ? <div className="admin-empty-state"><FileText size={48} /><h3>Sem artigos ainda</h3><p>Crie o primeiro artigo — guias de faturação AGE, novidades AGT, casos de clientes — e publique com um clique.</p><Button size="lg" onClick={() => openBlogForm(null)}><Plus size={16} /> Novo artigo</Button></div> : <div className="blog-admin-list">{blogPosts.map(post => <div className="blog-admin-row" key={post.id}>{post.cover_url ? <img className="blog-admin-cover" src={post.cover_url} alt="" loading="lazy" /> : <span className="blog-admin-cover blog-admin-cover--ph"><FileText size={20} /></span>}<div className="blog-admin-main"><div className="blog-admin-titlewrap"><strong>{post.title}</strong>{post.is_published ? <span className="tl-badge tl-badge-ordem">Publicado</span> : <span className="tl-badge tl-badge-servico">Rascunho</span>}{post.category && <span className="tl-badge tl-badge-media">{post.category}</span>}</div><span>{post.excerpt}</span><small>{post.published_at ? new Date(post.published_at).toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' }) : '— sem data'} · {post.author || 'Equipa CFTEC'}</small></div><div className="blog-admin-ctrl"><button className="icon-btn" title={post.is_published ? 'Despublicar' : 'Publicar'} onClick={() => toggleBlogPublish(post)}><Power size={15} /></button><button className="icon-btn" title="Editar" onClick={() => openBlogForm(post)}><Pencil size={16} /></button><button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingBlogId(post.id)}><Trash2 size={16} /></button></div></div>)}</div>}</Card>}
+
         {activeSection === 'destaques' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CARROSSEL DO SITE</span><h2>Novidades & destaques</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><a className="settings-site-link" href="/" target="_blank" rel="noreferrer noopener">Ver site <ChevronRight size={14} /></a><Button size="sm" onClick={() => openDestaqueForm(null)}><Plus size={15} /> Novo destaque</Button></div></div><p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Aparecem em fundo escuro logo abaixo da hero no site. Com <b>1 destaque</b> mostra um banner imóvel; com <b>2 ou mais</b> entra o carrossel automático (5 s, setas e pontos). Ordenar = ordem de exibição.</p>{destaques.length === 0 ? <div className="admin-empty-state"><Sparkles size={48} /><h3>Sem destaques ainda</h3><p>Crie o primeiro anúncio — lançamento de software, promoção ou campanha — e o site mostra no carrossel.</p><Button size="lg" onClick={() => openDestaqueForm(null)}><Plus size={16} /> Novo destaque</Button></div> : <div className="destaques-list">{[...destaques].sort((a, b) => a.ordem - b.ordem || +new Date(b.created_at) - +new Date(a.created_at)).map((item) => <div className="destaque-row" key={item.id}><img className="destaque-thumb" src={item.imagem_url} alt={item.titulo} loading="lazy" /><div className="destaque-main"><strong>{item.titulo}</strong><span>{item.descricao.slice(0, 90)}{item.descricao.length > 90 ? '…' : ''}</span><small>#{item.ordem} · {item.link_botao ? item.link_botao : 'sem link'}{item.link_botao && item.texto_botao ? ` (“${item.texto_botao}”)` : ''}</small></div><div className="destaque-ctrl"><button className="icon-btn" title="Subir na ordem" disabled={item.ordem <= 1} onClick={() => moveDestaque(item, 'up')}><ArrowRight size={15} style={{ transform: 'rotate(-135deg)' }} /></button><button className="icon-btn" title="Descer na ordem" onClick={() => moveDestaque(item, 'down')}><ArrowRight size={15} style={{ transform: 'rotate(45deg)' }} /></button><label className="destaque-toggle"><input type="checkbox" checked={item.ativo} onChange={() => toggleDestaque(item)} /><i /><span>{item.ativo ? 'Activo' : 'Inactivo'}</span></label><button className="icon-btn" title="Editar" onClick={() => openDestaqueForm(item)}><Pencil size={16} /></button><button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingDestaqueId(item.id)}><Trash2 size={16} /></button></div></div>)}</div>}</Card>}
 
         {activeSection === 'software' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CATÁLOGO DIGITAL</span><h2>Softwares & downloads</h2></div><Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button></div>{downloadMetrics && <div className="dl-metrics"><div className="dl-metrics-head"><div><span className="admin-panel-kicker">MÉTRICAS · ÚLTIMOS 30 DIAS</span><strong>{downloadMetrics.total30} download(s) registados</strong></div><small>{downloadMetrics.topo.length ? downloadMetrics.topo.map(t => `${t.name}: ${t.count}`).join(' · ') : 'Sem downloads no período — os registos começam quando o site usa o link de download real.'}</small></div><div className="dl-bars">{dlDays.map((day) => <div key={day.d} className="dl-bar" title={`${day.d}: ${day.n} download(s)`}><i style={{ height: `${Math.max(4, Math.round((day.n / dlMax) * 100))}%` }} /><span>{day.d.slice(8)}</span></div>)}</div></div>}{visibleSoftware.length === 0 ? <div className="admin-empty-state"><Package size={48} /><h3>Nenhum software cadastrado</h3><p>Adicione o primeiro software ao catálogo para começar.</p><Button size="lg" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={16} /> Adicionar software</Button></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Software</th><th>Versão</th><th>Tamanho</th><th>Downloads</th><th>Estado</th><th>Actualizado</th><th /></tr></thead><tbody>{visibleSoftware.map((item) => <tr key={item.id}><td><span className="software-symbol"><Package size={15} /></span><strong>{item.name}</strong>{item.category && <span className="software-tag">{item.category}</span>}</td><td><span className="version-pill">{item.version}</span></td><td>{item.file_size}</td><td>{item.downloads_count}</td><td><span className={`active-pill ${item.is_active === false ? 'inactive' : ''}`}>{item.is_active === false ? 'Inactivo' : 'Activo'}</span></td><td>{formatDate(item.created_at)}</td><td className="row-actions"><button className="icon-btn" title="Editar" onClick={() => openEditSoftware(item)}><Pencil size={15} /></button><button className="icon-btn" title={item.is_active === false ? 'Activar' : 'Desactivar'} onClick={() => handleToggleSoftware(item)}><Power size={15} /></button><button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingSoftwareId(item.id)}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>}</Card>}
@@ -1689,6 +1809,22 @@ export default function AdminDashboard() {
       onClose: () => setShowSoftwareForm(false),
       onSubmit: handleSoftwareSubmit,
     })}
+
+    {showBlogForm && <div className="admin-modal-backdrop" onMouseDown={() => setShowBlogForm(false)}><div className="admin-modal admin-modal--lg" id="modal-blog" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">{editingBlog ? 'EDITAR ARTIGO' : 'NOVO ARTIGO'}</span><h2>{editingBlog ? `Editar "${editingBlog.title.slice(0, 24)}${editingBlog.title.length > 24 ? '…' : ''}"` : 'Novo artigo para o blog'}</h2></div><button onClick={() => setShowBlogForm(false)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><form className="admin-modal-body" onSubmit={(e) => { e.preventDefault(); saveBlogPost() }}>
+              <fieldset className="admin-form-section"><legend>Conteúdo</legend><div className="admin-form-grid" style={{ gridTemplateColumns: '1fr' }}>
+              <label>Título<input value={blogForm.title} onChange={(e) => setBlogForm(f => ({ ...f, title: e.target.value }))} placeholder="Ex.: Negomil — como cumprir as novas regras do ficheiro SAO" required maxLength={200} autoFocus /></label>
+              <label>Resumo (excerto)<textarea value={blogForm.excerpt} onChange={(e) => setBlogForm(f => ({ ...f, excerpt: e.target.value }))} placeholder="1–2 frases resumindo o artigo, aparece nos cards do site..." required maxLength={300} rows={2} /></label>
+              {!editingBlog && <label>Conteúdo<textarea name="blog-content" placeholder={'## Subtítulo\nParágrafo introdutório...\n\n## Segunda secção\nCom **negrito**, *itálico*, listas:\n- passo 1\n- passo 2\n\nE links [como este](https://agt.gov.ao).'} rows={10} required maxLength={40000} /></label>}
+              </div></fieldset>
+              <fieldset className="admin-form-section"><legend>Capa & metadados</legend><div className="admin-form-grid" style={{ gridTemplateColumns: '1fr 1fr' }}>
+              <label className="full-width destaque-upload">{blogForm.coverNome ? blogForm.coverNome : editingBlog ? (editingBlog.cover_url ? `Actual: ${editingBlog.cover_url.split('/').pop()?.slice(0, 36) || 'imagem'} — escolha outra para trocar` : 'Sem capa — escolher imagem') : 'Escolher capa (JPEG/PNG/WebP até 10 MB)'}<input type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => selectBlogCover(e.target.files?.[0] || null)} /></label>
+              <label>Categoria<input value={blogForm.category} onChange={(e) => setBlogForm(f => ({ ...f, category: e.target.value }))} placeholder="Ex.: Faturação AGE" maxLength={60} /></label>
+              <label>Autor<input value={blogForm.author} onChange={(e) => setBlogForm(f => ({ ...f, author: e.target.value }))} placeholder="Equipa CFTEC" maxLength={80} /></label>
+              <label className="checkbox-label full-width"><input type="checkbox" checked={blogForm.isPublished} onChange={(e) => setBlogForm(f => ({ ...f, isPublished: e.target.checked }))} /> {editingBlog ? 'Publicar alterações no site' : 'Publicar de imediato (desmarcado = guardar rascunho)'}</label>
+              </div></fieldset>
+              <div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowBlogForm(false)}>Cancelar</Button><Button type="submit" disabled={savingBlog}><Check size={15} /> {savingBlog ? 'A guardar…' : editingBlog ? 'Guardar alterações' : blogForm.isPublished ? 'Publicar artigo' : 'Guardar rascunho'}</Button></div></form></div></div>}
+
+    {deletingBlogId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingBlogId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar artigo</h2></div><button onClick={() => setDeletingBlogId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este artigo? Ele desaparece do blog do site imediatamente. Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingBlogId(null)}>Cancelar</Button><Button variant="dark" onClick={handleBlogDelete}><Trash2 size={15} /> Eliminar artigo</Button></div></div></div>}
 
     {showDestaqueForm && <div className="admin-modal-backdrop" onMouseDown={() => setShowDestaqueForm(false)}><div className="admin-modal admin-modal--lg" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">{editingDestaque ? 'EDITAR ANÚNCIO' : 'NOVO ANÚNCIO'}</span><h2>{editingDestaque ? `Editar "${editingDestaque.titulo.slice(0, 24)}${editingDestaque.titulo.length > 24 ? '…' : ''}"` : 'Novo destaque para o site'}</h2></div><button onClick={() => setShowDestaqueForm(false)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><form className="admin-modal-body" onSubmit={(e) => { e.preventDefault(); saveDestaque() }}>
               <fieldset className="admin-form-section"><legend>Conteúdo</legend><div className="admin-form-grid" style={{ gridTemplateColumns: '1fr' }}><label>Título<input value={destaqueForm.titulo} onChange={(e) => setDestaqueForm(f => ({ ...f, titulo: e.target.value }))} placeholder="Ex.: Lançada a versão 2.5 do PalancaSoft!" required maxLength={120} autoFocus /></label>

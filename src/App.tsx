@@ -8,6 +8,7 @@ import {
   BadgeCheck,
   BarChart3,
   BriefcaseBusiness,
+  CalendarDays,
   Check,
   ChevronRight,
   Clock3,
@@ -16,6 +17,7 @@ import {
   Database,
   DollarSign,
   Download,
+  FileText,
   Globe2,
   Headphones,
   Layers3,
@@ -35,6 +37,7 @@ import {
   ShieldCheck,
   Sparkles,
   Twitter,
+  User,
   UsersRound,
   X,
   Zap,
@@ -42,6 +45,7 @@ import {
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import OrderModal from './components/OrderModal'
+import BlogSection, { parseBlogContent, type BlogFull } from './components/BlogSection'
 import NewsSlider from './components/NewsSlider'
 
 // Fallback data for when API is unavailable
@@ -347,6 +351,29 @@ function App() {
   }
 
   const [orderProduct, setOrderProduct] = useState<SiteProduct | null>(null)
+  const [blogPost, setBlogPost] = useState<BlogFull | null>(null)
+  const [blogLoading, setBlogLoading] = useState(false)
+
+  useEffect(() => {
+    if (!blogPost) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setBlogPost(null) }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [blogPost])
+
+  const openBlogPost = async (card: BlogFull) => {
+    setBlogLoading(true)
+    try {
+      const response = await fetch(`/api/blog/${card.slug}`, { cache: 'no-store' })
+      const body = await response.json().catch(() => ({}))
+      setBlogPost(response.ok && body.post ? body.post : { ...card, content: '' })
+    } catch {
+      setBlogPost({ ...card, content: '' })
+    } finally {
+      setBlogLoading(false)
+    }
+  }
 
   const handleDownload = async (product: SiteProduct) => {
     try {
@@ -385,6 +412,21 @@ function App() {
     <div className={`site-shell ${banner.active && banner.message ? 'site-shell--banner' : ''}`}>
       {toast && <div className="toast" role="status"><BadgeCheck size={18} />{toast}</div>}
       {orderProduct && <OrderModal product={orderProduct} onClose={() => setOrderProduct(null)} />}
+
+      {blogPost && <div className="blog-modal-backdrop" onMouseDown={() => setBlogPost(null)}><article className="blog-modal" onMouseDown={(e) => e.stopPropagation()}>
+        <button className="blog-modal-close" onClick={() => setBlogPost(null)} aria-label="Fechar artigo"><X size={20} /></button>
+        {blogPost.cover_url && <div className="blog-modal-cover"><img src={blogPost.cover_url} alt={blogPost.title} /></div>}
+        <div className="blog-modal-body">
+          <span className="section-kicker"><FileText size={12} /> {blogPost.category || 'ARTIGO'}{blogLoading ? ' · A carregar…' : ''}</span>
+          <h2>{blogPost.title}</h2>
+          <div className="blog-modal-meta"><span><User size={13} /> {blogPost.author || 'Equipa CFTEC'}</span><span><CalendarDays size={13} /> {blogPost.published_at ? new Date(blogPost.published_at).toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' }) : ''}</span></div>
+          <div className="blog-modal-content" dangerouslySetInnerHTML={{ __html: parseBlogContent(blogPost.content || blogPost.excerpt) }} />
+          <div className="blog-modal-cta">
+            <p>Ficou com dúvidas sobre este tema?</p>
+            <Button asChild><a href="#contacto" onClick={() => setBlogPost(null)}>Falar com a CFTEC <ArrowRight size={15} /></a></Button>
+          </div>
+        </div>
+      </article></div>}
       {banner.active && banner.message && <div className="site-banner"><Sparkles size={14} /> {banner.message}</div>}
 
       <header className="site-header">
@@ -395,6 +437,7 @@ function App() {
             <a href="#sobre" onClick={closeMenu}>Sobre nós</a>
             <a href="#servicos" onClick={closeMenu}>Serviços</a>
             <a href="#softwares" onClick={closeMenu}>Softwares</a>
+            <a href="#blog" onClick={closeMenu}>Blog</a>
             <a href="#parcerias" onClick={closeMenu}>Parcerias</a>
             <a href="#contacto" onClick={closeMenu}>Contacto</a>
           </nav>
@@ -548,9 +591,11 @@ function App() {
             <Card className="contact-card reveal"><div className="form-heading"><div><span className="form-step">COMECE POR AQUI</span><h3>Fale com a CFTEC</h3></div><Send size={20} /></div>{formSent ? <div className="form-success"><div className="success-icon"><BadgeCheck size={28} /></div><h3>Mensagem recebida.</h3><p>Obrigado por confiar na CFTEC. Em breve um especialista da nossa equipa entra em contacto consigo.</p><Button variant="outline" onClick={() => setFormSent(false)}>Enviar outra mensagem</Button></div> : <form onSubmit={handleSubmit}><div className="form-row"><label>Nome<input name="name" placeholder="O seu nome" required /></label><label>E-mail<input name="email" type="email" placeholder="nome@empresa.com" required /></label></div><div className="form-row"><label>Telefone<input name="phone" placeholder="+244 900 000 000" /></label><label>Interesse<select name="interest" defaultValue=""><option value="" disabled>Seleccione uma opção</option>{contactOptions.map((opt, i) => <option key={i} value={opt}>{opt}</option>)}</select></label></div><label>Mensagem<textarea name="message" rows={4} placeholder="Conte-nos brevemente o que precisa de resolver..." required /></label><div className="form-footer"><span><LockKeyhole size={13} /> Os seus dados estão seguros.</span><Button type="submit">Enviar pedido <ArrowRight size={16} /></Button></div></form>}</Card>
           </div>
         </section>
+
+        <BlogSection onOpen={openBlogPost} />
       </main>
 
-      <footer className="site-footer"><div className="container footer-top"><div><BrandMark inverse /><p>Tecnologia que simplifica.<br />Resultados que ficam.</p></div><div className="footer-links"><div><span>Navegar</span><a href="#sobre">Sobre nós</a><a href="#servicos">Serviços</a><a href="#softwares">Softwares</a></div><div><span>Fale connosco</span><a href={`mailto:${siteCfg.email}`}>{siteCfg.email}</a><a href={siteWhatsHREF} target="_blank" rel="noreferrer noopener">{siteCfg.whatsapp}</a><a href="#contacto">Pedir contacto</a></div><div><span>Social</span><a href={siteCfg.linkedin} target="_blank" rel="noreferrer noopener"><Linkedin size={14} /> LinkedIn</a><a href={siteCfg.x} target="_blank" rel="noreferrer noopener"><Twitter size={14} /> Twitter / X</a></div></div></div><div className="container footer-bottom"><span>© 2025 CFTEC. Todos os direitos reservados.</span><div><a href={`mailto:${siteCfg.email}?subject=Política%20de%20Privacidade`}>Privacidade</a><a href={`mailto:${siteCfg.email}?subject=Termos%20de%20Utilização`}>Termos</a><span>Feito com intenção <Sparkles size={12} /></span></div></div></footer>
+      <footer className="site-footer"><div className="container footer-top"><div><BrandMark inverse /><p>Tecnologia que simplifica.<br />Resultados que ficam.</p></div><div className="footer-links"><div><span>Navegar</span><a href="#sobre">Sobre nós</a><a href="#servicos">Serviços</a><a href="#softwares">Softwares</a><a href="#blog">Blog</a></div><div><span>Fale connosco</span><a href={`mailto:${siteCfg.email}`}>{siteCfg.email}</a><a href={siteWhatsHREF} target="_blank" rel="noreferrer noopener">{siteCfg.whatsapp}</a><a href="#contacto">Pedir contacto</a></div><div><span>Social</span><a href={siteCfg.linkedin} target="_blank" rel="noreferrer noopener"><Linkedin size={14} /> LinkedIn</a><a href={siteCfg.x} target="_blank" rel="noreferrer noopener"><Twitter size={14} /> Twitter / X</a></div></div></div><div className="container footer-bottom"><span>© 2025 CFTEC. Todos os direitos reservados.</span><div><a href={`mailto:${siteCfg.email}?subject=Política%20de%20Privacidade`}>Privacidade</a><a href={`mailto:${siteCfg.email}?subject=Termos%20de%20Utilização`}>Termos</a><span>Feito com intenção <Sparkles size={12} /></span></div></div></footer>
     </div>
   )
 }
