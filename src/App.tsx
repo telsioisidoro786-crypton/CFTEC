@@ -1,8 +1,4 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import * as THREE from 'three'
-import { gsap } from 'gsap'
-import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import anime from 'animejs'
 import {
   ArrowRight,
   BadgeCheck,
@@ -114,68 +110,73 @@ function HeroScene() {
     if (!mount) return
 
     let cleanup: (() => void) | null = null
-    try {
-      cleanup = setupHeroScene(mount)
-    } catch {
-      // WebGL indisponível (ex.: GPU desactivada, RDP, sandbox) — fundo estático sem quebrar a app
-      mount.classList.add('hero-scene--static')
-    }
-    return () => { if (cleanup) cleanup() }
+    let vivo = true
+    // three+gsap descarregam à vontade — só quem vê a cena 3D os busca (code-splitting)
+    Promise.all([import('three'), import('gsap')]).then(([three, gsapMod]) => {
+      if (!vivo) return
+      try {
+        cleanup = setupHeroScene(mount, three, gsapMod.gsap)
+      } catch {
+        // WebGL indisponível (ex.: GPU desactivada, RDP, sandbox) — fundo estático sem quebrar a app
+        mount.classList.add('hero-scene--static')
+      }
+    }).catch(() => mount.classList.add('hero-scene--static'))
+    return () => { vivo = false; if (cleanup) cleanup() }
   }, [])
 
   return <div className="hero-scene" ref={mountRef} aria-label="Visualização 3D de uma rede tecnológica em movimento" role="img" />
 }
 
-function setupHeroScene(mount: HTMLDivElement) {
-  const scene = new THREE.Scene()
-  const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100)
+function setupHeroScene(mount: HTMLDivElement, TH: typeof import('three'), gsapFn: typeof import('gsap')['gsap']) {
+  const scene = new TH.Scene()
+  const camera = new TH.PerspectiveCamera(36, 1, 0.1, 100)
   camera.position.set(0, 0.2, 7.5)
 
-  const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+  const renderer = new TH.WebGLRenderer({ alpha: true, antialias: true })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
   renderer.setSize(mount.clientWidth, mount.clientHeight)
-  renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.outputColorSpace = TH.SRGBColorSpace
   mount.appendChild(renderer.domElement)
 
-  const group = new THREE.Group()
+  const group = new TH.Group()
   scene.add(group)
 
-  const core = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(1.25, 2),
-    new THREE.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.72 }),
+  const core = new TH.Mesh(
+    new TH.IcosahedronGeometry(1.25, 2),
+    new TH.MeshBasicMaterial({ color: 0x00e5ff, wireframe: true, transparent: true, opacity: 0.72 }),
   )
-  const inner = new THREE.Mesh(
-    new THREE.IcosahedronGeometry(0.82, 1),
-    new THREE.MeshBasicMaterial({ color: 0x1e3a8a, transparent: true, opacity: 0.45, wireframe: true }),
+  const inner = new TH.Mesh(
+    new TH.IcosahedronGeometry(0.82, 1),
+    new TH.MeshBasicMaterial({ color: 0x1e3a8a, transparent: true, opacity: 0.45, wireframe: true }),
   )
   group.add(core, inner)
 
   const rings = [1.7, 2.05, 2.42].map((radius, index) => {
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(radius, index === 1 ? 0.012 : 0.018, 12, 120),
-      new THREE.MeshBasicMaterial({ color: index === 1 ? 0x3b82f6 : 0x00e5ff, transparent: true, opacity: index === 1 ? 0.55 : 0.32 }),
+    const ring = new TH.Mesh(
+      new TH.TorusGeometry(radius, index === 1 ? 0.012 : 0.018, 12, 120),
+      new TH.MeshBasicMaterial({ color: index === 1 ? 0x3b82f6 : 0x00e5ff, transparent: true, opacity: index === 1 ? 0.55 : 0.32 }),
     )
     ring.rotation.set(index * 0.62, index * 0.8, index * 0.3)
     group.add(ring)
     return ring
   })
 
-  const points = new THREE.BufferGeometry()
+  const points = new TH.BufferGeometry()
   const pointPositions = new Float32Array(220 * 3)
   for (let i = 0; i < pointPositions.length; i += 3) {
     pointPositions[i] = (Math.random() - 0.5) * 7
     pointPositions[i + 1] = (Math.random() - 0.5) * 5
     pointPositions[i + 2] = (Math.random() - 0.5) * 4
   }
-  points.setAttribute('position', new THREE.BufferAttribute(pointPositions, 3))
-  const particleField = new THREE.Points(points, new THREE.PointsMaterial({ color: 0x7dd3fc, size: 0.018, transparent: true, opacity: 0.72 }))
+  points.setAttribute('position', new TH.BufferAttribute(pointPositions, 3))
+  const particleField = new TH.Points(points, new TH.PointsMaterial({ color: 0x7dd3fc, size: 0.018, transparent: true, opacity: 0.72 }))
   scene.add(particleField)
 
   const onPointerMove = (event: PointerEvent) => {
     const rect = mount.getBoundingClientRect()
     const x = (event.clientX - rect.left) / rect.width - 0.5
     const y = (event.clientY - rect.top) / rect.height - 0.5
-    gsap.to(group.rotation, { x: y * 0.35, y: x * 0.45, duration: 1.2, ease: 'power3.out' })
+    gsapFn.to(group.rotation, { x: y * 0.35, y: x * 0.45, duration: 1.2, ease: 'power3.out' })
   }
   mount.addEventListener('pointermove', onPointerMove)
 
@@ -302,40 +303,56 @@ function App() {
   }, [])
 
   useEffect(() => {
-    gsap.registerPlugin(ScrollTrigger)
-    const reveals = document.querySelectorAll<HTMLElement>('.reveal')
-    reveals.forEach((element) => {
-      gsap.fromTo(element, { y: 34, opacity: 0 }, {
-        y: 0,
-        opacity: 1,
-        duration: 0.85,
-        ease: 'power3.out',
-        scrollTrigger: { trigger: element, start: 'top 88%', once: true },
-      })
-    })
-
-    const statObserver = new IntersectionObserver((entries, observer) => {
-      entries.forEach((entry) => {
-        if (!entry.isIntersecting) return
-        const el = entry.target as HTMLElement
-        const target = Number(el.dataset.value || 0)
-        const counter = { value: 0 }
-        anime({
-          targets: counter,
-          value: target,
-          duration: 1500,
-          easing: 'easeOutExpo',
-          update: () => { el.textContent = `${Math.floor(counter.value)}${el.dataset.suffix || ''}` },
+    let morto = false
+    let limpar: (() => void) | null = null
+    // gsap/ScrollTrigger/anime descarregam a pedido (code-splitting) — ninguém espera por eles para ver a página
+    Promise.all([import('gsap'), import('gsap/ScrollTrigger'), import('animejs')])
+      .then(([gsapMod, stMod, animeMod]) => {
+        if (morto) return
+        const gsap = gsapMod.gsap
+        const ScrollTrigger = stMod.ScrollTrigger
+        const anime = animeMod.default
+        gsap.registerPlugin(ScrollTrigger)
+        const reveals = document.querySelectorAll<HTMLElement>('.reveal')
+        reveals.forEach((element) => {
+          gsap.fromTo(element, { y: 34, opacity: 0 }, {
+            y: 0,
+            opacity: 1,
+            duration: 0.85,
+            ease: 'power3.out',
+            scrollTrigger: { trigger: element, start: 'top 88%', once: true },
+          })
         })
-        observer.unobserve(el)
-      })
-    }, { threshold: 0.6 })
-    document.querySelectorAll('.stat-number').forEach((el) => statObserver.observe(el))
 
-    return () => {
-      ScrollTrigger.getAll().forEach((trigger) => trigger.kill())
-      statObserver.disconnect()
-    }
+        const statObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return
+            const el = entry.target as HTMLElement
+            const target = Number(el.dataset.value || 0)
+            const counter = { value: 0 }
+            anime({
+              targets: counter,
+              value: target,
+              duration: 1500,
+              easing: 'easeOutExpo',
+              update: () => { el.textContent = `${Math.floor(counter.value)}${el.dataset.suffix || ''}` },
+            })
+            observer.unobserve(el)
+          })
+        }, { threshold: 0.6 })
+        document.querySelectorAll('.stat-number').forEach((el) => statObserver.observe(el))
+
+        limpar = () => {
+          ScrollTrigger.getAll().forEach((trigger) => trigger.kill())
+          statObserver.disconnect()
+        }
+      })
+      .catch(() => {
+        // libs de animação falharam (ex.: bloqueadas) — todo o conteúdo fica visível e os contadores estáticos
+        document.querySelectorAll<HTMLElement>('.reveal').forEach((el) => { el.style.opacity = '1'; el.style.transform = 'none' })
+        document.querySelectorAll<HTMLElement>('.stat-number').forEach((el) => { el.textContent = `${el.dataset.value || 0}${el.dataset.suffix || ''}` })
+      })
+    return () => { morto = true; if (limpar) limpar() }
   }, [servicesData, softwareData])
 
   const closeMenu = () => setMenuOpen(false)
