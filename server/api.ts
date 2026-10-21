@@ -2874,8 +2874,12 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, payload)
             }
 
+            // 404 fallback principal: semanticamente qualquer caminho /api/* sem handler
+            // termina aqui (sem resposta pendente) — a função nunca deve "pendurar".
             return next()
           }
+
+          return next()
         } catch (error) {
           console.error('CFTEC API failed:', error)
           return json(res, 500, { ok: false, error: 'Não foi possível processar o pedido.' })
