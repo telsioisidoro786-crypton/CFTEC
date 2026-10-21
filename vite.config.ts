@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import { createClient } from '@supabase/supabase-js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { createHmac, randomBytes as cryptoRandomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import dotenv from 'dotenv'
 import webpush from 'web-push'
@@ -493,24 +494,114 @@ const logAuditoria = (actor: { email?: string; level?: string } | null | undefin
 
 // Chaves de licenciamento — geridas EXCLUSIVAMENTE pelo developer
 // (nunca aparecem no painel de Definições do super_admin, que não as altera nem vê)
-const CHAVES_LICENCA = ['licenca_ativa', 'modulo_comercial', 'modulo_tecnico', 'modulo_novidades', 'licenca_expira_em', 'msg_licenca']
+const CHAVES_LICENCA = ['licenca_ativa', 'modulo_comercial', 'modulo_tecnico', 'modulo_novidades', 'licenca_expira_em', 'msg_licenca', 'dias_aviso_previo', 'max_usuarios', 'max_storage_mb', 'modo_somente_leitura']
 const MSG_SEM_MODULO = 'Módulo não contratado — contacte o Developer da plataforma (Nexora Systems).'
 
-type EstadoLicenca = { licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string }
+type EstadoLicenca = {
+  licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean
+  expiraEm: string; mensagem: string
+  diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean
+  // computados no servidor (fonte única de verdade para todas as guardas):
+  expirada: boolean            // data de validade passou → auto-suspensão
+  licencaEfetiva: boolean      // licencaAtiva && !expirada (o que manda no bloqueio real)
+  estado: 'activa' | 'aviso' | 'expirada' | 'suspensa' | 'leitura'
+  diasParaVencer: number | null
+}
+
+// ---- Código de emergência MESTRO (bypass assinado, sem depender da BD) ----
+// Formato: NEX-CFTEC-<expBase36>-<rnd4>-<hmac12>
+// Validável sem base de dados via HMAC-SHA256(CFTEC_JWT_SECRET) — desbloqueia 48h via cookie HttpOnly.
+const BYPASS_COOKIE = 'cftec_bypass'
+function assinarBypass(expMs: number, rnd: string): string {
+  return createHmac('sha256', JWT_SECRET).update(`${expMs}.${rnd}`).digest('hex').slice(0, 12).toUpperCase()
+}
+function validarBypass(valor: string): boolean {
+  const m = /^NEX-CFTEC-([A-Z0-9]+)-([A-Z0-9]{4})-([A-F0-9]{12})$/i.exec(String(valor || '').trim())
+  if (!m) return false
+  const exp = parseInt(m[1], 36)
+  if (!exp || exp < Date.now()) return false
+  return assinarBypass(exp, m[2].toUpperCase()) === m[3].toUpperCase()
+}
+function gerarCodigoBypass(): { codigo: string; expiraEm: string } {
+  const expira = Date.now() + 48 * 60 * 60 * 1000
+  const rnd = cryptoRandomBytes(2).toString('hex').toUpperCase()
+  const codigo = `NEX-CFTEC-${expira.toString(36).toUpperCase()}-${rnd}-${assinarBypass(expira, rnd)}`
+  return { codigo, expiraEm: new Date(expira).toISOString() }
+}
+function cookieBypassValido(req: IncomingMessage): boolean {
+  const raw = String(req.headers.cookie || '')
+    .split(/;\s*/)
+    .find((c) => c.startsWith(`${BYPASS_COOKIE}=`))
+    ?.slice(BYPASS_COOKIE.length + 1)
+  if (!raw) return false
+  return validarBypass(decodeURIComponent(raw))
+}
 
 async function licencaAtual(): Promise<EstadoLicenca> {
-  const base: EstadoLicenca = { licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: MSG_SEM_MODULO }
+  const base: EstadoLicenca = {
+    licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: MSG_SEM_MODULO,
+    diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false,
+    expirada: false, licencaEfetiva: true, estado: 'activa', diasParaVencer: null,
+  }
   if (!supabase) return base
   const { data } = await supabase.from('settings').select('key, value').in('key', CHAVES_LICENCA)
   const g = (k: string) => (data || []).find((c: { key: string; value: string }) => c.key === k)?.value
+  // vencimento automático: a licença expira pela data, mesmo com o switch activo
+  const expiraEm = g('licenca_expira_em') || ''
+  let expirada = false
+  let diasParaVencer: number | null = null
+  if (expiraEm) {
+    const alvo = new Date(`${expiraEm}T23:59:59`)
+    if (!Number.isNaN(alvo.getTime())) {
+      const hoje = new Date()
+      diasParaVencer = Math.ceil((alvo.getTime() - hoje.getTime()) / 86400000)
+      expirada = hoje.getTime() > alvo.getTime()
+    }
+  }
+  const licencaAtiva = g('licenca_ativa') !== 'false'
+  const somenteLeitura = g('modo_somente_leitura') === 'true'
+  const licencaEfetiva = licencaAtiva && !expirada
+  const diasAviso = Math.max(0, Math.min(30, parseInt(g('dias_aviso_previo') || '5', 10) || 5))
+  const estado: EstadoLicenca['estado'] = !licencaAtiva ? 'suspensa'
+    : expirada ? 'expirada'
+    : somenteLeitura ? 'leitura'
+    : diasParaVencer !== null && diasParaVencer >= 0 && diasParaVencer <= diasAviso ? 'aviso'
+    : 'activa'
   return {
-    licencaAtiva: g('licenca_ativa') !== 'false',
+    licencaAtiva,
     moduloComercial: g('modulo_comercial') !== 'false',
     moduloTecnico: g('modulo_tecnico') !== 'false',
     moduloNovidades: g('modulo_novidades') !== 'false',
-    expiraEm: g('licenca_expira_em') || '',
+    expiraEm,
     mensagem: g('msg_licenca') || base.mensagem,
+    diasAviso,
+    maxUsuarios: Math.max(0, Math.min(999, parseInt(g('max_usuarios') || '0', 10) || 0)),
+    maxStorageMb: Math.max(0, Math.min(999999, parseInt(g('max_storage_mb') || '0', 10) || 0)),
+    somenteLeitura,
+    expirada, licencaEfetiva, estado, diasParaVencer,
   }
+}
+
+// ---- Quota de storage (instaladores + mídia) — soma real dos buckets ----
+async function usoStorageMb(): Promise<number> {
+  if (!supabase) return 0
+  let total = 0
+  for (const [bucket, prefix] of [['software', 'software'], ['media', 'uploads']] as const) {
+    try {
+      const { data } = await supabase.storage.from(bucket).list(prefix, { limit: 1000 })
+      for (const f of (data || []) as { metadata?: { size?: number } }[]) total += Number(f.metadata?.size || 0)
+    } catch { /* bucket pode não existir ainda — ignora */ }
+  }
+  return total / (1024 * 1024)
+}
+// verifica a quota do contrato antes de um upload; devolve a mensagem de erro ou null
+async function verificaQuotaStorage(nivelActual: string | undefined, extraBytes: number): Promise<string | null> {
+  if (nivelActual === 'developer') return null // o developer (Nexora) gerencia o próprio sistema
+  const lic = await licencaAtual()
+  if (lic.maxStorageMb <= 0) return null // 0 = ilimitado
+  const usado = await usoStorageMb()
+  if (usado + extraBytes / (1024 * 1024) <= lic.maxStorageMb) return null
+  return `Limite de armazenamento do contrato: ${lic.maxStorageMb} MB (em uso ${Math.round(usado)} MB + ${Math.round(extraBytes / 1024)} KB a enviar). Solicite mais espaço à Nexora Systems.`
 }
 
 function adminApi(): Plugin {
@@ -599,14 +690,22 @@ function adminApi(): Plugin {
             return admin ? json(res, 200, { ok: true, user: { name: admin.name, email: admin.email, level: admin.level || 'super_admin' } }) : json(res, 401, { ok: false })
           }
 
-          // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API antes de qualquer handler admin
-          // (rota /api/admin/system-license vem depois; o developer escreve livremente)
-          if (path.startsWith('/api/admin/') && path !== '/api/admin/system-license') {
+          // MÓDULOS/LICENÇA DESLIGADOS PELO DEVELOPER — defesa na API antes de qualquer handler admin
+          // (rota /api/admin/system-license e o próprio bypass vem depois; o developer vê sempre tudo)
+          if (path.startsWith('/api/admin/') && path !== '/api/admin/system-license' && path !== '/api/admin/licenca-bypass') {
             const nivelMod = currentAdmin(req)?.level
             if (nivelMod && nivelMod !== 'developer') {
               const lic = await licencaAtual()
-              if (!lic.licencaAtiva)
-                return json(res, 403, { ok: false, error: lic.mensagem })
+              // código de emergência aceite → suspensiona/read-only levantados (módulos continuam valendo)
+              const desbloqueado = cookieBypassValido(req)
+              if (!lic.licencaEfetiva && !desbloqueado)
+                return json(res, 403, { ok: false, error: lic.mensagem, expirada: lic.expirada })
+              // MODO SOMENTE LEITURA — GET livre; mutações (escritas) bloqueadas, excepto operações pessoais
+              if (lic.somenteLeitura && !desbloqueado && req.method !== 'GET') {
+                const pessoal = path === '/api/admin/logout' || path === '/api/admin/profile' || path.startsWith('/api/admin/push')
+                if (!pessoal)
+                  return json(res, 403, { ok: false, error: 'Modo somente leitura: a consulta está livre, mas criar/alterar/apagar está bloqueado até regularizar o contrato com a Nexora Systems.' })
+              }
               const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/?/.test(path)
               if (isComercial && !lic.moduloComercial)
                 return json(res, 403, { ok: false, error: lic.mensagem })
@@ -1580,13 +1679,16 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             // LICENCIAMENTO DA PLATAFORMA — leitura para todos os admins; escrita EXCLUSIVA do Developer
             if (path === '/api/admin/system-license' && req.method === 'GET') {
               if (!currentAdmin(req)) return json(res, 401, { ok: false })
-              return json(res, 200, { ok: true, ...(await licencaAtual()) })
+              const licenca = await licencaAtual()
+              // uso de storage só para o developer (custa 2 chamadas ao storage — não vale em cada polling)
+              const storageUsadoMb = currentAdmin(req)?.level === 'developer' ? Math.round((await usoStorageMb()) * 10) / 10 : null
+              return json(res, 200, { ok: true, ...licenca, storageUsadoMb, bypassActivo: cookieBypassValido(req) })
             }
             if (path === '/api/admin/system-license' && req.method === 'PATCH') {
               const vez = currentAdmin(req)
               if (!vez) return json(res, 401, { ok: false })
               if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) gere a licença da plataforma.' })
-              const payload = await readBody(req) as Partial<{ licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string }>
+              const payload = await readBody(req) as Partial<{ licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string; diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean }>
               const boolOf = (v?: boolean) => (typeof v === 'boolean' ? (v ? 'true' : 'false') : null)
               const descr: Record<string, string> = {
                 licenca_ativa: 'Licença da plataforma — false suspende o painel para todos excepto developers',
@@ -1595,6 +1697,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 modulo_novidades: 'Módulo Novidades: blog/CMS e destaques (site + painel)',
                 licenca_expira_em: 'Data de validade da licença de manutenção (YYYY-MM-DD; vazio = sem prazo)',
                 msg_licenca: 'Mensagem exibida quando um módulo/licença está bloqueado',
+                dias_aviso_previo: 'Dias de aviso prévio antes do vencimento (banner amarelo)',
+                max_usuarios: 'Limite de utilizadores do painel (0 = ilimitado)',
+                max_storage_mb: 'Limite de storage em MB (0 = ilimitado)',
+                modo_somente_leitura: 'Modo somente leitura: bloqueia mutações mantendo a consulta',
               }
               const atual: { key: string; value: string; description: string }[] = []
               const la = boolOf(payload.licencaAtiva); if (la) atual.push({ key: 'licenca_ativa', value: la, description: descr.licenca_ativa })
@@ -1603,13 +1709,41 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const mn = boolOf(payload.moduloNovidades); if (mn) atual.push({ key: 'modulo_novidades', value: mn, description: descr.modulo_novidades })
               if (payload.expiraEm !== undefined) atual.push({ key: 'licenca_expira_em', value: String(payload.expiraEm).slice(0, 10), description: descr.licenca_expira_em })
               if (payload.mensagem !== undefined) atual.push({ key: 'msg_licenca', value: String(payload.mensagem).slice(0, 300), description: descr.msg_licenca })
+              if (payload.diasAviso !== undefined) atual.push({ key: 'dias_aviso_previo', value: String(Math.max(0, Math.min(30, Math.round(Number(payload.diasAviso) || 0)))), description: descr.dias_aviso_previo })
+              if (payload.maxUsuarios !== undefined) atual.push({ key: 'max_usuarios', value: String(Math.max(0, Math.min(999, Math.round(Number(payload.maxUsuarios) || 0)))), description: descr.max_usuarios })
+              if (payload.maxStorageMb !== undefined) atual.push({ key: 'max_storage_mb', value: String(Math.max(0, Math.min(999999, Math.round(Number(payload.maxStorageMb) || 0)))), description: descr.max_storage_mb })
+              const sl = boolOf(payload.somenteLeitura); if (sl) atual.push({ key: 'modo_somente_leitura', value: sl, description: descr.modo_somente_leitura })
               for (const a of atual) {
                 const { error } = await supabase.from('settings').upsert(a, { onConflict: 'key' })
                 if (error) return json(res, 500, { ok: false, error: error.message })
               }
               const resultado = await licencaAtual()
-              logAuditoria(vez, 'licenca_alterada', 'plataforma', null, { alteracoes: atual.map((a) => `${a.key}=${a.value}`), resultado: { licencaAtiva: resultado.licencaAtiva, comercial: resultado.moduloComercial, tecnico: resultado.moduloTecnico, novidades: resultado.moduloNovidades, expiraEm: resultado.expiraEm } })
+              logAuditoria(vez, 'licenca_alterada', 'plataforma', null, { alteracoes: atual.map((a) => `${a.key}=${a.value}`), resultado: { licencaAtiva: resultado.licencaAtiva, comercial: resultado.moduloComercial, tecnico: resultado.moduloTecnico, novidades: resultado.moduloNovidades, expiraEm: resultado.expiraEm, diasAviso: resultado.diasAviso, maxUsuarios: resultado.maxUsuarios, maxStorageMb: resultado.maxStorageMb, somenteLeitura: resultado.somenteLeitura } })
               return json(res, 200, { ok: true, ...resultado })
+            }
+
+            // CÓDIGO DE EMERGÊNCIA MESTRO — gerar (exclusivo developer) e validar (desbloqueia 48h)
+            if (path === '/api/admin/licenca-bypass/generate' && req.method === 'POST') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) gera códigos de emergência.' })
+              const { codigo, expiraEm } = gerarCodigoBypass()
+              logAuditoria(vez, 'codigo_master_gerado', 'plataforma', null, { validade: expiraEm })
+              return json(res, 200, { ok: true, codigo, expiraEm })
+            }
+            if (path === '/api/admin/licenca-bypass' && req.method === 'POST') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              const { codigo } = await readBody(req) as { codigo?: string }
+              if (!validarBypass(String(codigo || ''))) {
+                logAuditoria(vez, 'bypass_recusado', 'plataforma', null, { codigo: String(codigo || '').slice(0, 40) })
+                return json(res, 403, { ok: false, error: 'Código de emergência inválido ou expirado.' })
+              }
+              const isProd = process.env.NODE_ENV === 'production'
+              // próprio cookie assinado — validação re-HMAC, sem consultar a base de dados
+              res.setHeader('Set-Cookie', `${BYPASS_COOKIE}=${encodeURIComponent(String(codigo).trim())}; Path=/; ${isProd ? 'Secure; SameSite=None' : 'HttpOnly; SameSite=Lax'}; Max-Age=${48 * 60 * 60}`)
+              logAuditoria(vez, 'bypass_activado', 'plataforma', null, { validade_horas: 48, nivel: vez.level })
+              return json(res, 200, { ok: true, expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() })
             }
 
             // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API além do UI (o Developer vê sempre tudo)
@@ -1660,6 +1794,16 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 400, { ok: false, error: 'A password precisa de pelo menos 8 caracteres.' })
               if (!ROLES.includes(role))
                 return json(res, 400, { ok: false, error: 'Nível inválido. Use: super_admin, gestor, tecnico ou developer.' })
+
+              // QUOTA DO CONTRATO — limite de utilizadores do plano (developer isento)
+              {
+                const licQ = await licencaAtual()
+                if (licQ.maxUsuarios > 0 && currentAdmin(req)?.level !== 'developer') {
+                  const { count } = await supabase.from('admin_users').select('id', { count: 'exact', head: true })
+                  if ((count || 0) >= licQ.maxUsuarios)
+                    return json(res, 403, { ok: false, error: `Limite do contrato atingido: o plano permite ${licQ.maxUsuarios} utilizador(es). Solicite o upgrade à Nexora Systems.` })
+                }
+              }
 
               // bootstrap: ninguém fora do círculo developer cria contas developer
               // EXCEPTO na fase inicial — sem nenhum developer, o super_admin cria a PRIMEIRA
@@ -2249,6 +2393,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 400, { ok: false, error: 'Ficheiro excede 10MB' })
               }
               
+              // QUOTA DE STORAGE (contrato)
+              const erroQuotaMidia = await verificaQuotaStorage(currentAdmin(req)?.level, fileData.buffer.length)
+              if (erroQuotaMidia) return json(res, 413, { ok: false, error: erroQuotaMidia })
+              
               // Check if supabase is configured
               if (!supabase) {
                 console.error('[UPLOAD] Supabase not configured')
@@ -2361,7 +2509,12 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const admin = currentAdmin(req)
               if (!admin) return json(res, 401, { ok: false, error: 'Sessão de administrador inválida ou expirada.' })
               if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
-              const { filename } = await readBody(req) as { filename?: string }
+              const { filename, size } = await readBody(req) as { filename?: string; size?: number }
+              // QUOTA DE STORAGE — o tamanho real só se confirma no POST final; aqui pré-checamos pelo tamanho declarado
+              if (size && Number(size) > 0) {
+                const erroQuota = await verificaQuotaStorage(currentAdmin(req)?.level, Number(size))
+                if (erroQuota) return json(res, 413, { ok: false, error: erroQuota })
+              }
               const safe = String(filename || 'instalador.zip').replace(/[^a-zA-Z0-9-_.() ]/g, '_').slice(-80)
               const objectPath = `software/upload-${Date.now()}-${safe.replace(/\s+/g, '-')}`
               const { data: signed, error } = await supabase.storage.from('software').createSignedUploadUrl(objectPath)
@@ -2388,6 +2541,17 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 const filedSize = String(payload.file_size || '').match(/^\d+(\.\d{1,2})? MB$/)
                   ? String(payload.file_size)
                   : `${Number(payload.file_size || 0) > 0 ? Number(payload.file_size).toFixed(2) + ' MB' : '0 MB'}`
+                // QUOTA DE STORAGE — o ficheiro já chegou; se exceder o contrato, é removido e o registo recusado
+                if (currentAdmin(req)?.level !== 'developer') {
+                  const licJ = await licencaAtual()
+                  if (licJ.maxStorageMb > 0) {
+                    const usado = await usoStorageMb()
+                    if (usado > licJ.maxStorageMb) {
+                      await supabase.storage.from('software').remove([storagePath])
+                      return json(res, 413, { ok: false, error: `Limite de armazenamento do contrato: ${licJ.maxStorageMb} MB (em uso ${Math.round(usado)} MB). O ficheiro foi removido — solicite mais espaço à Nexora Systems.` })
+                    }
+                  }
+                }
                 const { data: pub } = supabase.storage.from('software').getPublicUrl(storagePath)
                 const { data, error } = await supabase
                   .from('softwares')
@@ -2429,6 +2593,8 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (!fileData) return json(res, 400, { ok: false, error: 'Ficheiro do instalador é obrigatório' })
               if (fileData.buffer.length > 50 * 1024 * 1024)
                 return json(res, 413, { ok: false, error: 'O ficheiro excede o limite de 50 MB por ficheiro do Supabase (plano Free).' })
+              const erroQuota = await verificaQuotaStorage(currentAdmin(req)?.level, fileData.buffer.length)
+              if (erroQuota) return json(res, 413, { ok: false, error: erroQuota })
               
               // Upload software file to storage
               const ext = fileData.filename.split('.').pop()

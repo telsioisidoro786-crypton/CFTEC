@@ -883,3 +883,32 @@
 .partner-key-cliente{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b}
 .partner-atribuir{display:flex;gap:8px;align-items:center;margin-top:10px}
 .partner-atribuir select{flex:1;padding:9px 10px;border:1px solid #e2e8f0;border-radius:9px;font:.72rem 'Manrope',sans-serif;color:#0f172a;background:#fff}
+
+/* ============================================================
+   Central de Licenças SaaS — regras de contrato (vencimento,
+   quotas, modo somente leitura, código de emergência mestre)
+   ============================================================ */
+.licenca-aviso--forte{background:#fff7ed;border-color:#fdba74;color:#c2410c;box-shadow:0 2px 12px rgba(249,115,22,.18)}
+.licenca-aviso--leitura{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8;flex-direction:row;align-items:center}
+.licenca-aviso--leitura svg{flex:0 0 auto}
+.licenca-suspensa .licenca-bypass-activo{color:#4ade80;text-transform:none;letter-spacing:0;font-size:.78rem;font-weight:600}
+.licenca-bloqueio-codigo{display:flex;gap:10px;align-items:center;margin-top:10px;flex-wrap:wrap;justify-content:center}
+.licenca-bloqueio-codigo input{width:340px;max-width:80vw;padding:10px 14px;border-radius:10px;border:1px solid rgba(148,163,184,.35);background:rgba(15,23,42,.6);color:#e2e8f0;font-size:.82rem;letter-spacing:.5px}
+.licenca-bloqueio-codigo input::placeholder{color:#64748b;letter-spacing:0}
+.licenca-bloqueio-codigo input:focus{outline:none;border-color:#38bdf8}
+.dev-lic-urgente{color:#fbbf24 !important;font-weight:600}
+.dev-lic-status{flex-wrap:wrap}
+.dev-regras-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media (max-width:860px){.dev-regras-grid{grid-template-columns:1fr}}
+.dev-toggle-row--regras{margin:2px 0 14px;background:#fffbeb;border-color:#fde68a}
+.dev-toggle-row--regras .dev-switch{border-color:#f59e0b;background:#fde68a}
+.dev-toggle-row--regras .dev-switch.is-on{background:#f59e0b;border-color:#d97706}
+.dev-toggle-row--regras .dev-switch.is-on::after{transform:translateX(20px)}
+.dev-bypass-box{margin-top:4px;padding:14px 16px;border:1px dashed #cbd5e1;border-radius:14px;background:#f8fafc}
+.dev-bypass-head{display:flex;flex-direction:column;gap:4px;margin:0 0 10px}
+.dev-bypass-head strong{font-size:.82rem;color:#0f172a}
+.dev-bypass-head small{font-size:.68rem;color:#64748b;line-height:1.55}
+.dev-bypass-codigo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-radius:12px;background:#0e1726;border:1px solid rgba(148,163,184,.25)}
+.dev-bypass-codigo code{font:600 .85rem 'JetBrains Mono',ui-monospace,monospace;color:#4ade80;letter-spacing:1.2px;word-break:break-all}
+.dev-bypass-codigo small{color:#94a3b8;font-size:.64rem;width:100%}
+.dev-bypass-codigo .icon-btn{color:#e2e8f0}

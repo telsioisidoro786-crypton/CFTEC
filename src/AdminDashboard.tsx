@@ -175,7 +175,16 @@ const fallbackServices: Service[] = [
   { id: '4', title: 'Suporte especializado', slug: 'suporte-especializado', short_description: 'Uma equipa técnica próxima para manter tudo a avançar.', full_description: 'Acompanhamento contínuo, resolução rápida e evolução sustentada da sua tecnologia.', icon: 'Headphones', is_active: true, created_at: '2025-04-05' },
 ]
 
-type SysLic = { licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string }
+type SysLic = {
+  licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean
+  expiraEm: string; mensagem: string
+  diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean
+  expirada: boolean; licencaEfetiva: boolean
+  estado?: 'activa' | 'aviso' | 'expirada' | 'suspensa' | 'leitura'
+  diasParaVencer: number | null
+  storageUsadoMb?: number | null
+  bypassActivo?: boolean
+}
 
 const navItems: { id: AdminSection; label: string; icon: typeof LayoutDashboard; levels: AdminUser['level'][] }[] = [
   { id: 'dashboard', label: 'Visão Geral', icon: LayoutDashboard, levels: ['super_admin', 'gestor', 'tecnico', 'developer'] },
@@ -433,9 +442,16 @@ export default function AdminDashboard() {
   const [pwResetForm, setPwResetForm] = useState({ pw: '', pw2: '' })
   const [licenseOrders, setLicenseOrders] = useState<LicenseOrder[]>([])
   const [orderFilter, setOrderFilter] = useState<'Todos' | 'Pendente' | 'Em Verificação' | 'Aprovado' | 'Pago' | 'Rejeitado'>('Todos')
-  // licenciamento da plataforma — flags geridas pelo developer (Master Admin)
-  const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: '' })
+  // regras de contrato SaaS — quotas/vencimento/read-only + código de emergência mestre
+  const [regrasForm, setRegrasForm] = useState<{ diasAviso: string; maxUsuarios: string; maxStorageMb: string }>({ diasAviso: '5', maxUsuarios: '0', maxStorageMb: '0' })
+  const regrasSyncedRef = useRef(false)
+  const [codigoMaster, setCodigoMaster] = useState<string | null>(null)
+  const [gerandoCodigo, setGerandoCodigo] = useState(false)
+  const [codigoEmergencia, setCodigoEmergencia] = useState('')
+  const [enviandoCodigo, setEnviandoCodigo] = useState(false)
   const [baixandoBackup, setBaixandoBackup] = useState(false)
+  // licenciamento da plataforma — flags geridas pelo developer (Master Admin)
+  const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, licencaEfetiva: true, expirada: false, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: '', diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false, diasParaVencer: null })
   // vista kanban do pipeline comercial (arrastar cartões muda o estado do pedido)
   const [orderView, setOrderView] = useState<'tabela' | 'kanban'>('tabela')
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
@@ -1347,7 +1363,14 @@ export default function AdminDashboard() {
   const loadSysLic = async () => {
     try {
       const r = await fetch('/api/admin/system-license', { credentials: 'include' })
-      if (r.ok) setSysLic(await r.json())
+      if (!r.ok) return
+      const b = await r.json()
+      setSysLic(b)
+      // sincroniza as regras de contrato com o estado do servidor (primeira leitura real)
+      if (!regrasSyncedRef.current) {
+        regrasSyncedRef.current = true
+        setRegrasForm({ diasAviso: String(b.diasAviso ?? 5), maxUsuarios: String(b.maxUsuarios ?? 0), maxStorageMb: String(b.maxStorageMb ?? 0) })
+      }
     } catch { /* silencioso — mantém o último estado conhecido */ }
   }
   // cópias de segurança — o backup sai DIRECTO para o computador do developer (nada fica no servidor)
@@ -1386,9 +1409,56 @@ export default function AdminDashboard() {
       const body = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(body.error || 'Falha ao actualizar a licença')
       setSysLic(body)
+      setRegrasForm({ diasAviso: String(body.diasAviso ?? 5), maxUsuarios: String(body.maxUsuarios ?? 0), maxStorageMb: String(body.maxStorageMb ?? 0) })
       notify('Licença actualizada — efeitos em todos os painéis imediatamente')
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Erro ao actualizar a licença')
+    }
+  }
+
+  // guardar as REGRAS DE CONTRATO (vencimento automático + quotas + read-only)
+  const guardarRegras = async (parcial: { somenteLeitura?: boolean } = {}) => {
+    await guardarLicenca({
+      diasAviso: Math.max(0, Math.min(30, Math.round(Number(regrasForm.diasAviso) || 0))),
+      maxUsuarios: Math.max(0, Math.min(999, Math.round(Number(regrasForm.maxUsuarios) || 0))),
+      maxStorageMb: Math.max(0, Math.min(999999, Math.round(Number(regrasForm.maxStorageMb) || 0))),
+      ...parcial,
+    })
+  }
+
+  // CÓDIGO DE EMERGÊNCIA MESTRO — gerar (developer) / usar (ecrã de bloqueio)
+  const gerarCodigoMaster = async () => {
+    if (gerandoCodigo) return
+    setGerandoCodigo(true)
+    try {
+      const r = await fetch('/api/admin/licenca-bypass/generate', { method: 'POST', credentials: 'include' })
+      const b = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(b.error || 'Falha a gerar o código de emergência')
+      setCodigoMaster(b.codigo)
+      notify(`Código gerado — válido até ${new Date(b.expiraEm).toLocaleString('pt-PT')}`)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao gerar o código')
+    } finally {
+      setGerandoCodigo(false)
+    }
+  }
+  const usarCodigoEmergencia = async () => {
+    if (!codigoEmergencia.trim() || enviandoCodigo) return
+    setEnviandoCodigo(true)
+    try {
+      const r = await fetch('/api/admin/licenca-bypass', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ codigo: codigoEmergencia.trim() }),
+      })
+      const b = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(b.error || 'Código inválido ou expirado')
+      notify('Acesso de emergência activo por 48 horas — a reentrar…')
+      setTimeout(() => window.location.reload(), 700)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao validar o código')
+    } finally {
+      setEnviandoCodigo(false)
     }
   }
 
@@ -1795,7 +1865,7 @@ export default function AdminDashboard() {
           method: 'POST',
           credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: softwareFormState.fileName || 'instalador.zip' }),
+          body: JSON.stringify({ filename: softwareFormState.fileName || 'instalador.zip', size: softwareFormState.file?.size || undefined }),
         })
         const urlBody = await urlRes.json().catch(() => ({}))
         if (!urlRes.ok || !urlBody.ok) throw new Error(urlBody.error || 'Falha ao preparar o upload')
@@ -2173,10 +2243,18 @@ export default function AdminDashboard() {
     <div className="admin-main">
       <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
-        {(ehDev || sysLic.licencaAtiva) ? null : <div className="licenca-suspensa"><span className="licenca-suspensa-icon"><Power size={44} /></span><h2>Plataforma suspensa</h2><p>{sysLic.mensagem}</p><small>Licença de uso do software — contacte o Developer da plataforma (Nexora Systems) para reactivar.</small></div>}
-        {!ehDev && sysLic.licencaAtiva && sysLic.expiraEm && <>
-          <div className="licenca-aviso" data-tip="Aviso de validade definido pelo developer da plataforma"><AlertTriangle size={15} /> Licença de manutenção expira a {new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')}</div>
-        </>}
+        {(ehDev || sysLic.bypassActivo || (sysLic.licencaAtiva !== false && sysLic.licencaEfetiva !== false)) ? null : <div className="licenca-suspensa"><span className="licenca-suspensa-icon"><Power size={44} /></span><h2>{sysLic.expirada ? 'Licença expirada' : 'Plataforma suspensa'}</h2><p>{sysLic.expirada && !sysLic.mensagem ? 'A licença de manutenção venceu-se — a plataforma entrou em suspensão automática.' : sysLic.mensagem}</p><small>Licença de uso do software — contacte o Developer da plataforma (Nexora Systems) para reactivar.</small>
+          {sysLic.bypassActivo ? <small className="licenca-bypass-activo">🔓 Acesso de emergência activo — as suas acções estão desbloqueadas temporariamente.</small> : <form className="licenca-bloqueio-codigo" onSubmit={(e) => { e.preventDefault(); usarCodigoEmergencia() }}>
+            <input value={codigoEmergencia} onChange={(e) => setCodigoEmergencia(e.target.value)} placeholder="Código de emergência (ex.: NEX-CFTEC-...)" maxLength={60} autoComplete="off" aria-label="Código de emergência" />
+            <Button type="submit" size="sm" variant="outline" disabled={enviandoCodigo || !codigoEmergencia.trim()}>{enviandoCodigo ? 'A validar…' : 'Desbloquear 48h'}</Button>
+          </form>}
+        </div>}
+        {!ehDev && sysLic.licencaEfetiva !== false && sysLic.somenteLeitura && <div className="licenca-aviso licenca-aviso--leitura" data-tip="Activo pelo Developer da plataforma — consulta livre, escrita bloqueada"><AlertTriangle size={15} /> Modo somente leitura: pode consultar tudo, mas criar/alterar/apagar está bloqueado até regularizar o contrato.</div>}
+        {!ehDev && sysLic.licencaEfetiva !== false && sysLic.expiraEm && (() => {
+          const dias = typeof sysLic.diasParaVencer === 'number' ? sysLic.diasParaVencer : null
+          const aviso = dias !== null && dias >= 0 && dias <= (sysLic.diasAviso || 5)
+          return <div className={`licenca-aviso ${aviso ? 'licenca-aviso--forte' : ''}`} data-tip={aviso ? `Aviso de vencimento (regra de ${sysLic.diasAviso || 5} dias definida pelo developer)` : 'Aviso de validade definido pelo developer da plataforma'}>{aviso ? '⚠️ ' : ''}{aviso ? `A sua licença de manutenção vence em ${dias === 0 ? 'hoje' : `${dias} dia(s)`}. Regularize o pagamento para evitar interrupções.` : `Licença de manutenção expira a ${new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')}`}</div>
+        })()}
         <PushNotificationBanner />
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && role !== 'gestor' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
@@ -2339,7 +2417,7 @@ export default function AdminDashboard() {
 
         {activeSection === 'developer' && <>
           <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">ÁREA EXCLUSIVA · DEVELOPER (NEXORA SYSTEMS)</span><h2>Licença & módulos da plataforma</h2></div><span className="developer-lock" data-tip="Só a sua conta developer vê e altera estas definições — o super admin da CFTEC não pode">🔒 só o developer</span></div><p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Estes interruptores controlam o que a CFTEC tem direito a usar conforme o contrato Setup/manutenção. Alterações aplicam-se a todos os painéis em até <b>20 segundos</b> (ou imediatamente ao recarregar). As chaves de licença nunca aparecem nas Definições do super admin.</p>{!sysLic.licencaAtiva && <div className="licenca-aviso licenca-aviso--off"><AlertTriangle size={15} /> A plataforma está SUSPENSA — a equipa CFTEC vê um ecrã de bloqueio e os formulários públicos (checkout/suporte) estão fechados.</div>}
-          <div className="dev-lic-status"><strong>{sysLic.licencaAtiva ? 'Licença ACTIVA' : 'Licença SUSPENSA'}</strong><span>{sysLic.expiraEm ? `Validade até ${new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')}` : 'Sem prazo de validade definido'}</span></div>
+          <div className="dev-lic-status"><strong>{sysLic.expirada ? 'LICENÇA EXPIRADA (suspensão automática)' : sysLic.licencaAtiva ? 'Licença ACTIVA' : 'Licença SUSPENSA'}</strong><span>{sysLic.expiraEm ? `Validade até ${new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')}${typeof sysLic.diasParaVencer === 'number' && sysLic.diasParaVencer >= 0 ? ` · ${sysLic.diasParaVencer === 0 ? 'vence hoje' : `vence em ${sysLic.diasParaVencer} dia(s)`} (aviso ${sysLic.diasAviso || 5} dias antes)` : ''}` : 'Sem prazo de validade definido'}</span>{sysLic.expirada && <span className="dev-lic-urgente">⏰ Venceu-se a {new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')} — a equipa CFTEC está bloqueada (ou em bypass de emergência).</span>}</div>
           <div className="dev-toggles">
             <div className={`dev-toggle-row ${!sysLic.licencaAtiva ? 'dev-toggle-row--off' : ''}`}><div><strong>Licença da plataforma</strong><small>Off = painel bloqueia para toda a equipa CFTEC excepto developers · formulários públicos fechados</small></div><button type="button" className={`dev-switch ${sysLic.licencaAtiva ? 'is-on' : ''}`} aria-label="Licença da plataforma" onClick={() => guardarLicenca({ licencaAtiva: !sysLic.licencaAtiva })} /></div>
             <div className={`dev-toggle-row ${!sysLic.moduloComercial ? 'dev-toggle-row--off' : ''}`}><div><strong>Módulo Comercial</strong><small>Pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil (+ checkout público)</small></div><button type="button" className={`dev-switch ${sysLic.moduloComercial ? 'is-on' : ''}`} aria-label="Módulo Comercial" onClick={() => guardarLicenca({ moduloComercial: !sysLic.moduloComercial })} /></div>
@@ -2353,6 +2431,27 @@ export default function AdminDashboard() {
             <label className="settings-field">Mensagem de bloqueio<textarea rows={2} maxLength={300} value={sysLic.mensagem} onChange={(e) => setSysLic(s => ({ ...s, mensagem: e.target.value }))} placeholder="Módulo indisponível no vosso plano actual. Contacte o suporte técnico." /></label>
             <div className="settings-actions"><Button type="submit" size="sm"><Check size={14} /> Guardar prazo & mensagem</Button></div>
           </form>
+        </Card>
+          <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTRATO SAAS · REGRAS AUTOMÁTICAS</span><h2>Regras de contrato & quotas</h2></div><span className="developer-lock" data-tip="O sistema aplica sozinho: aviso por data, quotas e modo só-leitura — sem precisar de 'dar a cara' para bloquear manualmente">⚙️ automático</span></div><p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>O sistema vigia as regras por si: <b>avisos amarelos</b> X dias antes do vencimento e <b>suspensão automática</b> no dia seguinte; <b>quota de utilizadores</b> bloqueia a criação de contas acima do plano; <b>quota de storage</b> trava uploads de instaladores/mídia; e o <b>modo somente leitura</b> congela a escrita mantendo a consulta (período de graça).</p>
+          <form className="settings-form dev-lic-form" onSubmit={(e) => { e.preventDefault(); guardarRegras() }}>
+            <div className="settings-row dev-regras-grid">
+              <label className="settings-field">Aviso prévio (dias)<input type="number" min={0} max={30} value={regrasForm.diasAviso} onChange={(e) => setRegrasForm(r => ({ ...r, diasAviso: e.target.value }))} /><small className="settings-hint">Banner amarelo “vence em N dias” começa a aparecer este número de dias antes da validade.</small></label>
+              <label className="settings-field">Máx. utilizadores do painel<input type="number" min={0} max={999} value={regrasForm.maxUsuarios} onChange={(e) => setRegrasForm(r => ({ ...r, maxUsuarios: e.target.value }))} /><small className="settings-hint">0 = ilimitado. Ao atingir, a criação de contas devolve “upgrade do plano”.</small></label>
+              <label className="settings-field">Máx. storage (MB)<input type="number" min={0} max={999999} value={regrasForm.maxStorageMb} onChange={(e) => setRegrasForm(r => ({ ...r, maxStorageMb: e.target.value }))} /><small className="settings-hint">0 = ilimitado. Soma real dos buckets (instaladores + mídia): {typeof sysLic.storageUsadoMb === 'number' ? `${sysLic.storageUsadoMb} MB em uso` : '…'}</small></label>
+            </div>
+            <div className="settings-actions"><Button type="submit" size="sm"><Check size={14} /> Guardar regras de contrato</Button></div>
+          </form>
+          <div className="dev-toggle-row dev-toggle-row--regras">
+            <div><strong>Modo somente leitura (período de graça)</strong><small>Consulta livre de clientes, faturas e chamados; botões de escrita devolvem 403 ao painel da CFTEC. O código de emergência de 48h desbloqueia.</small></div>
+            <button type="button" className={`dev-switch ${sysLic.somenteLeitura ? 'is-on' : ''}`} aria-label="Modo somente leitura" onClick={() => guardarRegras({ somenteLeitura: !sysLic.somenteLeitura })} />
+          </div>
+          <div className="dev-bypass-box">
+            <div className="dev-bypass-head"><strong>Código de emergência mestre (48h)</strong><small>Se o Supabase/internet falhar ou suspender por engano: gere o código, passe-o por telefone/WhatsApp — o diretor da CFTEC insere no ecrã de bloqueio e ganha 48h de acesso sem depender da base de dados (assinado petid HMAC da plataforma, impossível de adivinhar).</small></div>
+            <div className="settings-actions" style={{ marginBottom: codigoMaster ? 10 : 0 }}>
+              <Button size="sm" onClick={gerarCodigoMaster} disabled={gerandoCodigo}>{gerandoCodigo ? <><Loader2 size={14} className="spin" /> A gerar…</> : <><KeyRound size={14} /> Gerar código de emergência</>}</Button>
+            </div>
+            {codigoMaster && <div className="dev-bypass-codigo"><code>{codigoMaster}</code><button className="icon-btn" title="Copiar código" onClick={() => { navigator.clipboard?.writeText(codigoMaster); notify('Código copiado — passe-o ao cliente por telefone/WhatsApp') }}><Copy size={14} /></button><small>válido 48h · cada utilização fica no Registo de actividades</small></div>}
+          </div>
         </Card>
           <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['chamados_suporte', 'chamados'], ['wiki_tecnica', 'wiki técnica'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button></div></Card>
         </>}
