@@ -121,6 +121,7 @@ const ACAO_LABEL: Record<string, string> = {
   pedido_recebido: 'Pedido de licença recebido', pedido_estado: 'Mudou estado do pedido', pedido_apagado: 'Apagou pedido',
   licenca_emitida: 'Emitiu licença', licenca_actualizada: 'Actualizou licença', licenca_apagada: 'Apagou licença',
   definicoes_gravadas: 'Gravou definições do portal', licenca_alterada: 'Alterou a licença da plataforma',
+  backup_exportado: 'Exportou cópia de segurança',
   utilizador_criado: 'Criou utilizador', utilizador_actualizado: 'Actualizou utilizador', utilizador_apagado: 'Apagou utilizador',
   wiki_criada: 'Registou artigo na wiki', wiki_actualizada: 'Actualizou artigo da wiki', wiki_apagada: 'Apagou artigo da wiki',
   servico_criado: 'Criou serviço', servico_actualizado: 'Actualizou serviço', servico_alternado: 'Activou/desactivou serviço', servico_apagado: 'Apagou serviço',
@@ -424,6 +425,7 @@ export default function AdminDashboard() {
   const [orderFilter, setOrderFilter] = useState<'Todos' | 'Pendente' | 'Em Verificação' | 'Aprovado' | 'Pago' | 'Rejeitado'>('Todos')
   // licenciamento da plataforma — flags geridas pelo developer (Master Admin)
   const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: '' })
+  const [baixandoBackup, setBaixandoBackup] = useState(false)
   // vista kanban do pipeline comercial (arrastar cartões muda o estado do pedido)
   const [orderView, setOrderView] = useState<'tabela' | 'kanban'>('tabela')
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
@@ -1239,6 +1241,32 @@ export default function AdminDashboard() {
       if (r.ok) setSysLic(await r.json())
     } catch { /* silencioso — mantém o último estado conhecido */ }
   }
+  // cópias de segurança — o backup sai DIRECTO para o computador do developer (nada fica no servidor)
+  const exportarBackup = async () => {
+    if (baixandoBackup) return
+    setBaixandoBackup(true)
+    try {
+      const r = await fetch('/api/admin/backup', { credentials: 'include' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Falha a gerar a cópia de segurança')
+      const blob = await r.blob()
+      const agora = new Date()
+      const stamp = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, '0')}-${String(agora.getDate()).padStart(2, '0')} ${String(agora.getHours()).padStart(2, '0')}h${String(agora.getMinutes()).padStart(2, '0')}`
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `cftec-backup-${stamp}.json`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      notify('Cópia de segurança descarregada — guarde o ficheiro num local seguro (disco externo ou nuvem privada)')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Erro ao exportar a cópia de segurança')
+    } finally {
+      setBaixandoBackup(false)
+    }
+  }
+
   const guardarLicenca = async (parcial: Partial<SysLic>) => {
     try {
       const response = await fetch('/api/admin/system-license', {
@@ -2206,6 +2234,7 @@ export default function AdminDashboard() {
             <div className="settings-actions"><Button type="submit" size="sm"><Check size={14} /> Guardar prazo & mensagem</Button></div>
           </form>
         </Card>
+          <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['chamados_suporte', 'chamados'], ['wiki_tecnica', 'wiki técnica'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button></div></Card>
         </>}
 
         {activeSection === 'auditoria' && (() => {

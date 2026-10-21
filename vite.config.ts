@@ -2505,6 +2505,39 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, data || [])
             }
 
+            // CÓPIAS DE SEGURANÇA — exportação completa exclusiva do Developer (Master Admin).
+            // O ficheiro NUNCA é gravado no servidor: sai por download directo e cada exportação fica no audit log.
+            if (path === '/api/admin/backup' && req.method === 'GET') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer')
+                return json(res, 403, { ok: false, error: 'As cópias de segurança são exclusivas do Developer (Master Admin).' })
+              const tabelasBackup = ['pedidos_licencas', 'licencas_palancasoft', 'chamados_suporte', 'wiki_tecnica', 'admin_users', 'settings', 'parceiros_candidaturas', 'contacts', 'blog_posts', 'novidades_destaques', 'media', 'softwares', 'services', 'audit_log']
+              const dados: Record<string, unknown[]> = {}
+              for (const tabela of tabelasBackup) {
+                const { data, error } = tabela === 'audit_log'
+                  ? await supabase.from(tabela).select('*').order('created_at', { ascending: false }).limit(20000)
+                  : await supabase.from(tabela).select('*').limit(20000)
+                if (error) return json(res, 500, { ok: false, error: `${tabela}: ${error.message}` })
+                dados[tabela] = data || []
+              }
+              // nunca exportar credenciais — admin_users sai sem password_hash
+              dados.admin_users = (dados.admin_users as Record<string, unknown>[]).map(({ password_hash, ...resto }) => resto)
+              const licenca = await licencaAtual()
+              const payload = {
+                _backup: {
+                  app: 'CFTEC',
+                  gerado_em: new Date().toISOString(),
+                  por: vez.email,
+                  licenca: { activa: licenca.licencaAtiva, comercial: licenca.moduloComercial, tecnico: licenca.moduloTecnico, novidades: licenca.moduloNovidades, expiraEm: licenca.expiraEm },
+                  restauro: 'Cada chave de topo é uma tabela do Supabase, pronta para bulk insert.',
+                },
+                ...dados,
+              }
+              logAuditoria(vez, 'backup_exportado', 'plataforma', null, Object.fromEntries(tabelasBackup.map((t) => [t, (dados[t] as unknown[]).length])))
+              return json(res, 200, payload)
+            }
+
             return next()
           }
         } catch (error) {

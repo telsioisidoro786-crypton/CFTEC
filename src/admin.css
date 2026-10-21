@@ -861,3 +861,8 @@
 .audit-eid{display:block;color:#94a3b8;font:500 .56rem 'DM Mono',monospace}
 .audit-detalhe{color:#64748b;font-size:.66rem;line-height:1.5;word-break:break-word}
 .audit-table td{vertical-align:top}
+
+/* cópias de segurança (painel do developer) */
+.dev-backup-lista{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px;padding:0;list-style:none}
+.dev-backup-lista li{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:999px;background:#f1f5f9;color:#475569;font:500 .62rem 'Inter',sans-serif;cursor:default}
+.dev-backup-lista li svg{color:#94a3b8}
