@@ -671,7 +671,8 @@ export default function AdminDashboard() {
       })
       const b = await r.json().catch(() => null)
       if (r.ok) {
-        notify(estado === 'autorizado' ? 'Pedido autorizado — e-mail de confirmação a caminho do cliente' : 'Pedido recusado — cliente notificado por e-mail')
+        const auto = Array.isArray((b as { auto?: string[] })?.auto) ? (b as { auto: string[] }).auto : []
+        notify(estado === 'autorizado' ? `Pedido autorizado — contrato actualizado: ${auto.slice(0, 3).join(' · ')}${auto.length > 3 ? '…' : ''}` : 'Pedido recusado — cliente notificado por e-mail')
         loadUpgradePedidos()
       } else {
         notify(b?.error || 'Não foi possível resolver o pedido')
@@ -2557,7 +2558,7 @@ export default function AdminDashboard() {
             {codigoMaster && <div className="dev-bypass-codigo"><code>{codigoMaster}</code><button className="icon-btn" title="Copiar código" onClick={() => { navigator.clipboard?.writeText(codigoMaster); notify('Código copiado — passe-o ao cliente por telefone/WhatsApp') }}><Copy size={14} /></button><small>válido 48h · cada utilização fica no Registo de actividades</small></div>}
           </div>
         </Card>
-          {adminUser?.level === 'developer' && <Card className="admin-panel admin-section-panel settings-card--upg-dev"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTRATO SAAS · PEDIDOS DO CLIENTE</span><h2>Pedidos de pagamento (manutenção)</h2></div><span className="order-live-note"><i /> {upgradePedidos.filter(p => p.estado === 'pendente').length} pendente(s)</span></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>A CFTEC abre <b>Definições → Pagamento para a Manutenção</b>, escolhe o plano/add-ons e envia. O pedido chega aqui: veja o que querem pagar, <b>autorize</b> (e-mail automático de confirmação) ou <b>recuse</b>. Depois de autorizar, ajuste as regras do contrato acima (validade, quotas, read-only) conforme o acordo.</p>
+          {adminUser?.level === 'developer' && <Card className="admin-panel admin-section-panel settings-card--upg-dev"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTRATO SAAS · PEDIDOS DO CLIENTE</span><h2>Pedidos de pagamento (manutenção)</h2></div><span className="order-live-note"><i /> {upgradePedidos.filter(p => p.estado === 'pendente').length} pendente(s)</span></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>A CFTEC abre <b>Definições → Pagamento para a Manutenção</b>, escolhe o plano/add-ons e envia. O pedido chega aqui: veja o que querem pagar, <b>autorize</b> ou <b>recuse</b> (e-mail automático ao cliente). Ao <b>autorizar</b>, o contrato actualiza-se sozinho: licença activa, modo somente leitura desligado, validade +30 dias e os módulos <b>exactamente como a escolha do pedido</b> — o que não foi escolhido desliga (o Módulo Comercial fica sempre ligado, vem no plano base). Quotas só somam se já existir limite definido.</p>
             {upgradePedidos.length === 0 ? <div className="admin-empty-state" style={{ padding: '22px 0' }}><Wallet size={40} /><h3>Sem pedidos de pagamento</h3><p>Quando a CFTEC submeter um pedido no pop-up de planos, aparece aqui para decidir.</p></div> : <div className="upg-lista">{upgradePedidos.map(p => (
               <div className="upg-row" key={p.id}>
                 <div className="upg-row-main">

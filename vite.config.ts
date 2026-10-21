@@ -1808,10 +1808,50 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .single()
               if (error || !data) return json(res, 500, { ok: false, error: 'Falha ao actualizar o pedido.' })
               const okAutorizado = estado === 'autorizado'
-              const htmlDecisao = emailShell(okAutorizado ? 'Pedido autorizado — Nexora Systems' : 'Sobre o seu pedido — Nexora Systems', `<p>Olá <b>${escHtml(atual.empresa)}</b>,</p>${okAutorizado ? `<p>O pedido de upgrade abaixo foi <b style="color:#15803d">autorizado</b>. Vamos preparar a activação dos módulos e enviaremos a confirmação com a factura.</p>` : `<p>Por agora, o pedido abaixo foi <b style="color:#b91c1c">recusado</b>.</p>`}${notaTxt ? `<p><b>Nota da Nexora Systems:</b> ${escHtml(notaTxt)}</p>` : ''}<pre style="white-space:pre-wrap;font-family:inherit">${escHtml(atual.itens)}</pre><p><b>Total:</b> ${escHtml(atual.total)}</p><p style="color:#64748b">Nexora Systems — manutenção da plataforma CFTEC</p>`)
+              // AUTO-ACTIVAÇÃO DO CONTRATO — autorizar espelha a escolha do pedido nos interruptores
+              // da licença: o que o cliente escolheu liga, o que não está na escolha desliga.
+              let autoAplicado: string[] = []
+              if (okAutorizado) {
+                try {
+                  const escolha = String(atual.itens || '')
+                  const temSuporte = /M[oó]dulo de Suporte T[eé]cnico/i.test(escolha)
+                  const temNovidades = /Novidades/i.test(escolha)
+                  const mais5Usuarios = /\+\s*5\s*utilizadores/i.test(escolha)
+                  const mais25Gb = /\+\s*25\s*GB/i.test(escolha)
+                  const licAgora = await licencaAtual()
+                  const hojeStr = new Date().toISOString().slice(0, 10)
+                  // validade: prorroga 30 dias a partir do vencimento actual (ou de hoje, se vencido/vazio)
+                  const baseExpira = /^\d{4}-\d{2}-\d{2}$/.test(licAgora.expiraEm) && licAgora.expiraEm >= hojeStr ? licAgora.expiraEm : hojeStr
+                  const alvoValidade = new Date(`${baseExpira}T12:00:00`)
+                  alvoValidade.setDate(alvoValidade.getDate() + 30)
+                  const novaValidade = alvoValidade.toISOString().slice(0, 10)
+                  const autoLista: { key: string; value: string; description: string }[] = [
+                    { key: 'licenca_ativa', value: 'true', description: 'Licença da plataforma — restaurada pela autorização do pedido de upgrade' },
+                    { key: 'modo_somente_leitura', value: 'false', description: 'Modo somente leitura — desligado pela autorização do pedido de upgrade' },
+                    { key: 'modulo_comercial', value: 'true', description: 'Módulo Comercial: pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil' },
+                    { key: 'modulo_tecnico', value: temSuporte ? 'true' : 'false', description: 'Módulo Técnico: chamados de suporte e wiki técnica — reflete a escolha do cliente' },
+                    { key: 'modulo_novidades', value: temNovidades ? 'true' : 'false', description: 'Módulo Novidades: blog/CMS e destaques — reflete a escolha do cliente' },
+                    { key: 'licenca_expira_em', value: novaValidade, description: 'Validade prorrogada +30 dias pela autorização do pedido de upgrade' },
+                  ]
+                  autoAplicado.push('Licença activa', 'Modo somente leitura desligado', 'Módulo Comercial ligado', temSuporte ? 'Módulo de Suporte Técnico ligado' : 'Módulo de Suporte Técnico desligado', temNovidades ? 'Módulo Novidades ligado' : 'Módulo Novidades desligado', `Validade até ${novaValidade}`)
+                  if (mais5Usuarios && licAgora.maxUsuarios > 0) {
+                    autoLista.push({ key: 'max_usuarios', value: String(Math.min(999, licAgora.maxUsuarios + 5)), description: 'Quota de utilizadores +5 pela autorização do pedido de upgrade' })
+                    autoAplicado.push(`Quota de utilizadores → ${Math.min(999, licAgora.maxUsuarios + 5)}`)
+                  }
+                  if (mais25Gb && licAgora.maxStorageMb > 0) {
+                    autoLista.push({ key: 'max_storage_mb', value: String(Math.min(999999, licAgora.maxStorageMb + 25 * 1024)), description: 'Storage +25 GB pela autorização do pedido de upgrade' })
+                    autoAplicado.push(`Storage → ${Math.min(999999, licAgora.maxStorageMb + 25 * 1024)} MB`)
+                  }
+                  for (const a of autoLista) {
+                    const { error: errAuto } = await supabase.from('settings').upsert(a, { onConflict: 'key' })
+                    if (errAuto) throw new Error(errAuto.message)
+                  }
+                } catch { /* auto-activação falhou → decisão fica grava; o developer pode ajustar à mão */ }
+              }
+              const htmlDecisao = emailShell(okAutorizado ? 'Pedido autorizado — Nexora Systems' : 'Sobre o seu pedido — Nexora Systems', `<p>Olá <b>${escHtml(atual.empresa)}</b>,</p>${okAutorizado ? `<p>O pedido de upgrade abaixo foi <b style="color:#15803d">autorizado</b> e o contrato já foi actualizado: ${autoAplicado.length ? escHtml(autoAplicado.join(' · ')) : 'módulos conforme a escolha'}.</p>` : `<p>Por agora, o pedido abaixo foi <b style="color:#b91c1c">recusado</b>.</p>`}${notaTxt ? `<p><b>Nota da Nexora Systems:</b> ${escHtml(notaTxt)}</p>` : ''}<pre style="white-space:pre-wrap;font-family:inherit">${escHtml(atual.itens)}</pre><p><b>Total:</b> ${escHtml(atual.total)}</p><p style="color:#64748b">Nexora Systems — manutenção da plataforma CFTEC</p>`)
               const emailRes = await sendEmailRaw(atual.email, okAutorizado ? 'Pedido de upgrade autorizado — CFTEC' : 'Sobre o seu pedido de upgrade — CFTEC', htmlDecisao)
-              logAuditoria(vez, okAutorizado ? 'upgrade_autorizado' : 'upgrade_recusado', 'plataforma', id, { empresa: atual.empresa, total: atual.total, ...(notaTxt ? { nota: notaTxt.slice(0, 200) } : {}) })
-              return json(res, 200, { ok: true, pedido: data, email: emailRes?.enviado ? 'enviado' : 'falhou (fire-and-forget)' })
+              logAuditoria(vez, okAutorizado ? 'upgrade_autorizado' : 'upgrade_recusado', 'plataforma', id, { empresa: atual.empresa, total: atual.total, ...(autoAplicado.length ? { auto: autoAplicado } : {}), ...(notaTxt ? { nota: notaTxt.slice(0, 200) } : {}) })
+              return json(res, 200, { ok: true, pedido: data, auto: autoAplicado, email: emailRes?.enviado ? 'enviado' : 'falhou (fire-and-forget)' })
             }
 
             // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API além do UI (o Developer vê sempre tudo)
