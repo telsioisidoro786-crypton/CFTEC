@@ -250,7 +250,7 @@ export function Pricing({ onRequest }: PricingProps) {
                 <CircleCheckIcon className="size-8 shrink-0 text-emerald-600" />
                 <div>
                   <p className="text-sm font-semibold text-emerald-800">Pedido enviado à Nexora Systems!</p>
-                  <p className="text-xs text-emerald-700">Recebe a confirmação e a fase de reactivação por e-mail/WhatsApp.</p>
+                  <p className="text-xs text-emerald-700">O Developer (Nexora Systems) autoriza o pedido e recebe a activação dos módulos em seguida.</p>
                 </div>
               </div>
             ) : (
@@ -261,7 +261,7 @@ export function Pricing({ onRequest }: PricingProps) {
             )}
             {!enviado && (
               <p className="text-center text-xs text-muted-foreground">
-                O pedido entra nas Definições (contacto do painel) e vai por e-mail directo à Nexora Systems.
+                O pedido chega ao Painel do Developer, que autoriza ou recusa — também recebe o aviso por e-mail.
               </p>
             )}
 

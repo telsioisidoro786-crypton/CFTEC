@@ -918,3 +918,20 @@
 .licenca-aviso-cta:hover{background:#ffffff;transform:translateY(-1px)}
 .licenca-aviso-cta--escuro{background:rgba(15,23,42,.55);color:#e2e8f0;border-color:rgba(148,163,184,.4);font-size:.76rem;padding:8px 16px}
 .licenca-aviso-cta--escuro:hover{background:rgba(15,23,42,.85)}
+
+/* ============================================================
+   Pedidos de pagamento / upgrade da manutenção
+   (Definições super admin + Painel do Developer)
+   ============================================================ */
+.upg-lista{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+.upg-row{border:1px solid #e2e8f0;border-radius:12px;padding:10px 14px;background:#fff;display:flex;flex-direction:column;gap:6px}
+.upg-row-main{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.upg-total{font-weight:800;color:#0f172a;font-size:.9rem}
+.upg-data{color:#64748b;font-size:.72rem}
+.upg-chip{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.4px;padding:3px 10px;border-radius:999px}
+.upg-chip--pendente{background:#fef3c7;color:#92400e}
+.upg-chip--autorizado{background:#dcfce7;color:#15803d}
+.upg-chip--recusado{background:#fee2e2;color:#b91c1c}
+.upg-itens{color:#334155;font-size:.78rem;line-height:1.55}
+.upg-nota{color:#6366f1;font-size:.75rem;font-style:italic}
+.upg-acoes{display:flex;gap:8px;margin-top:2px}

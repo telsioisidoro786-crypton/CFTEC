@@ -51,6 +51,7 @@ import {
   UploadCloud,
   Users,
   UsersRound,
+  Wallet,
   X,
   Zap,
   Loader2,
@@ -453,6 +454,8 @@ export default function AdminDashboard() {
   const [baixandoBackup, setBaixandoBackup] = useState(false)
   // pop-up de upgrade (Pricing 9) — abre quando uma quota do contrato bloqueia uma acção
   const [showUpgrade, setShowUpgrade] = useState(false)
+  // pedidos de pagamento/manutenção (super vê os seus; developer autoriza/recusa)
+  const [upgradePedidos, setUpgradePedidos] = useState<Array<{ id: string; empresa: string; email: string; itens: string; total: string; estado: 'pendente' | 'autorizado' | 'recusado'; nota_dev: string | null; created_at: string; resolvido_em: string | null; resolvido_por: string | null }>>([])
   // licenciamento da plataforma — flags geridas pelo developer (Master Admin)
   const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, licencaEfetiva: true, expirada: false, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: '', diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false, diasParaVencer: null })
   // vista kanban do pipeline comercial (arrastar cartões muda o estado do pedido)
@@ -598,6 +601,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     loadDashboardData()
     loadSysLic()
+    loadUpgradePedidos()
   }, [authStatus])
 
   // POP-UP DE UPGRADE — abre sozinho quando a API devolve 403/413 de quota do contrato
@@ -627,23 +631,53 @@ export default function AdminDashboard() {
     return () => window.removeEventListener('keydown', onKey)
   }, [showUpgrade])
 
-  // pedido real de upgrade → canal de contactos (fica no painel + e-mail à Nexora)
+  // pedido real de upgrade → API própria (fica na tabela pedidos_upgrade e o Developer autoriza/recusa)
   const solicitarUpgrade = async (itens: string, total: string): Promise<boolean> => {
     try {
-      const r = await fetch('/api/contact', {
+      const r = await fetch('/api/admin/upgrade-request', {
         method: 'POST', credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: adminUser?.name || 'Equipa CFTEC',
-          email: adminUser?.email || 'admin@cftec.co',
-          interest: 'Upgrade de licença (plataforma)',
-          message: `A equipa do painel solicitou o seguinte plano à Nexora Systems:\n\n${itens.split('\n').map(i => '  ' + i).join('\n')}\n\nValor estimado: ${total}.\nPedido gerado automaticamente pelo pop-up de upgrade do painel.`,
-        }),
+        body: JSON.stringify({ itens, total }),
       })
-      if (r.ok) notify('Pedido de upgrade enviado — a Nexora Systems entra em contacto em breve')
-      return r.ok
-    } catch {
+      const b = await r.json().catch(() => null)
+      if (r.ok) {
+        notify('Pedido de upgrade enviado — a Nexora Systems autoriza em breve')
+        loadUpgradePedidos()
+        return true
+      }
+      notify(b?.error || 'Não foi possível enviar o pedido de upgrade')
       return false
+    } catch {
+      notify('Não foi possível enviar o pedido de upgrade')
+      return false
+    }
+  }
+
+  // PEDIDOS DE PAGAMENTO/MANUTENÇÃO — lista para Definições (super) e Painel do Developer
+  const loadUpgradePedidos = async () => {
+    try {
+      const r = await fetch('/api/admin/upgrade-requests', { credentials: 'include' })
+      if (r.ok) setUpgradePedidos(await r.json())
+    } catch { /* silencioso — repete no ciclo de 20 s */ }
+  }
+
+  // decisão do developer sobre um pedido de upgrade (autorizar/recusar + e-mail ao cliente)
+  const resolverUpgrade = async (id: string, estado: 'autorizado' | 'recusado'): Promise<void> => {
+    try {
+      const r = await fetch(`/api/admin/upgrade-requests/${id}`, {
+        method: 'PATCH', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ estado }),
+      })
+      const b = await r.json().catch(() => null)
+      if (r.ok) {
+        notify(estado === 'autorizado' ? 'Pedido autorizado — e-mail de confirmação a caminho do cliente' : 'Pedido recusado — cliente notificado por e-mail')
+        loadUpgradePedidos()
+      } else {
+        notify(b?.error || 'Não foi possível resolver o pedido')
+      }
+    } catch {
+      notify('Não foi possível resolver o pedido')
     }
   }
 
@@ -1532,7 +1566,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (!adminUser) return
     // polling 20 s: pedidos (comercial) + chamados (técnico) + licença do developer — actualização sem F5
-    const timer = window.setInterval(() => { loadLicenseOrders(false); loadChamadosLeve(); loadSysLic(); if (auditVisivelRef.current) void loadAudit() }, 20000)
+    const timer = window.setInterval(() => { loadLicenseOrders(false); loadChamadosLeve(); loadSysLic(); loadUpgradePedidos(); if (auditVisivelRef.current) void loadAudit() }, 20000)
     return () => window.clearInterval(timer)
   }, [adminUser])
 
@@ -2286,7 +2320,7 @@ export default function AdminDashboard() {
     <aside className={`admin-sidebar ${sidebarOpen ? 'admin-sidebar--open' : ''}`}>
       <div className="admin-sidebar-top"><AdminMark /><button className="admin-close" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
       <div className="admin-workspace"><span className="admin-avatar">CF</span><div><strong>CFTEC Workspace</strong><small>Plano empresarial <span /></small></div><ChevronRight size={15} /></div>
-      <nav className="admin-nav"><span className="admin-nav-label">Workspace</span>{navItems.filter(n => !adminUser?.level || n.levels.includes(adminUser.level)).filter(n => !modBloqueado(n.id)).map(({ id, label, icon: Icon }) => { const navId = String(id); const pendingBadge = summary.contactsUnread || 0; const badgeMap: Record<string, number> = { contactos: pendingBadge, pedidos: (summary.ordersPending || 0) + (summary.ordersVerificacao || 0), parceiros: summary.partnersPending || 0, licencas: summary.licensesExpiring || 0, chamados: chamados.filter(c => c.estado !== 'Resolvido').length }; const badge = badgeMap[navId] || 0; return <button className={activeSection === id ? 'is-active' : ''} key={id} onClick={() => { setActiveSection(id); setSidebarOpen(false) }}><Icon size={17} /><span>{label}</span>{badge > 0 ? <i className="admin-nav-badge">{badge > 9 ? '9+' : badge}</i> : id === 'dashboard' ? <i className="admin-nav-pip" /> : null}</button> })}</nav>
+      <nav className="admin-nav"><span className="admin-nav-label">Workspace</span>{navItems.filter(n => !adminUser?.level || n.levels.includes(adminUser.level)).filter(n => !modBloqueado(n.id)).map(({ id, label, icon: Icon }) => { const navId = String(id); const pendingBadge = summary.contactsUnread || 0; const badgeMap: Record<string, number> = { contactos: pendingBadge, pedidos: (summary.ordersPending || 0) + (summary.ordersVerificacao || 0), parceiros: summary.partnersPending || 0, licencas: summary.licensesExpiring || 0, chamados: chamados.filter(c => c.estado !== 'Resolvido').length, developer: upgradePedidos.filter(p => p.estado === 'pendente').length }; const badge = badgeMap[navId] || 0; return <button className={activeSection === id ? 'is-active' : ''} key={id} onClick={() => { setActiveSection(id); setSidebarOpen(false) }}><Icon size={17} /><span>{label}</span>{badge > 0 ? <i className="admin-nav-badge">{badge > 9 ? '9+' : badge}</i> : id === 'dashboard' ? <i className="admin-nav-pip" /> : null}</button> })}</nav>
       <div className="admin-sidebar-bottom"><div className="admin-help"><CircleHelp size={17} /><div><strong>Precisa de ajuda?</strong><small>Fale com o suporte CFTEC</small></div></div><button className="admin-logout" onClick={handleLogout}><LogOut size={16} /> Sair do painel</button></div>
     </aside>
 
@@ -2523,6 +2557,23 @@ export default function AdminDashboard() {
             {codigoMaster && <div className="dev-bypass-codigo"><code>{codigoMaster}</code><button className="icon-btn" title="Copiar código" onClick={() => { navigator.clipboard?.writeText(codigoMaster); notify('Código copiado — passe-o ao cliente por telefone/WhatsApp') }}><Copy size={14} /></button><small>válido 48h · cada utilização fica no Registo de actividades</small></div>}
           </div>
         </Card>
+          {adminUser?.level === 'developer' && <Card className="admin-panel admin-section-panel settings-card--upg-dev"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTRATO SAAS · PEDIDOS DO CLIENTE</span><h2>Pedidos de pagamento (manutenção)</h2></div><span className="order-live-note"><i /> {upgradePedidos.filter(p => p.estado === 'pendente').length} pendente(s)</span></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>A CFTEC abre <b>Definições → Pagamento para a Manutenção</b>, escolhe o plano/add-ons e envia. O pedido chega aqui: veja o que querem pagar, <b>autorize</b> (e-mail automático de confirmação) ou <b>recuse</b>. Depois de autorizar, ajuste as regras do contrato acima (validade, quotas, read-only) conforme o acordo.</p>
+            {upgradePedidos.length === 0 ? <div className="admin-empty-state" style={{ padding: '22px 0' }}><Wallet size={40} /><h3>Sem pedidos de pagamento</h3><p>Quando a CFTEC submeter um pedido no pop-up de planos, aparece aqui para decidir.</p></div> : <div className="upg-lista">{upgradePedidos.map(p => (
+              <div className="upg-row" key={p.id}>
+                <div className="upg-row-main">
+                  <span className="upg-total">{p.total}</span>
+                  <span className="upg-data">{p.empresa} · {p.email} · {formatDate(p.created_at)}</span>
+                  <span className={`upg-chip upg-chip--${p.estado}`}>{p.estado === 'pendente' ? 'Pendente' : p.estado === 'autorizado' ? 'Autorizado' : 'Recusado'}</span>
+                </div>
+                <div className="upg-itens">{p.itens.split('\n').filter(Boolean).join(' · ')}</div>
+                {p.nota_dev && <div className="upg-nota">Nota: {p.nota_dev}{p.resolvido_por ? ` — por ${p.resolvido_por}` : ''}</div>}
+                {p.estado === 'pendente' && <div className="upg-acoes">
+                  <Button type="button" size="sm" onClick={() => resolverUpgrade(p.id, 'autorizado')}><Check size={13} /> Autorizar</Button>
+                  <Button type="button" size="sm" variant="outline" onClick={() => resolverUpgrade(p.id, 'recusado')}><X size={13} /> Recusar</Button>
+                </div>}
+              </div>
+            ))}</div>}
+          </Card>}
           <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['chamados_suporte', 'chamados'], ['wiki_tecnica', 'wiki técnica'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button></div></Card>
         </>}
 
@@ -2533,6 +2584,25 @@ export default function AdminDashboard() {
         })()}
 
         {activeSection === 'settings' && <div className="settings-grid">
+          {adminUser?.level === 'super_admin' && <Card className="admin-panel settings-card settings-card--upg">
+            <div className="admin-panel-head"><div><span className="admin-panel-kicker">PAGAMENTO · MANUTENÇÃO</span><h2>Pagamento para a Manutenção</h2></div>
+              <Button type="button" size="sm" onClick={() => setShowUpgrade(true)}><Sparkles size={14} /> Ver planos & solicitar</Button>
+            </div>
+            <p>Escolha os módulos, utilizadores ou armazenamento extra de que precisa e envie o pedido — a Nexora Systems (Developer) autoriza e activa por cá.</p>
+            {upgradePedidos.length > 0 && <div className="upg-lista">
+              {upgradePedidos.map(p => (
+                <div className="upg-row" key={p.id}>
+                  <div className="upg-row-main">
+                    <span className="upg-total">{p.total}</span>
+                    <span className="upg-data">{formatDate(p.created_at)}</span>
+                    <span className={`upg-chip upg-chip--${p.estado}`}>{p.estado === 'pendente' ? 'Pendente' : p.estado === 'autorizado' ? 'Autorizado' : 'Recusado'}</span>
+                  </div>
+                  <div className="upg-itens">{p.itens.split('\n').filter(Boolean).join(' · ')}</div>
+                  {p.nota_dev && <div className="upg-nota">Nota da Nexora: {p.nota_dev}</div>}
+                </div>
+              ))}
+            </div>}
+          </Card>}
           {['super_admin', 'developer'].includes(adminUser?.level || 'super_admin') && <Card className="admin-panel settings-card settings-card--portal"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SITE PÚBLICO</span><h2>Contactos, pagamento & banner</h2></div><a className="settings-site-link" href="/" target="_blank" rel="noreferrer noopener">Abrir site <ChevronRight size={14} /></a></div><p>Estes valores alimentam o rodapé, a secção de contactos, o checkout B2B (IBAN + WhatsApp) e o banner superior do site. Guardar aplica ao site no próximo carregamento dos visitantes.</p><form className="settings-form" onSubmit={handlePortalSave}><div className="settings-grid-2">
           <label className="settings-field">WhatsApp comercial<small>Exemplo: 244933609090 (link wa.me nos cards e botões)</small><input value={portalSettings.whatsapp_comercial || ''} onChange={(e) => setPortalSettings(p => ({ ...p, whatsapp_comercial: e.target.value }))} placeholder="244933609090" maxLength={40} /></label>
           <label className="settings-field">WhatsApp de apoio técnico<small>Apoio Técnico a Clientes no site — chamados e suporte. Vazio = usa o comercial.</small><input value={portalSettings.whatsapp_tecnico || ''} onChange={(e) => setPortalSettings(p => ({ ...p, whatsapp_tecnico: e.target.value }))} placeholder="244933609091 (opcional)" maxLength={40} /></label>

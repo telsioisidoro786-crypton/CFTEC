@@ -692,7 +692,7 @@ function adminApi(): Plugin {
 
           // MÓDULOS/LICENÇA DESLIGADOS PELO DEVELOPER — defesa na API antes de qualquer handler admin
           // (rota /api/admin/system-license e o próprio bypass vem depois; o developer vê sempre tudo)
-          if (path.startsWith('/api/admin/') && path !== '/api/admin/system-license' && path !== '/api/admin/licenca-bypass') {
+          if (path.startsWith('/api/admin/') && path !== '/api/admin/system-license' && path !== '/api/admin/licenca-bypass' && path !== '/api/admin/upgrade-request') {
             const nivelMod = currentAdmin(req)?.level
             if (nivelMod && nivelMod !== 'developer') {
               const lic = await licencaAtual()
@@ -1744,6 +1744,74 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               res.setHeader('Set-Cookie', `${BYPASS_COOKIE}=${encodeURIComponent(String(codigo).trim())}; Path=/; ${isProd ? 'Secure; SameSite=None' : 'HttpOnly; SameSite=Lax'}; Max-Age=${48 * 60 * 60}`)
               logAuditoria(vez, 'bypass_activado', 'plataforma', null, { validade_horas: 48, nivel: vez.level })
               return json(res, 200, { ok: true, expiraEm: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString() })
+            }
+
+            // PEDIDOS DE PAGAMENTO / UPGRADE DA MANUTENÇÃO — o painel do cliente submete o plano
+            // escolhido (mesmo com a licença suspensa/somente-leitura); o Developer autoriza ou recusa.
+            if (path === '/api/admin/upgrade-request' && req.method === 'POST') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false, error: 'Sessão necessária.' })
+              if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados indisponível.' })
+              const { itens, total } = await readBody(req) as { itens?: string; total?: string }
+              const itensTxt = String(itens || '').trim()
+              const totalTxt = String(total || '').trim()
+              if (!itensTxt || itensTxt.length > 4000 || !totalTxt || totalTxt.length > 200)
+                return json(res, 400, { ok: false, error: 'Pedido incompleto (itens e total são obrigatórios).' })
+              const { data, error } = await supabase
+                .from('pedidos_upgrade')
+                .insert({ empresa: vez.name || 'Painel CFTEC', email: vez.email, itens: itensTxt, total: totalTxt, criado_por: vez.email })
+                .select('*')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: 'Não foi possível registar o pedido.' })
+              fireAdminEmail('Pedido de upgrade do plano — ' + (vez.name || 'Painel CFTEC'), `<p><b>${escHtml(vez.name || 'Painel CFTEC')}</b> (${escHtml(vez.email)}) submeteu um pedido de pagamento/manutenção no painel:</p><pre style="white-space:pre-wrap;font-family:inherit">${escHtml(itensTxt)}</pre><p><b>Total estimado:</b> ${escHtml(totalTxt)}</p><p>Decida no Painel do Developer → Pedidos de pagamento (Autorizar/Recusar).</p>`)
+              logAuditoria(vez, 'upgrade_pedido', 'plataforma', data.id, { total: totalTxt, itens: itensTxt.slice(0, 200) })
+              return json(res, 201, { ok: true, pedido: data })
+            }
+
+            if (path === '/api/admin/upgrade-requests' && req.method === 'GET') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false, error: 'Sessão necessária.' })
+              if (!nivelPleno(vez.level)) return json(res, 403, { ok: false, error: 'Sem acesso aos pedidos de upgrade.' })
+              if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados indisponível.' })
+              const { data, error } = await supabase
+                .from('pedidos_upgrade')
+                .select('*')
+                .order('created_at', { ascending: false })
+                .limit(50)
+              if (error) return json(res, 500, { ok: false, error: 'Falha ao carregar pedidos.' })
+              return json(res, 200, data || [])
+            }
+
+            if (/^\/api\/admin\/upgrade-requests\/[0-9a-f-]+$/.test(path) && req.method === 'PATCH') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false, error: 'Sessão necessária.' })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) autoriza pedidos de upgrade.' })
+              if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados indisponível.' })
+              const id = path.split('/').pop() as string
+              const { estado, nota_dev } = await readBody(req) as { estado?: string; nota_dev?: string }
+              if (!['autorizado', 'recusado'].includes(String(estado)))
+                return json(res, 400, { ok: false, error: 'Estado inválido (autorizado|recusado).' })
+              const { data: atual } = await supabase
+                .from('pedidos_upgrade')
+                .select('estado, empresa, email, total, itens')
+                .eq('id', id)
+                .maybeSingle()
+              if (!atual) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
+              if (atual.estado !== 'pendente') return json(res, 409, { ok: false, error: 'Este pedido já foi resolvido.' })
+              const notaTxt = String(nota_dev || '').trim().slice(0, 600) || null
+              const { data, error } = await supabase
+                .from('pedidos_upgrade')
+                .update({ estado, nota_dev: notaTxt, resolvido_em: new Date().toISOString(), resolvido_por: vez.email })
+                .eq('id', id)
+                .eq('estado', 'pendente')
+                .select('*')
+                .single()
+              if (error || !data) return json(res, 500, { ok: false, error: 'Falha ao actualizar o pedido.' })
+              const okAutorizado = estado === 'autorizado'
+              const htmlDecisao = emailShell(okAutorizado ? 'Pedido autorizado — Nexora Systems' : 'Sobre o seu pedido — Nexora Systems', `<p>Olá <b>${escHtml(atual.empresa)}</b>,</p>${okAutorizado ? `<p>O pedido de upgrade abaixo foi <b style="color:#15803d">autorizado</b>. Vamos preparar a activação dos módulos e enviaremos a confirmação com a factura.</p>` : `<p>Por agora, o pedido abaixo foi <b style="color:#b91c1c">recusado</b>.</p>`}${notaTxt ? `<p><b>Nota da Nexora Systems:</b> ${escHtml(notaTxt)}</p>` : ''}<pre style="white-space:pre-wrap;font-family:inherit">${escHtml(atual.itens)}</pre><p><b>Total:</b> ${escHtml(atual.total)}</p><p style="color:#64748b">Nexora Systems — manutenção da plataforma CFTEC</p>`)
+              const emailRes = await sendEmailRaw(atual.email, okAutorizado ? 'Pedido de upgrade autorizado — CFTEC' : 'Sobre o seu pedido de upgrade — CFTEC', htmlDecisao)
+              logAuditoria(vez, okAutorizado ? 'upgrade_autorizado' : 'upgrade_recusado', 'plataforma', id, { empresa: atual.empresa, total: atual.total, ...(notaTxt ? { nota: notaTxt.slice(0, 200) } : {}) })
+              return json(res, 200, { ok: true, pedido: data, email: emailRes?.enviado ? 'enviado' : 'falhou (fire-and-forget)' })
             }
 
             // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API além do UI (o Developer vê sempre tudo)
