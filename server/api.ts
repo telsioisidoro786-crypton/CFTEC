@@ -448,8 +448,10 @@ async function revokeSessionTokenByReq(req: IncomingMessage) {
       const own = sessionRegistry.get(payload.sub)
       if (own) { own.delete(payload.jti); if (!own.size) sessionRegistry.delete(payload.sub) }
       if (supabase) {
-        try { await supabase.from('admin_sessions').delete().eq('user_id', payload.sub).eq('jti', payload.jti) }
-        catch { /* logout nunca deve falhar por isto */ }
+        try {
+          const { error: delErr, count } = await supabase.from('admin_sessions').delete().eq('user_id', payload.sub).eq('jti', payload.jti)
+          console.log('[LOGOUT] db del:', delErr?.message || 'ok', 'count:', count)
+        } catch (e) { console.log('[LOGOUT] db del EX:', e instanceof Error ? e.message : String(e)) }
       }
     }
   } catch { /* logout nunca deve falhar por isto */ }
