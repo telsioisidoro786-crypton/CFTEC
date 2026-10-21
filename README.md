@@ -176,4 +176,9 @@ Tabelas activas: `services, media, softwares, contacts, settings, parceiros_cand
 4. **Conteúdo** — substituir produtos fictícios (CFTEC Flow/Insight/Desk) pelo portfólio real (PalancaSoft/Negomil/AGT à medida do portal estático).
 5. Comissão % por parceiro (campo fica pronto a uma coluna) — sugerido mas não seleccionado nesta fase.
 
+### Nota de deploy (Vercel)
+- `vercel.json` (builds + routes): a rota `{"src": "/api/(.*)", "dest": "/api/[...path].ts"}` é **obrigatória** — a conversão build→Build Output API não regista funções *catch-all* sozinha; sem esta entrada os pedidos `/api/*` caem no rewrite SPA (HTML/405).
+- O servidor responde a **todos** os pedidos `/api/*` (fallback `return next()` interior): sem isso a function pendura até ao timeout de 300s. Corrigido em `server/api.ts`.
+- Previews de git têm **Deployment Protection (SSO)** — erros CORS no F12 de um preview são esperados; o domínio de produção `cftec.vercel.app` não tem protection.
+
 _Fim do relatório · gerado em 21 Out 2026 · CFTEC + Nexora Systems._
