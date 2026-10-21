@@ -1,5 +1,5 @@
 # Relatório — Site React & Painel Admin (`cftec-site`)
-_Data: 18 de Outubro de 2026_ · **Actualização (19 Out)**: CRUDs de softwares e contactos completos — ver §5.
+_Data: 18 de Outubro de 2026_ · **Actualização (21 Out)**: blog/CMS, helpdesk por níveis, Web Push + PWA, licenciamento da plataforma (developer Master Admin), code-splitting, audit log e cópias de segurança — ver §10–§19.
 
 ---
 
@@ -97,12 +97,14 @@ Necessário decidir: (a) **React passa a ser o site oficial** (porting do conte�
    - *Softwares: `PATCH /api/admin/software/:id` (JSON: nome/versão/descrição/preço), `POST .../:id/toggle`, `DELETE` (remove instalador do Storage + linha); UI: coluna Estado (pill Activo/Inactivo), botões Editar/Desactivar/Eliminar por linha, modal de edição com pré-preenchimento e sem campo de ficheiro.*
    - *Contactos: `GET` agora com `phone` + `message` e limite 30; `PATCH /:id` (estado `unread`/`read`/`archived`, validado), `DELETE /:id`; nova secção "Contactos" no painel com lista expansível, mensagem completa, acções (marcar lido/novo, arquivar, eliminar com confirmação).*
    - *Extras: estado `new` da BD mostrado como "Novo"; datas formatadas em pt-PT; saudação por hora do dia com o nome real do admin; 401 sem sessão confirmado no DELETE.*
-3. **Ligar `settings`/`audit_logs`** *(→ Feito 19 Out (Fases 1-2): `settings` ligado — config do portal editável na Definições (directório/WhatsApp/banner) + `GET /api/settings` público consumido pelo site; `audit_logs` ainda sem uso.)*
-4. **Estrutura PalancaSoft / Negomil / CRM** *(→ Feito 19 Out, Fases 1-2, ver §7)*
-5. **Produção**: o backend continua no dev-server do Vite (decidir servidor Node próprio ou serverless); criar um executável/serviço de production.
-6. **Performance React**: lazy-chunk + fallback para o hero 3D, code-splitting do admin.
-7. **Produção duramente testada**: segredo real, rate limiting no login e cookies `Secure` em HTTPS.
-8. **Notificações por e-mail (opcional)**: e-mail automático (ex.: Resend/SMTP) para novos contactos e para o administrador.
+3. **Ligar `settings`/`audit_logs`** *(✓ Feito 19 Out (settings) + 21 Out (auditoria): `settings` alimenta o site e as Definições; o audit log propre **`audit_log`** (nova tabela, §18) regista ~24 mutações.)*
+4. **Estrutura PalancaSoft / Negomil / CRM** *(✓ Feito 19 Out, ver §7)*
+5. **Produção**: o backend continua no dev-server do Vite (decidir servidor Node próprio ou serverless); criar um executável/serviço de production. Guia HTTPD/HTTPS/Resend já escrito no painel (§14). **Pendente.**
+6. **Performance React** *(✓ Feito 21 Out, ver §17: code-splitting por rota + libs 3D a pedido; bundle inicial ~350 KB.)*
+7. **Produção duradamente testada**: segredo real *(✓ em `.env`)*; rate limiting no login e cookies `Secure` em HTTPS **pendentes**.
+8. **Notificações por e-mail** *(✓ Feito 19 Out, Resend: contacto/pedido → admin, aprovação/rejeição → cliente, destino editável em settings `notify_email`; e-mails de teste limitados à conta do dono até o domínio ser verificado na Resend.)*
+9. **Secções para a equipa (20–21 Out, todas concluídas e commitadas)**: blog/CMS (§11), sessões revogáveis (§12), proforma/relatórios/helpdesk (§13), kanban/meta/wiki interna + guia de produção (§14), suporte público (§15), Web Push (§16), PWA (§17), fatura interna (§18), licenciamento pelo developer (§19), code-splitting (§20), audit log (§22), cópias de segurança (§23).
+10. **Pendências para o dono**: Web Push/beep nas Definições ainda sem configurar scripts de teste no browser de teste; permissão de notificações Chrome por conceder; software instalado → testar Web Push/pushes reais no telemóvel; verificar domínio na Resend para e-mails externos; backups semanais manuais (download .json) a partir do painel do developer.
 
 ---
 
@@ -150,8 +152,7 @@ Necessário decidir: (a) **React passa a ser o site oficial** (porting do conte�
 - **Fix downloads públicos** — o bucket `software` estava **privado** (`public:false`); URLs públicos devolviam "Bucket not found" (os botões Download do site não abriam os ficheiros). Bucket tornado **público** via `updateBucket` (o `media` já era público, com limite de 10 MB definido).
 
 ## 6. Estado do repo Git
-- Modificações não commitadas na parte React: `App.tsx`, `AdminDashboard.tsx`, `components/sections/ITServices.tsx`, `components/sections/SystemsSoftware.tsx`, `components/ui/MediaTile.tsx`, `supabase-schema.sql`, `vite.config.ts`; não seguidos: `src/lucide-fix.d.ts` + lixo (`server.log`, `cookies.txt`, `test-*`).
-- **Importante**: `.env` existe na raiz — confirmar que está listado no `.gitignore` antes de commitar nada.
+_(histórico de 19 Out — estado actual na §24.)_
 
 ---
 
@@ -163,3 +164,126 @@ Necessário decidir: (a) **React passa a ser o site oficial** (porting do conte�
 - Nota de arquitectura: sem chaves do Supabase no browser — o modal fala com a API do middleware (service role), mesmo fluxo e segurança.
 - Health passa a avisar quando existem pedidos B2B pendentes de confirmação.
 - **Onboarding falta**: correr supabase-pedidos-licencas.sql e definir preços > 0 nos softwares PaginaSoft/Negomil para o checkout aparecer nos cards.
+
+---
+
+## 10. Continuação 19 Out — Destaques, e-mail (Resend) e polimento
+
+- **Destaques & Novidades**: tabela `novidades_destaques` (SQL), CRUD no painel com upload para `media`, carrossel `NewsSlider` no site.
+- **Notificações por e-mail (Resend)**: contacto/pedido → admin; aprovação/rejeição → cliente; destino editável no painel (settings `notify_email` à via de `PATCH /api/admin/settings`). ⚠️ Conta sandbox da Resend só deixa enviar para `telsioisidoro786@gmail.com` — verificar domínio para e-mails a clientes reais.
+- **Polimento global de modais**: ESC fecha, scroll-lock, animação pop, footer pegajoso, aviso nas confirmações, bottom-sheet em telemóvel, autofoco.
+- **Visão geral**: reduzida a 4 KPIs animados (count-up + barra de crescimento) + linha do tempo de actividade de todos os módulos.
+
+---
+
+## 11. Blog / CMS (20 Out)
+
+- Tabela `blog_posts` (`supabase-blog-posts.sql`), APIs público + admin (rascunho/publicar), gestão com editor no painel.
+- Secção **#blog** no site com modal de leitura; cabeçalho com chip luminoso + título gradiente para fundo claro.
+
+---
+
+## 12. Sessões revogáveis no servidor (20 Out)
+
+- Token JWT passa a ter **`jti` registado em memória**: logout mata o token de verdade; mudar password, desactivar ou eliminar utilizador **revoga todas as sessões dele**.
+- Interceptor 401 no cliente (devolve ao login sem toast repetido); logout também no topo do painel.
+- ⚠️ Caso especial: apagar uma conta directamente no Supabase (fora do painel) **não** revoga os JWT emitidos — só o registo em memória (restart) ou a eliminação pela UI garantem a revogação.
+
+---
+
+## 13. Painel por níveis: Proforma, Relatórios & Metas, Helpdesk (20 Out)
+
+- **Dashboard adaptado por papel**: gestor vê pedidos/contactos/licenças/revenda; técnico vê softwares/serviços/mídias/blog — linhas do tempo e cartões filtrados por nível; API: guard comercial movido para antes dos handlers (o técnico levava `200` em licenças por engano), settings GET só super_admin.
+- **Gestor Comercial**: **Fatura Proforma PDF** (2.ª via, nº sequencial **PF-AAAA-####** com auditoria de contador, sem dependências externas), botão Proforma, tabs Em Verificação/Rejeitados no pipeline, secção **Relatórios & Metas** (KPIs, receita estimada pelo preço de catálogo, conversão, vendas/mês, top softwares), alerta de renovações ≤15 dias.
+- **Técnico**: módulo **Helpdesk** — chamados com CRUD + prioridades (Baixa/Média/Crítica) + estados (Pendente → Em Resolução → Resolvido), consulta **read-only** de licenças & chaves (pesquisa por cliente/NIF/chave) para suporte, badge no nav. API `/api/admin/chamados` + `supabase-chamados-suporte.sql` (v2).
+- **Tooltips estilizados** (`data-tip`) em estados/chaves/versões/ordem + dashboard compactado (gráfico junto à mini-tabela, timeline 330px).
+
+---
+
+## 14. Kanban 5 colunas, meta mensal e Wiki interna (20 Out)
+
+- **Pipeline arrastável** com kanban completo (Pendente → Em Verificação → Aprovado → Rejeitado → Pagos) + **meta mensal editável** com barra de progresso.
+- **Wiki técnica interna** (`supabase-wiki-tecnica.sql`) com consulta a partir dos chamados (artigos por software/problema).
+- **Guia de produção no painel**: checklist HTTPS, Resend e deployment.
+
+---
+
+## 15. Canal público de suporte (20 Out)
+
+- Formulário de chamados no site (`POST /api/chamados` público, validado — NIF, WhatsApp, software), **WhatsApp técnico** com mensagem pré-formatada e página por papel (FAQ + dados de contacto).
+- Cada chamado cria Web Push ao técnico (§16) e e-mail ao admin.
+
+---
+
+## 16. Web Push VAPID — alertas gratuitos (20 Out)
+
+- **Tabela `push_subscriptions`** (`supabase-push-subscriptions.sql`); VAPID keys no `.env` — **sem Firebase**.
+- Service worker (`public/sw.js`) com `push`/`notificationclick`; **banner de activação** no painel (`PushNotificationBanner`); subscrição por admin.
+- **Push automático**: novo pedido (→ comercial) e novo chamado (→ técnico), fire-and-forget pela service-role.
+- **Alerta local** com som (beep) quando há novos chamados detectados no polling de 20 s (ids conhecidos → toast + carrilhão).
+
+---
+
+## 17. PWA instalável conservador (20 Out)
+
+- `manifest.webmanifest` + ícones PNG 192/512 + apple-touch 180.
+- Service worker em **cache de produção apenas** (`/assets`, network-first; **APIs nunca** são cacheadas); cache desligado em dev (localhost no bypass, linha 28 do `sw.js`).
+
+---
+
+## 18. Fatura interna FT (20 Out)
+
+- Fluxo **Aprovado → Pago**: botão *Confirmar pagamento* no pedido aprovado; `supabase-status-pago.sql` adiciona `Pago` à constraint de `status`.
+- **PDF de fatura interna** com nº sequencial **FT-AAAA-####**; kanban ganha 5.ª coluna/tab *Pagos*; receita e meta passam a somar apenas pedidos pagos.
+
+---
+
+## 19. Licenciamento da plataforma — Developer (Master Admin) (21 Out)
+
+- Bootstrap da **conta developer**: primeira developer criada pelo super (guard no middleware: depois disso, só developers criam developers). Conta real: `telsioisidoro786@gmail.com`.
+- Secção exclusiva **Painel do Developer** (4.º nível): **licença da plataforma** (activa/suspensa) + módulos **comercial / técnico / novidades** em switches, validade opcional (aviso "expira a …" em todos os painéis) e **mensagem de bloqueio** editável.
+- Efectos da suspensão: painel bloqueado para toda a equipa CFTEC (excepto developers, que veem sempre tudo); formulários públicos (checkout/suporte) fechados; APIs dos módulos com 403 e mensagem contextual.
+- Chaves de licença PalancaSoft: **o developer vê e altera; nas Definições do super aparecem ocultas** e qualquer PATCH de chaves → 403. Guarda movida para antes de `/api/admin/profile`.
+- `supabase-system-license.sql` (settings `licenca_ativa`, `modulo_comercial`, `modulo_tecnico`, `modulo_novidades`, `licenca_expira_em`, `msg_licenca`); leitura via `/api/admin/system-license` com **polling de 20 s** (efeito em ≤20 s sem F5).
+
+---
+
+## 20. Code-splitting — performance (21 Out)
+
+- `main.tsx` carrega `<App/>` e `<AdminDashboard/>` por **rota com lazy + Suspense** (antecâmara de carregamento).
+- `App.tsx`: **three.js, GSAP, ScrollTrigger e animejs passam a `import()` dinâmico** com fallback — se as libs falharem, o conteúdo fica visível e os contadores ficam estáticos (site nunca quebra).
+- Antes: 1 chunk de 1 110 KB. Depois: core **~212 KB**, AdminDashboard ~264 KB, App ~56 KB, `three.module` ~690 KB (**lazy**, ~176 KB gzip), ScrollTrigger 44 KB, anime 18 KB — o bundle inicial por entrada fica ~350 KB (o warning >500 KB é só o chunk lazy do three, esperado).
+
+---
+
+## 21. Modal da Wiki Técnica melhorado (21 Out)
+
+- Modal largo (`admin-modal--lg`) com fieldsets **Identificação / Diagnóstico**; datalists de sugestões (softwares do catálogo + artigos da wiki; tags só preenchidas com as existentes).
+- **Contadores de caracteres** com avisos (amarelo ~70%, vermelho ~90%); estado a guardar + **guard anti duplo-submit**; kicker EDITAR/NOVA SOLUÇÃO; modal fecha com ESC e classe.
+
+---
+
+## 22. Audit log — Registo de actividades (21 Out)
+
+- Tabela **`audit_log`** (`supabase-audit-log.sql`, idempotente): actor (e-mail + nível; **"site público"** nos formulários anónimos), acção, entidade, id do alvo e `detalhe` JSON truncado (2 000 chars); índice por `created_at desc`; **RLS activado sem políticas** — a anon key não lê nem escreve; escrita/leitura **só pela service-role no middleware**.
+- Helper `logAuditoria()` **fire-and-forget** em **~24 mutações**: logins (incl. `login_falhado` com o e-mail tentado), formulários públicos (contacto, candidatura, chamado, pedido), contactos/parceiros, **mudança de estado dos pedidos (com de → para)**, licenças emitidas/alteradas, definições gravadas, **licença da plataforma alterada** (com resultado), utilizadores criados/actualizados/apagados, chamados, wiki, serviços, destaques, blog, mídias e softwares.
+- Leitura: `GET /api/admin/auditoria` (300 mais recentes) — **só super_admin + developer** (técnico/gestor → 403).
+- Secção **"Registo de actividades"** no painel (ScrollText): tabela Data · Quem · Acção · Alvo · Detalhe, **selos coloridos por tipo** (criar=verde, apagar=vermelho, estado=azul, licença=roxo, login falhado=âmbar), pesquisa instantânea, refresh manual, carregamento ao abrir e refresh no polling de 20 s enquanto visível.
+
+---
+
+## 23. Cópias de segurança — exclusivas do Developer (21 Out)
+
+- `GET /api/admin/backup`: exporta **14 tabelas** num único `.json` — pedidos, licenças, chamados, wiki, utilizadores (**sem `password_hash`**, verificado por E2E), definições, parceiros, contactos, blog, destaques, mídia, softwares, serviços e auditoria (cap 20 000 linhas).
+- Cabeçalho `_backup` com app, instante, autor, estado da licença e hint de restauro (cada chave de topo = uma tabela, pronta para bulk insert).
+- **O ficheiro nunca fica no servidor** — sai por download directo no browser (`cftec-backup-AAAA-MM-DD HHhMM.json`), zero risco de fuga; **só o developer consegue** (super admin → 403).
+- Painel do Developer: cartão "Cópias de segurança" com lista das 14 tabelas + botão **Exportar cópia completa** (guard anti duplo clique, ~8 s a gerar, toast de sucesso). Cada exportação fica no audit log (`backup_exportado`).
+- Restauro: manual, no SQL Editor (bulk insert das tabelas do `.json`).
+
+---
+
+## 24. Estado do repo Git (21 Out)
+
+- Branch `master` publicada em `github.com/telsioisidoro786-crypton/CFTEC.git`; commits de referência das últimas fases: `730a20c` licenciamento, `7f99b53` code-splitting, `5f63569` wiki modal, `8c39e40` audit log, `04aa764` backups.
+- `.env` no `.gitignore` (nunca no repo); worktree limpo; migrations SQL da raiz (idempotentes, executadas **pelo dono** no SQL Editor): `admin-ext`, `admin-users`, `chamados-suporte` (+v2), `blog-posts`, `novidades-destaques`, `pedidos-licencas`, `push-subscriptions`, `wiki-tecnica`, `status-pago`, `system-license`, `audit-log`.
+- Ficheiros de preferência **fora do repo**: `server.log`, `cookies.txt`, scripts de teste ad-hoc (mantidos só em local).
