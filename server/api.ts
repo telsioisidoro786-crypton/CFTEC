@@ -440,10 +440,13 @@ async function registerSessionJti(sub: string, jti: string) {
 }
 
 async function revokeSessionTokenByReq(req: IncomingMessage) {
+  console.log('[LOGOUT] in revoke')
   try {
     const token = cookies(req)[authCookieName]
+    console.log('[LOGOUT] token?', !!token)
     if (!token) return
     const payload = jwt.decode(token) as { sub?: string; jti?: string } | null
+    console.log('[LOGOUT] payload?', !!payload, 'sub?', !!payload?.sub, 'jti?', !!payload?.jti)
     if (payload?.sub && payload.jti) {
       const own = sessionRegistry.get(payload.sub)
       if (own) { own.delete(payload.jti); if (!own.size) sessionRegistry.delete(payload.sub) }
