@@ -410,26 +410,36 @@ function cookies(req: IncomingMessage): Record<string, string> {
 }
 
 // ============================================================
-// REVOGAÇÃO DE SESSÕES EM MEMÓRIA — logout / mudança de password
-// invalidam os JWT emitidos (jti). Reiniciar o servidor limpa a
-// lista; os tokens de pré-deploy expiram naturalmente (8 h).
+// REVOGAÇÃO DE SESSÕES — logout / mudança de password
+// invalidam os JWT emitidos (jti). Em server-less a memória de cada
+// instância é volátil, por isso o jti de cada sessão fica TAMBÉM na
+// tabela `admin_sessions` (Supabase); a memória da instância actua
+// como cache. `ensureJtiKnown` repõe o jti do Supabase quando uma
+// instância nova corre (antes das validações sincrónicas).
 // ============================================================
-const sessionRegistry = new Map<string, Map<string, number>>() // sub → (jti → emitido em ts)
+const sessionRegistry = new Map<string, Map<string, number>>() // cache local: sub → (jti → emitido em ts)
 const chamadoRate = new Map<string, number[]>() // limitação pública: ip → timestamps de chamados submissos
+const SESSION_DB_TTL_MS = 30 * 24 * 60 * 60 * 1000 // higiene: linhas de sessão com mais de 30 dias saem
 
-function registerSessionJti(sub: string, jti: string) {
+async function registerSessionJti(sub: string, jti: string) {
   const own = sessionRegistry.get(sub) || new Map<string, number>()
   own.set(jti, Date.now())
-  // basta o último token do utilizador + poucos anteriores; cap de 20 registos/sub
+  // basta o último token do utilizador + poucos anteriores; cap de 20 registos/sub na memória
   while (own.size > 20) {
     let oldestKey = ''; let oldestTs = Infinity
     own.forEach((t, k) => { if (t < oldestTs) { oldestTs = t; oldestKey = k } })
     own.delete(oldestKey)
   }
   sessionRegistry.set(sub, own)
+  if (supabase) {
+    try {
+      await supabase.from('admin_sessions').insert({ user_id: sub, jti, issued_at: Date.now() })
+      void supabase.from('admin_sessions').delete().lt('issued_at', Date.now() - SESSION_DB_TTL_MS)
+    } catch { /* tabela pode não existir ainda — sessão fica só na memória (dev) */ }
+  }
 }
 
-function revokeSessionTokenByReq(req: IncomingMessage) {
+async function revokeSessionTokenByReq(req: IncomingMessage) {
   try {
     const token = cookies(req)[authCookieName]
     if (!token) return
@@ -437,13 +447,39 @@ function revokeSessionTokenByReq(req: IncomingMessage) {
     if (payload?.sub && payload.jti) {
       const own = sessionRegistry.get(payload.sub)
       if (own) { own.delete(payload.jti); if (!own.size) sessionRegistry.delete(payload.sub) }
+      if (supabase) {
+        try { await supabase.from('admin_sessions').delete().eq('user_id', payload.sub).eq('jti', payload.jti) }
+        catch { /* logout nunca deve falhar por isto */ }
+      }
     }
   } catch { /* logout nunca deve falhar por isto */ }
 }
 
-function revokeAllSessionsForUser(sub: string) { sessionRegistry.delete(sub) }
+async function revokeAllSessionsForUser(sub: string) {
+  sessionRegistry.delete(sub)
+  if (supabase) {
+    try { await supabase.from('admin_sessions').delete().eq('user_id', sub) } catch { /* ok */ }
+  }
+}
 
 function isJtiRevoked(sub: string, jti: string) { return !sessionRegistry.get(sub)?.has(jti) }
+
+// server-less: instância nova não tem o jti em memória → consulta o Supabase;
+// se lá estiver, repõe a cache. Se não estiver, está mesmo revogado (logout/revogação).
+async function ensureJtiKnown(sub: string, jti: string): Promise<void> {
+  if (!supabase) return
+  const own = sessionRegistry.get(sub)
+  if (own?.has(jti)) return
+  try {
+    const { data } = await supabase
+      .from('admin_sessions')
+      .select('jti')
+      .eq('user_id', sub)
+      .eq('jti', jti)
+      .limit(1)
+    if (data && data.length) await registerSessionJti(sub, jti)
+  } catch { /* tabela ausente → comportamento in-memory */ }
+}
 
 function currentAdmin(req: IncomingMessage): AdminClaims | null {
   const token = cookies(req)[authCookieName]
@@ -459,6 +495,16 @@ function currentAdmin(req: IncomingMessage): AdminClaims | null {
     console.error('[AUTH] Verify error:', e)
     return null
   }
+}
+
+// lê e verifica o JWT da cookie — usado para sincronizar o jti do Supabase em server-less
+function decodeSessionClaims(req: IncomingMessage): AdminClaims | null {
+  const token = cookies(req)[authCookieName]
+  if (!token || !JWT_SECRET) return null
+  try {
+    const claims = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as AdminClaims
+    return claims.role === 'admin' ? claims : null
+  } catch { return null }
 }
 
 function setSessionCookie(res: ServerResponse, token: string) {
@@ -614,6 +660,11 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
         try {
           const path = req.url.split('?')[0]
 
+          // server-less: a instância pode ser nova → repõe o jti da sessão do Supabase
+          // antes das validações sincrónicas (currentAdmin). Sem cookie válido: no-op.
+          const sc = decodeSessionClaims(req)
+          if (sc?.sub && sc?.jti) await ensureJtiKnown(sc.sub, sc.jti)
+
           if (path === '/api/admin/login' && req.method === 'POST') {
             if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'JWT secret não configurado.' })
             const payload = await readBody(req)
@@ -679,7 +730,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
               JWT_SECRET,
               { algorithm: 'HS256', expiresIn: sessionMaxAge }
             )
-            registerSessionJti(admin.id, jti)
+            await registerSessionJti(admin.id, jti)
             setSessionCookie(res, token)
             logAuditoria(admin, 'login', 'sessão', admin.id, { nivel: admin.level })
             return json(res, 200, { ok: true, user: { name: admin.name, email: admin.email, level: admin.level } })
@@ -744,7 +795,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
               JWT_SECRET,
               { algorithm: 'HS256', expiresIn: sessionMaxAge },
             )
-            registerSessionJti(row.id, jti2)
+            await registerSessionJti(row.id, jti2)
             setSessionCookie(res, token)
             logAuditoria({ email: admin.email, level: admin.level }, 'perfil_actualizado', 'utilizador', admin.sub, { nome: name })
             return json(res, 200, { ok: true, user: { name: row.name, email: row.email, level } })
@@ -777,14 +828,14 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             const { error: upErr } = await supabase.from(table).update({ password_hash: hash }).eq('id', row.id)
             if (upErr) return json(res, 500, { ok: false, error: upErr.message })
             // todas as sessões anteriores desta conta tornam-se inválidas (novo ciclo de tokens)
-            revokeAllSessionsForUser(admin.sub)
+            await revokeAllSessionsForUser(admin.sub)
             const jti3 = crypto.randomUUID()
             const token = jwt.sign(
               { sub: admin.sub, email: admin.email, name: admin.name, role: 'admin', level: admin.level, jti: jti3 } satisfies AdminClaims,
               JWT_SECRET,
               { algorithm: 'HS256', expiresIn: sessionMaxAge },
             )
-            registerSessionJti(admin.sub, jti3)
+            await registerSessionJti(admin.sub, jti3)
             setSessionCookie(res, token)
             logAuditoria({ email: admin.email, level: admin.level }, 'password_alterada', 'utilizador', admin.sub)
             return json(res, 200, { ok: true })
@@ -792,7 +843,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           
           if (path === '/api/admin/logout' && req.method === 'POST') {
             // mata o token desta sessão no servidor (não apenas no browser)
-            revokeSessionTokenByReq(req)
+            await revokeSessionTokenByReq(req)
             clearSessionCookie(res)
             return json(res, 200, { ok: true })
           }
@@ -1972,7 +2023,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               }
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
               // password/desactivação/nível alterados → a(s) sessão(ões) do utilizador perdido/degradado morrem já
-              if (updates.password_hash || updates.is_active === false || updates.role) revokeAllSessionsForUser(String(id))
+              if (updates.password_hash || updates.is_active === false || updates.role) await revokeAllSessionsForUser(String(id))
               const { data, error } = await supabase
                 .from('admin_users')
                 .update(updates)
@@ -1995,7 +2046,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 400, { ok: false, error: 'Não pode eliminar a sua própria conta.' })
               const { error } = await supabase.from('admin_users').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
-              revokeAllSessionsForUser(String(id))
+              await revokeAllSessionsForUser(String(id))
               logAuditoria(currentAdmin(req), 'utilizador_apagado', 'utilizador', id, alvoDel?.role ? { nivel: alvoDel.role } : undefined)
               return json(res, 200, { ok: true })
             }
