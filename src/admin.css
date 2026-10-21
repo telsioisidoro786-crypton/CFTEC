@@ -849,3 +849,15 @@
 .wiki-char-count--max{color:#be123c}
 /* passo-a-passo: textarea com hint colado */
 .admin-form-section .admin-field-hint{margin-top:0}
+
+/* registo de actividades (auditoria) */
+.audit-pill{display:inline-block;padding:3px 9px;border-radius:8px;font:600 .6rem 'Inter',sans-serif;white-space:nowrap}
+.audit-pill--verde{background:#f0fdf4;color:#15803d}
+.audit-pill--vermelho{background:#fef2f2;color:#be123c}
+.audit-pill--azul{background:#eff6ff;color:#1d4ed8}
+.audit-pill--roxo{background:#faf5ff;color:#7c3aed}
+.audit-pill--ambar{background:#fffbeb;color:#b45309}
+.audit-pill--neutro{background:#f1f5f9;color:#475569}
+.audit-eid{display:block;color:#94a3b8;font:500 .56rem 'DM Mono',monospace}
+.audit-detalhe{color:#64748b;font-size:.66rem;line-height:1.5;word-break:break-word}
+.audit-table td{vertical-align:top}

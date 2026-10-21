@@ -477,6 +477,20 @@ function clearSessionCookie(res: ServerResponse) {
 // Developer (Master Admin) tem acesso pleno igual ao super_admin — mas só ele gere a licença
 const nivelPleno = (nivel?: string | null) => nivel === 'super_admin' || nivel === 'developer'
 
+// ─── AUDITORIA (audit_log) ─── Cada mutação relevante deixa rasto: quem, quando, o quê.
+// fire-and-forget — a auditoria nunca atrasa nem quebra a resposta do pedido.
+const logAuditoria = (actor: { email?: string; level?: string } | null | undefined, acao: string, entidade: string, entidadeId?: string | null, detalhe?: Record<string, unknown>) => {
+  if (!supabase) return
+  void supabase.from('audit_log').insert({
+    actor_email: actor?.email || 'site público',
+    actor_level: actor?.level || null,
+    acao,
+    entidade,
+    entidade_id: entidadeId || null,
+    detalhe: detalhe ? JSON.stringify(detalhe).slice(0, 2000) : null,
+  }).then(({ error }) => { if (error) console.error('[AUDIT]', error.message) }, () => {})
+}
+
 // Chaves de licenciamento — geridas EXCLUSIVAMENTE pelo developer
 // (nunca aparecem no painel de Definições do super_admin, que não as altera nem vê)
 const CHAVES_LICENCA = ['licenca_ativa', 'modulo_comercial', 'modulo_tecnico', 'modulo_novidades', 'licenca_expira_em', 'msg_licenca']
@@ -563,8 +577,10 @@ function adminApi(): Plugin {
               }
             }
 
-            if (!admin || !(await bcrypt.compare(password, admin.password_hash)))
+            if (!admin || !(await bcrypt.compare(password, admin.password_hash))) {
+              logAuditoria(null, 'login_falhado', 'sessão', null, { email })
               return json(res, 401, { ok: false, error: 'E-mail ou password incorrectos.' })
+            }
 
             const jti = crypto.randomUUID()
             const token = jwt.sign(
@@ -574,6 +590,7 @@ function adminApi(): Plugin {
             )
             registerSessionJti(admin.id, jti)
             setSessionCookie(res, token)
+            logAuditoria(admin, 'login', 'sessão', admin.id, { nivel: admin.level })
             return json(res, 200, { ok: true, user: { name: admin.name, email: admin.email, level: admin.level } })
           }
 
@@ -630,6 +647,7 @@ function adminApi(): Plugin {
             )
             registerSessionJti(row.id, jti2)
             setSessionCookie(res, token)
+            logAuditoria({ email: admin.email, level: admin.level }, 'perfil_actualizado', 'utilizador', admin.sub, { nome: name })
             return json(res, 200, { ok: true, user: { name: row.name, email: row.email, level } })
           }
 
@@ -669,6 +687,7 @@ function adminApi(): Plugin {
             )
             registerSessionJti(admin.sub, jti3)
             setSessionCookie(res, token)
+            logAuditoria({ email: admin.email, level: admin.level }, 'password_alterada', 'utilizador', admin.sub)
             return json(res, 200, { ok: true })
           }
           
@@ -756,6 +775,7 @@ function adminApi(): Plugin {
               emailShell('Novo contacto recebido', `<p>Alguém preencheu o formulário do site:</p>
 <table style="border-collapse:collapse">${emailLinha('Nome', escHtml(name))}${emailLinha('E-mail', `<a href="mailto:${escHtml(email)}" style="color:#1d4ed8">${escHtml(email)}</a>`)}${emailLinha('Telefone', escHtml(payload.phone?.trim() || '—'))}${emailLinha('Interesse', escHtml(payload.interest?.trim() || '—'))}${emailLinha('Mensagem', escHtml(message).slice(0, 800).replace(/\n/g, '<br />'))}</table>`),
             )
+            logAuditoria(null, 'contacto_recebido', 'contacto', null, { nome: name, interesse: payload.interest?.trim() || null })
             return json(res, 201, { ok: true })
           }
           
@@ -780,6 +800,7 @@ function adminApi(): Plugin {
               nota: payload.nota?.trim().slice(0, 2000) || null,
             })
             if (error) return json(res, 500, { ok: false, error: error.message })
+            logAuditoria(null, 'candidatura_sub_parceiro', 'parceiro', null, { nome_responsavel: nome, modalidade })
             return json(res, 201, { ok: true, message: 'Candidatura recebida. A equipa CFTEC entrará em contacto.' })
           }
 
@@ -815,6 +836,7 @@ function adminApi(): Plugin {
             }
             // Web Push ao técnico (fire-and-forget: não atrasa a resposta ao cliente)
             void pushNotifyEquipa('chamado', '🛠️ Novo chamado de suporte', `${nomeEmpresa} pediu apoio (${software}) — verifique no painel.`)
+            logAuditoria(null, 'chamado_recebido', 'chamado', data?.id, { empresa: nomeEmpresa, software })
             return json(res, 201, { ok: true, chamado_id: data?.id })
           }
 
@@ -887,6 +909,7 @@ function adminApi(): Plugin {
             )
             // Web Push ao comercial (fire-and-forget)
             void pushNotifyEquipa('pedido', '📋 Novo pedido de licença', `${nomeEmpresa} pediu ${softwareNome} — verifique no painel.`)
+            logAuditoria(null, 'pedido_recebido', 'pedido', data.id, { empresa: nomeEmpresa, software: softwareNome, forma_pagamento: formaPagamento })
             return json(res, 201, {
               ok: true,
               pedido_id: data.id,
@@ -1149,6 +1172,7 @@ function adminApi(): Plugin {
                 .select('id, status')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'contacto_estado', 'contacto', id, { status: payload.status })
               return json(res, 200, { ok: true, contact: data })
             }
 
@@ -1156,6 +1180,7 @@ function adminApi(): Plugin {
               const id = path.split('/').pop()
               const { error } = await supabase.from('contacts').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'contacto_apagado', 'contacto', id)
               return json(res, 200, { ok: true })
             }
 
@@ -1199,6 +1224,7 @@ function adminApi(): Plugin {
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
               const { data, error } = await supabase.from('parceiros_candidaturas').update(updates).eq('id', id).select('id, status, volume_vendas, clientes_angariados').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'parceiro_actualizado', 'parceiro', id, Object.keys(updates).length === 1 && updates.status ? { status: updates.status } : { campos: Object.keys(updates) })
               return json(res, 200, { ok: true, partner: data })
             }
 
@@ -1206,6 +1232,7 @@ function adminApi(): Plugin {
               const id = path.split('/').pop()
               const { error } = await supabase.from('parceiros_candidaturas').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'parceiro_apagado', 'parceiro', id)
               return json(res, 200, { ok: true })
             }
 
@@ -1348,6 +1375,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 }
                 console.log(`[EMAIL] cliente ${novoStatus} → ${cliMail} · ${emailCliente.detalhe}`)
               }
+              logAuditoria(currentAdmin(req), 'pedido_estado', 'pedido', id, Object.keys(updates).length === 1 && updates.status ? { de: prevStatus, para: novoStatus } : { estado_anterior: prevStatus, estado_novo: novoStatus, campos: Object.keys(updates) })
               return json(res, 200, { ok: true, pedido: data, emailCliente: emailCliente ? (emailCliente.enviado ? 'enviado' : emailCliente.detalhe) : 'nenhum' })
             }
 
@@ -1355,6 +1383,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const id = path.split('/').pop()
               const { error } = await supabase.from('pedidos_licencas').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'pedido_apagado', 'pedido', id)
               return json(res, 200, { ok: true })
             }
 
@@ -1398,6 +1427,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, created_at')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'licenca_emitida', 'licença', data.id, { cliente, chave })
               return json(res, 201, { ok: true, license: data })
             }
 
@@ -1418,6 +1448,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
               const { data, error } = await supabase.from('licencas_palancasoft').update(updates).eq('id', id).select('id, status, data_expiracao').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'licenca_actualizada', 'licença', id, { campos: Object.keys(updates), ...(updates.status ? { status: updates.status } : {}) })
               return json(res, 200, { ok: true, license: data })
             }
 
@@ -1425,6 +1456,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const id = path.split('/').pop()
               const { error } = await supabase.from('licencas_palancasoft').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'licenca_apagada', 'licença', id)
               return json(res, 200, { ok: true })
             }
 
@@ -1462,6 +1494,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   .upsert(row, { onConflict: 'key' })
                 if (error) return json(res, 500, { ok: false, error: error.message })
               }
+              logAuditoria(currentAdmin(req), 'definicoes_gravadas', 'definições', null, { chaves: entries.map((e) => e.key.trim()) })
               return json(res, 200, { ok: true })
             }
 
@@ -1512,7 +1545,9 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 const { error } = await supabase.from('settings').upsert(a, { onConflict: 'key' })
                 if (error) return json(res, 500, { ok: false, error: error.message })
               }
-              return json(res, 200, { ok: true, ...(await licencaAtual()) })
+              const resultado = await licencaAtual()
+              logAuditoria(vez, 'licenca_alterada', 'plataforma', null, { alteracoes: atual.map((a) => `${a.key}=${a.value}`), resultado: { licencaAtiva: resultado.licencaAtiva, comercial: resultado.moduloComercial, tecnico: resultado.moduloTecnico, novidades: resultado.moduloNovidades, expiraEm: resultado.expiraEm } })
+              return json(res, 200, { ok: true, ...resultado })
             }
 
             // MÓDULOS DESLIGADOS PELO DEVELOPER — defesa na API além do UI (o Developer vê sempre tudo)
@@ -1581,6 +1616,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('id, name, email, role, is_active, created_at')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'utilizador_criado', 'utilizador', data.id, { email, nivel: role })
               return json(res, 201, { ok: true, user: data })
             }
 
@@ -1630,6 +1666,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('id, name, email, role, is_active, created_at')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'utilizador_actualizado', 'utilizador', id, { campos: Object.keys(updates).filter((k) => k !== 'password_hash'), ...( updates.role !== undefined ? { nivel: updates.role } : {}),...(updates.is_active !== undefined ? { activo: updates.is_active } : {}) })
               return json(res, 200, { ok: true, user: data })
             }
 
@@ -1645,6 +1682,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const { error } = await supabase.from('admin_users').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
               revokeAllSessionsForUser(String(id))
+              logAuditoria(currentAdmin(req), 'utilizador_apagado', 'utilizador', id, alvoDel?.role ? { nivel: alvoDel.role } : undefined)
               return json(res, 200, { ok: true })
             }
 
@@ -1692,6 +1730,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .insert({ cliente, nif, telefone, software, problema, estado, prioridade, origem: 'painel' })
                 .select('*').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'chamado_criado', 'chamado', data.id, { cliente, estado, prioridade })
               return json(res, 201, { ok: true, chamado: data })
             }
 
@@ -1706,11 +1745,13 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
                 const { data, error } = await supabase.from('chamados_suporte').update(update).eq('id', id).select('*').single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'chamado_actualizado', 'chamado', id, { campos: Object.keys(update) })
                 return json(res, 200, { ok: true, chamado: data })
               }
               if (req.method === 'DELETE') {
                 const { error } = await supabase.from('chamados_suporte').delete().eq('id', id)
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'chamado_apagado', 'chamado', id)
                 return json(res, 200, { ok: true })
               }
             }
@@ -1781,6 +1822,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .insert({ titulo, software: String(payload.software || '').trim().slice(0, 120) || null, problema, solucao, tags: String(payload.tags || '').trim().slice(0, 200) || null, autor })
                 .select('*').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'wiki_criada', 'wiki', data.id, { titulo })
               return json(res, 201, { ok: true, artigo: data })
             }
 
@@ -1798,11 +1840,13 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
                 const { data, error } = await supabase.from('wiki_tecnica').update(update).eq('id', id).select('*').single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'wiki_actualizada', 'wiki', id, { campos: Object.keys(update) })
                 return json(res, 200, { ok: true, artigo: data })
               }
               if (req.method === 'DELETE') {
                 const { error } = await supabase.from('wiki_tecnica').delete().eq('id', id)
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'wiki_apagada', 'wiki', id)
                 return json(res, 200, { ok: true })
               }
             }
@@ -1890,6 +1934,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .single()
               
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'servico_criado', 'serviço', data.id, { titulo: title })
               return json(res, 201, { ok: true, id: data.id })
             }
             
@@ -1916,6 +1961,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               
               const { error } = await supabase.from('services').update(updates).eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'servico_actualizado', 'serviço', id, { campos: Object.keys(updates) })
               return json(res, 200, { ok: true })
             }
             
@@ -1925,6 +1971,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               try {
                 const { error } = await supabase.from('services').delete().eq('id', id)
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'servico_apagado', 'serviço', id)
                 return json(res, 200, { ok: true })
               } catch (e) {
                 console.error('[DELETE] Exception:', e)
@@ -1939,6 +1986,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               
               const { error } = await supabase.from('services').update({ is_active: !current.is_active }).eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'servico_alternado', 'serviço', id, { is_active: !current.is_active })
               return json(res, 200, { ok: true, is_active: !current.is_active })
             }
             
@@ -1988,6 +2036,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('*')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'destaque_criado', 'destaque', data.id, { titulo: titulo.slice(0, 120) })
               return json(res, 201, { ok: true, destaque: data })
             }
 
@@ -2010,6 +2059,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('*')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'destaque_actualizado', 'destaque', id, { campos: Object.keys(updates) })
               return json(res, 200, { ok: true, destaque: data })
             }
 
@@ -2017,6 +2067,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const id = path.split('/').pop()
               const { error } = await supabase.from('novidades_destaques').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'destaque_apagado', 'destaque', id)
               return json(res, 200, { ok: true })
             }
 
@@ -2067,6 +2118,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('id, created_at, updated_at, slug, title, excerpt, cover_url, category, author, is_published, published_at')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'artigo_blog_criado', 'blog', data.id, { titulo: title.slice(0, 90), publicado: isPub })
               return json(res, 201, { ok: true, post: data })
             }
 
@@ -2098,6 +2150,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .select('id, created_at, updated_at, slug, title, excerpt, cover_url, category, author, is_published, published_at')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'artigo_blog_actualizado', 'blog', id, { campos: Object.keys(updates).filter((k) => k !== 'updated_at') })
               return json(res, 200, { ok: true, post: data })
             }
 
@@ -2105,6 +2158,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const id = path.split('/').pop()
               const { error } = await supabase.from('blog_posts').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'artigo_blog_apagado', 'blog', id)
               return json(res, 200, { ok: true })
             }
             
@@ -2179,6 +2233,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 return json(res, 500, { ok: false, error: `Erro na base de dados: ${error.message}. Verifique se a tabela 'media' existe.` })
               }
               
+              logAuditoria(currentAdmin(req), 'midia_enviada', 'mídia', data.id, { ficheiro: fileData.filename })
               return json(res, 201, { ok: true, media: data })
             }
             
@@ -2197,6 +2252,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               
               const { error } = await supabase.from('media').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'midia_apagada', 'mídia', id)
               return json(res, 200, { ok: true })
             }
             
@@ -2206,6 +2262,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (payload.alt_text !== undefined) {
                 const { error } = await supabase.from('media').update({ alt_text: payload.alt_text.trim() || null }).eq('id', id)
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'midia_actualizada', 'mídia', id, { campos: ['alt_text'] })
               }
               return json(res, 200, { ok: true })
             }
@@ -2287,6 +2344,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   .select('id, name, version, file_size, downloads_count, created_at')
                   .single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(currentAdmin(req), 'software_criado', 'software', data.id, { name, modo: 'assinado' })
                 return json(res, 201, { ok: true, software: data })
               }
 
@@ -2344,6 +2402,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .single()
               
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'software_criado', 'software', data.id, { name: fields.name, modo: 'multipart' })
               return json(res, 201, { ok: true, software: data })
             }
 
@@ -2398,6 +2457,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 error = retry.error
               }
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'software_actualizado', 'software', id, { campos: Object.keys(updates) })
               return json(res, 200, { ok: true, software: data })
             }
 
@@ -2408,6 +2468,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
 
               const { error } = await supabase.from('softwares').update({ is_active: !current.is_active }).eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'software_alternado', 'software', id, { is_active: !current.is_active })
               return json(res, 200, { ok: true, is_active: !current.is_active })
             }
 
@@ -2427,9 +2488,23 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
 
               const { error } = await supabase.from('softwares').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'software_apagado', 'software', id)
               return json(res, 200, { ok: true })
             }
             
+            // AUDITORIA — histórico de acções (super_admin + developer apenas)
+            if (path === '/api/admin/auditoria' && req.method === 'GET') {
+              const nivelAud = currentAdmin(req)?.level
+              if (!nivelPleno(nivelAud)) return json(res, 403, { ok: false, error: 'O registo de actividades é visível apenas ao Super Admin e ao Developer.' })
+              const { data, error } = await supabase
+                .from('audit_log')
+                .select('id, created_at, actor_email, actor_level, acao, entidade, entidade_id, detalhe')
+                .order('created_at', { ascending: false })
+                .limit(300)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, data || [])
+            }
+
             return next()
           }
         } catch (error) {
