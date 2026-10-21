@@ -866,3 +866,20 @@
 .dev-backup-lista{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px;padding:0;list-style:none}
 .dev-backup-lista li{display:inline-flex;align-items:center;gap:5px;padding:4px 11px;border-radius:999px;background:#f1f5f9;color:#475569;font:500 .62rem 'Inter',sans-serif;cursor:default}
 .dev-backup-lista li svg{color:#94a3b8}
+
+/* revenda Negomil — filtros, ficha do parceiro e licenças atribuídas */
+.settings-field select{padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;font:.8rem 'Manrope',sans-serif;color:#0f172a;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+.settings-field select:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
+.settings-field textarea{padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;font:.8rem 'Manrope',sans-serif;color:#0f172a;background:#fff;resize:vertical}
+.settings-field textarea:focus{outline:none;border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.14)}
+.partner-filtros{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;flex-wrap:wrap}
+.partner-filtros .order-filter-tab i{font-style:normal;opacity:.65;margin-left:3px;font-weight:600}
+.partner-licencas{margin-top:16px;padding-top:14px;border-top:1px solid #e2e8f0}
+.partner-licencas h3{display:flex;align-items:center;gap:6px;margin:0 0 8px;font:700 .74rem 'Space Grotesk',sans-serif;color:#0f172a}
+.partner-licencas h3 i{font-style:normal;padding:2px 8px;border-radius:999px;background:#eff6ff;color:#1d4ed8;font:700 .58rem 'Manrope',sans-serif}
+.partner-licencas ul{list-style:none;padding:0;margin:10px 0;max-height:180px;overflow:auto}
+.partner-licencas li{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px dashed #e2e8f0;font-size:.68rem;color:#475569}
+.partner-key{font:600 .62rem 'DM Mono',monospace;user-select:all;cursor:pointer;color:#1d4ed8}
+.partner-key-cliente{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#64748b}
+.partner-atribuir{display:flex;gap:8px;align-items:center;margin-top:10px}
+.partner-atribuir select{flex:1;padding:9px 10px;border:1px solid #e2e8f0;border-radius:9px;font:.72rem 'Manrope',sans-serif;color:#0f172a;background:#fff}

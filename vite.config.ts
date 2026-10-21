@@ -1208,10 +1208,42 @@ function adminApi(): Plugin {
               return json(res, 200, data || [])
             }
 
+            // Inscrição MANUAL de sub-parceiro (encontrado fora do site)
+            if (path === '/api/admin/partners' && req.method === 'POST') {
+              const payload = await readBody(req) as Partial<{ nome_responsavel: string; telefone_whatsapp: string; provincia: string; modalidade: string; empresa_nif: string; nota: string; status: string }>
+              const nome = String(payload.nome_responsavel || '').trim()
+              const tel = String(payload.telefone_whatsapp || '').trim()
+              const modalidade = String(payload.modalidade || 'Individual').trim()
+              const status = String(payload.status || 'aprovado').trim()
+              if (!nome || nome.length > 150) return json(res, 400, { ok: false, error: 'Nome do responsável é obrigatório.' })
+              if (!/^[\d+\s()-]{9,20}$/.test(tel)) return json(res, 400, { ok: false, error: 'Telefone inválido (mínimo 9 dígitos).' })
+              if (!['Individual', 'Profissional', 'Empresa'].includes(modalidade))
+                return json(res, 400, { ok: false, error: 'Modalidade inválida. Use: Individual, Profissional ou Empresa.' })
+              if (!['pendente', 'em_analise', 'aprovado', 'rejeitado'].includes(status))
+                return json(res, 400, { ok: false, error: 'Estado inválido. Use: pendente, em_analise, aprovado ou rejeitado.' })
+              const { data, error } = await supabase
+                .from('parceiros_candidaturas')
+                .insert({
+                  nome_responsavel: nome,
+                  telefone_whatsapp: tel,
+                  provincia: String(payload.provincia || '').trim() || null,
+                  modalidade,
+                  status,
+                  empresa_nif: String(payload.empresa_nif || '').trim().slice(0, 40) || null,
+                  nota: String(payload.nota || '').trim().slice(0, 600) || null,
+                })
+                .select('id, nome_responsavel, empresa_nif, telefone_whatsapp, provincia, modalidade, status, nota, volume_vendas, clientes_angariados, created_at')
+                .single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'parceiro_criado', 'parceiro', data.id, { nome, modalidade, origem: 'painel' })
+              return json(res, 201, { ok: true, parceiro: data })
+            }
+
             if (path.match(/^\/api\/admin\/partners\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
               const id = path.split('/').pop()
-              const payload = await readBody(req) as Partial<{ status: string; volume_vendas: number; clientes_angariados: number; provincia: string }>
+              const payload = await readBody(req) as Partial<{ status: string; volume_vendas: number; clientes_angariados: number; provincia: string; nome_responsavel: string; telefone_whatsapp: string; empresa_nif: string; modalidade: string; nota: string }>
               const allowed = ['pendente', 'em_analise', 'aprovado', 'rejeitado']
+              const modalidades = ['Individual', 'Profissional', 'Empresa']
               const updates: Record<string, unknown> = {}
               if (payload.status !== undefined) {
                 if (!allowed.includes(payload.status))
@@ -1221,9 +1253,28 @@ function adminApi(): Plugin {
               if (payload.volume_vendas !== undefined) updates.volume_vendas = Math.max(0, Math.round(Number(payload.volume_vendas) || 0))
               if (payload.clientes_angariados !== undefined) updates.clientes_angariados = Math.max(0, Math.round(Number(payload.clientes_angariados) || 0))
               if (payload.provincia !== undefined) updates.provincia = String(payload.provincia).trim() || null
+              // ficha editável (revenda Negomil)
+              if (payload.nome_responsavel !== undefined) {
+                const nome = String(payload.nome_responsavel).trim()
+                if (!nome || nome.length > 150) return json(res, 400, { ok: false, error: 'Nome do responsável inválido.' })
+                updates.nome_responsavel = nome
+              }
+              if (payload.telefone_whatsapp !== undefined) {
+                const tel = String(payload.telefone_whatsapp).trim()
+                if (!/^[\d+\s()-]{9,20}$/.test(tel)) return json(res, 400, { ok: false, error: 'Telefone inválido (mínimo 9 dígitos).' })
+                updates.telefone_whatsapp = tel
+              }
+              if (payload.empresa_nif !== undefined) updates.empresa_nif = String(payload.empresa_nif).trim().slice(0, 40) || null
+              if (payload.modalidade !== undefined) {
+                if (!modalidades.includes(payload.modalidade)) return json(res, 400, { ok: false, error: 'Modalidade inválida. Use: Individual, Profissional ou Empresa.' })
+                updates.modalidade = payload.modalidade
+              }
+              if (payload.nota !== undefined) updates.nota = String(payload.nota).trim().slice(0, 600) || null
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
-              const { data, error } = await supabase.from('parceiros_candidaturas').update(updates).eq('id', id).select('id, status, volume_vendas, clientes_angariados').single()
+              const { data, error } = await supabase.from('parceiros_candidaturas').update(updates).eq('id', id).select('id, nome_responsavel, empresa_nif, telefone_whatsapp, provincia, modalidade, status, nota, volume_vendas, clientes_angariados, created_at').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(currentAdmin(req), 'parceiro_actualizado', 'parceiro', id, { campos: Object.keys(updates) })
+              return json(res, 200, { ok: true, parceiro: data })
               logAuditoria(currentAdmin(req), 'parceiro_actualizado', 'parceiro', id, Object.keys(updates).length === 1 && updates.status ? { status: updates.status } : { campos: Object.keys(updates) })
               return json(res, 200, { ok: true, partner: data })
             }
@@ -1391,7 +1442,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             if (path === '/api/admin/licenses' && req.method === 'GET') {
               const { data, error } = await supabase
                 .from('licencas_palancasoft')
-                .select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, created_at')
+                .select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, parceiro_id, created_at')
                 .order('created_at', { ascending: false })
                 .limit(100)
               if (error) return json(res, 500, { ok: false, error: error.message })
@@ -1424,7 +1475,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const { data, error } = await supabase
                 .from('licencas_palancasoft')
                 .insert({ cliente_nome: cliente, nif: payload.nif?.trim() || null, chave_licenca: chave, data_expiracao: payload.data_expiracao || null })
-                .select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, created_at')
+                .select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, parceiro_id, created_at')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
               logAuditoria(currentAdmin(req), 'licenca_emitida', 'licença', data.id, { cliente, chave })
@@ -1433,7 +1484,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
 
             if (path.match(/^\/api\/admin\/licenses\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
               const id = path.split('/').pop()
-              const payload = await readBody(req) as Partial<{ status: string; data_expiracao: string | null }>
+              const payload = await readBody(req) as Partial<{ status: string; data_expiracao: string | null; parceiro_id: string | null }>
               const updates: Record<string, unknown> = {}
               if (payload.status !== undefined) {
                 if (!['activa', 'expirada', 'cancelada'].includes(payload.status))
@@ -1445,10 +1496,21 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   return json(res, 400, { ok: false, error: 'Data de expiração inválida.' })
                 updates.data_expiracao = payload.data_expiracao || null
               }
+              // licença vendida VIA parceiro (revenda Negomil) — parcela opcional
+              if (payload.parceiro_id !== undefined) {
+                const pid = payload.parceiro_id ? String(payload.parceiro_id).trim() : null
+                if (pid) {
+                  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pid))
+                    return json(res, 400, { ok: false, error: 'parceiro_id inválido.' })
+                  const { data: parceiro } = await supabase.from('parceiros_candidaturas').select('id').eq('id', pid).maybeSingle()
+                  if (!parceiro) return json(res, 400, { ok: false, error: 'Parceiro não encontrado.' })
+                }
+                updates.parceiro_id = pid
+              }
               if (!Object.keys(updates).length) return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
-              const { data, error } = await supabase.from('licencas_palancasoft').update(updates).eq('id', id).select('id, status, data_expiracao').single()
+              const { data, error } = await supabase.from('licencas_palancasoft').update(updates).eq('id', id).select('id, status, data_expiracao, parceiro_id').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
-              logAuditoria(currentAdmin(req), 'licenca_actualizada', 'licença', id, { campos: Object.keys(updates), ...(updates.status ? { status: updates.status } : {}) })
+              logAuditoria(currentAdmin(req), updates.parceiro_id !== undefined ? 'licenca_atribuida' : 'licenca_actualizada', 'licença', id, { campos: Object.keys(updates), ...(updates.status ? { status: updates.status } : {}), ...(updates.parceiro_id !== undefined ? { via_parceiro: !!updates.parceiro_id } : {}) })
               return json(res, 200, { ok: true, license: data })
             }
 

@@ -110,16 +110,17 @@ type AdminUserRow = { id: string; name: string; email: string; role: string; is_
 type LicenseOrder = { id: string; created_at: string; software_nome: string; nome_empresa: string; nif: string; nome_responsavel: string; telefone_whatsapp: string; email: string | null; provincia: string; forma_pagamento: string; status: string; observacoes: string | null }
 const ORDER_STATUSES = ['Pendente', 'Em Verificação', 'Aprovado', 'Rejeitado'] as const
 type Partner = { id: string; nome_responsavel: string; empresa_nif: string | null; telefone_whatsapp: string; provincia: string | null; modalidade: string; status: string; nota: string | null; volume_vendas: number; clientes_angariados: number; created_at: string }
-type License = { id: string; cliente_nome: string; nif: string | null; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }
+type License = { id: string; cliente_nome: string; nif: string | null; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; parceiro_id?: string | null; created_at: string }
 type AuditRow = { id: string; created_at: string; actor_email: string; actor_level: string | null; acao: string; entidade: string; entidade_id: string | null; detalhe: string | null }
 const ACAO_LABEL: Record<string, string> = {
   login: 'Entrou no painel', login_falhado: 'Login falhado',
   perfil_actualizado: 'Actualizou o perfil', password_alterada: 'Alterou a password',
   contacto_recebido: 'Contacto recebido', contacto_estado: 'Mudou estado do contacto', contacto_apagado: 'Apagou contacto',
-  candidatura_sub_parceiro: 'Candidatura de sub-parceiro recebida',
+  candidatura_sub_parceiro: 'Candidatura de sub-parceiro recebida', parceiro_criado: 'Criou parceiro no painel',
   chamado_recebido: 'Chamado recebido', chamado_criado: 'Criou chamado', chamado_actualizado: 'Actualizou chamado', chamado_apagado: 'Apagou chamado',
   pedido_recebido: 'Pedido de licença recebido', pedido_estado: 'Mudou estado do pedido', pedido_apagado: 'Apagou pedido',
   licenca_emitida: 'Emitiu licença', licenca_actualizada: 'Actualizou licença', licenca_apagada: 'Apagou licença',
+  licenca_atribuida: 'Atribuiu licença a parceiro',
   definicoes_gravadas: 'Gravou definições do portal', licenca_alterada: 'Alterou a licença da plataforma',
   backup_exportado: 'Exportou cópia de segurança',
   utilizador_criado: 'Criou utilizador', utilizador_actualizado: 'Actualizou utilizador', utilizador_apagado: 'Apagou utilizador',
@@ -315,6 +316,15 @@ export default function AdminDashboard() {
   const [savingPassword, setSavingPassword] = useState(false)
   const [licenses, setLicenses] = useState<License[]>([])
   const [partners, setPartners] = useState<Partner[]>([])
+  const [partnerEstado, setPartnerEstado] = useState<'todos' | 'pendente' | 'em_analise' | 'aprovado' | 'rejeitado'>('todos')
+  const [partnerQuery, setPartnerQuery] = useState('')
+  const [fichaPartner, setFichaPartner] = useState<Partner | null>(null)
+  const [fichaForm, setFichaForm] = useState({ nome: '', telefone: '', nif: '', provincia: '', modalidade: 'Individual', status: 'pendente', vendas: '0', clientes: '0', nota: '' })
+  const [savingFicha, setSavingFicha] = useState(false)
+  const [licNovaId, setLicNovaId] = useState('')
+  const [novaParceiro, setNovaParceiro] = useState(false)
+  const [novaParceiroForm, setNovaParceiroForm] = useState({ nome: '', telefone: '', nif: '', provincia: '', modalidade: 'Individual', nota: '' })
+  const [savingNovaParceiro, setSavingNovaParceiro] = useState(false)
   const [showLicenseForm, setShowLicenseForm] = useState(false)
   const [licenseForm, setLicenseForm] = useState({ clienteNome: '', nif: '', expiracao: '' })
   const [licenseSaving, setLicenseSaving] = useState(false)
@@ -1089,6 +1099,105 @@ export default function AdminDashboard() {
       notify(error instanceof Error ? error.message : 'Erro ao eliminar a candidatura')
     } finally {
       setDeletingPartnerId(null)
+    }
+  }
+
+  // ── Ficha do parceiro (revenda Negomil): dados editáveis + licenças vendidas via ele
+  const abrirFicha = async (partner: Partner) => {
+    setFichaPartner(partner)
+    setFichaForm({
+      nome: partner.nome_responsavel, telefone: partner.telefone_whatsapp, nif: partner.empresa_nif || '',
+      provincia: partner.provincia || '', modalidade: partner.modalidade, status: partner.status,
+      vendas: String(partner.volume_vendas), clientes: String(partner.clientes_angariados), nota: partner.nota || '',
+    })
+    setLicNovaId('')
+    try {
+      const r = await fetch('/api/admin/licenses', { credentials: 'include' })
+      if (r.ok) setLicenses(await r.json())
+    } catch { /* silencioso — a carteira de licenças usa o que já está em memória */ }
+  }
+
+  const guardarFicha = async () => {
+    if (!fichaPartner || savingFicha) return
+    setSavingFicha(true)
+    try {
+      const response = await fetch(`/api/admin/partners/${fichaPartner.id}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome_responsavel: fichaForm.nome, telefone_whatsapp: fichaForm.telefone,
+          empresa_nif: fichaForm.nif, provincia: fichaForm.provincia,
+          modalidade: fichaForm.modalidade, status: fichaForm.status, nota: fichaForm.nota,
+          volume_vendas: Number(fichaForm.vendas) || 0, clientes_angariados: Number(fichaForm.clientes) || 0,
+        }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao guardar a ficha')
+      const actualizado = body.parceiro as Partner
+      setPartners(prev => prev.map(p => p.id === actualizado.id ? { ...p, ...actualizado } : p))
+      setFichaPartner(actualizado)
+      notify('Ficha do parceiro guardada')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao guardar a ficha')
+    } finally {
+      setSavingFicha(false)
+    }
+  }
+
+  const criarParceiroNovo = async () => {
+    if (savingNovaParceiro) return
+    setSavingNovaParceiro(true)
+    try {
+      const r = await fetch('/api/admin/partners', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nome_responsavel: novaParceiroForm.nome, telefone_whatsapp: novaParceiroForm.telefone,
+          empresa_nif: novaParceiroForm.nif, provincia: novaParceiroForm.provincia,
+          modalidade: novaParceiroForm.modalidade, nota: novaParceiroForm.nota,
+        }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body.error || 'Falha a inscrever parceiro')
+      setPartners(prev => [body.parceiro as Partner, ...prev])
+      setNovaParceiro(false)
+      setNovaParceiroForm({ nome: '', telefone: '', nif: '', provincia: '', modalidade: 'Individual', nota: '' })
+      notify('Parceiro inscrito na carteira da revenda')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro a inscrever parceiro')
+    } finally {
+      setSavingNovaParceiro(false)
+    }
+  }
+
+  const atribuirLicenca = async () => {
+    if (!fichaPartner || !licNovaId) return
+    try {
+      const r = await fetch(`/api/admin/licenses/${licNovaId}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parceiro_id: fichaPartner.id }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body.error || 'Falha ao atribuir a licença')
+      setLicenses(prev => prev.map(l => l.id === licNovaId ? { ...l, parceiro_id: fichaPartner.id } : l))
+      setLicNovaId('')
+      notify('Licença atribuída ao parceiro')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao atribuir a licença')
+    }
+  }
+
+  const removerLicencaParceiro = async (licId: string) => {
+    if (!fichaPartner) return
+    try {
+      const r = await fetch(`/api/admin/licenses/${licId}`, {
+        method: 'PATCH', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parceiro_id: null }),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body.error || 'Falha ao remover a licença do parceiro')
+      setLicenses(prev => prev.map(l => l.id === licId ? { ...l, parceiro_id: null } : l))
+      notify('Licença devolvida à carteira livre')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao remover a licença')
     }
   }
 
@@ -2157,7 +2266,18 @@ export default function AdminDashboard() {
           <div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowWikiForm(false)}>Cancelar</Button><Button type="submit" disabled={savingWiki}><Check size={15} /> {savingWiki ? 'A guardar…' : editingWiki ? 'Guardar alterações' : 'Registar solução'}</Button></div></form></div></div>
         })()}{deletingWikiId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingWikiId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar artigo da wiki</h2></div><button onClick={() => setDeletingWikiId(null)}><X size={18} /></button></div><p>Eliminar esta solução da base de conhecimento? O técnico perde esta referência. Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingWikiId(null)}>Cancelar</Button><Button variant="dark" onClick={handleWikiDelete}><Trash2 size={15} /> Eliminar artigo</Button></div></div></div>}</Card>}
 
-        {activeSection === 'parceiros' && !modBloqueado('parceiros') && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">REVENDA NEGOMIL — AGT</span><h2>Sub-parceiros & candidaturas</h2></div><span className="admin-muted">{partners.filter(p => p.status === 'aprovado').length} aprovado(s) de {partners.length}</span></div>{partners.length === 0 ? <div className="admin-empty-state"><Network size={48} /><h3>Sem candidaturas ainda</h3><p>Os pedidos do formulário de parcerias do site aparecem aqui.</p></div> : <div className="partner-list">{partners.map((partner) => <div className="partner-row" key={partner.id}><div className="partner-main"><strong>{partner.nome_responsavel}</strong><small>{partner.modalidade} · {partner.provincia || '—'} · {partner.telefone_whatsapp}{partner.empresa_nif ? ` · NIF ${partner.empresa_nif}` : ''}</small>{partner.nota && <p className="partner-note">"{partner.nota.slice(0, 110)}{partner.nota.length > 110 ? '…' : ''}"</p>}</div><span className={`contact-status contact-status--${partner.status}`} data-tip={partner.status === 'aprovado' ? 'Aprovado — autorizado a revender Negomil' : partner.status === 'em_analise' ? 'Candidatura em análise pela equipa de parcerias' : 'Candidatura recusada'}>{labelParceiro(partner.status)}</span><div className="partner-metrics"><label>Vendas<input className="metric-input" type="number" min="0" defaultValue={partner.volume_vendas} onBlur={(e) => updatePartnerMetric(partner, 'volume_vendas', e.target.value)} /></label><label>Clientes<input className="metric-input" type="number" min="0" defaultValue={partner.clientes_angariados} onBlur={(e) => updatePartnerMetric(partner, 'clientes_angariados', e.target.value)} /></label></div><div className="service-admin-actions">{partner.status !== 'aprovado' && <button className="icon-btn" title="Aprovar" onClick={() => updatePartnerStatus(partner, 'aprovado')}><Check size={16} /></button>}{partner.status !== 'em_analise' && <button className="icon-btn" title="Marcar em análise" onClick={() => updatePartnerStatus(partner, 'em_analise')}><Headphones size={16} /></button>}{partner.status !== 'rejeitado' && <button className="icon-btn" title="Rejeitar" onClick={() => updatePartnerStatus(partner, 'rejeitado')}><X size={16} /></button>}<button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingPartnerId(partner.id)}><Trash2 size={16} /></button></div></div>)}</div>}</Card>}
+        {activeSection === 'parceiros' && !modBloqueado('parceiros') && (() => {
+          const q = partnerQuery.trim().toLowerCase()
+          const visiveis = partners.filter(p => (partnerEstado === 'todos' || p.status === partnerEstado) && (!q || [p.nome_responsavel, p.empresa_nif, p.telefone_whatsapp, p.provincia, p.modalidade].some(v => String(v || '').toLowerCase().includes(q))))
+          const contagem = (s: string) => s === 'todos' ? partners.length : partners.filter(p => p.status === s).length
+          return <>
+          <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">REVENDA NEGOMIL — AGT</span><h2>Sub-parceiros & candidaturas</h2></div><div className="health-actions"><Button size="sm" onClick={() => setNovaParceiro(true)}><Plus size={14} /> Inscrever parceiro</Button></div></div><div className="partner-filtros"><div className="order-filter-tabs">{([['todos', 'Todos'], ['pendente', 'Pendentes'], ['em_analise', 'Em análise'], ['aprovado', 'Aprovados'], ['rejeitado', 'Rejeitados']] as [string, string][]).map(([id, lb]) => <button key={id} className={`order-filter-tab ${partnerEstado === id ? 'is-active' : ''}`} onClick={() => setPartnerEstado(id as 'todos' | 'pendente' | 'em_analise' | 'aprovado' | 'rejeitado')}>{lb} <i>{contagem(id)}</i></button>)}</div><div className="license-search"><Search size={15} /><input value={partnerQuery} onChange={(e) => setPartnerQuery(e.target.value)} placeholder="Pesquisar parceiro, NIF, província, telefone..." /></div></div>{visiveis.length === 0 ? <div className="admin-empty-state"><Network size={48} /><h3>{q || partnerEstado !== 'todos' ? 'Nada corresponde aos filtros' : 'Sem parceiros ainda'}</h3><p>{q || partnerEstado !== 'todos' ? 'Ajuste o estado selecionado ou limpe a pesquisa.' : 'As candidaturas do site e as inscrições manuais aparecem aqui.'}</p></div> : <div className="partner-list">{visiveis.map((partner) => <div className="partner-row" key={partner.id}><div className="partner-main"><strong>{partner.nome_responsavel}</strong><small>{partner.modalidade} · {partner.provincia || '—'} · {partner.telefone_whatsapp}{partner.empresa_nif ? ` · NIF ${partner.empresa_nif}` : ''}{licenses.some(l => l.parceiro_id === partner.id) ? ` · ${licenses.filter(l => l.parceiro_id === partner.id).length} licença(s)` : ''}</small>{partner.nota && <p className="partner-note">"${partner.nota.slice(0, 110)}${partner.nota.length > 110 ? '…' : ''}"</p>}</div><span className={`contact-status contact-status--${partner.status}`} data-tip={partner.status === 'aprovado' ? 'Aprovado — autorizado a revender Negomil' : partner.status === 'em_analise' ? 'Candidatura em análise pela equipa de parcerias' : partner.status === 'rejeitado' ? 'Candidatura recusada' : 'Aguarda primeira análise'}>{labelParceiro(partner.status)}</span><div className="partner-metrics"><label>Vendas<input className="metric-input" type="number" min="0" defaultValue={partner.volume_vendas} onBlur={(e) => updatePartnerMetric(partner, 'volume_vendas', e.target.value)} /></label><label>Clientes<input className="metric-input" type="number" min="0" defaultValue={partner.clientes_angariados} onBlur={(e) => updatePartnerMetric(partner, 'clientes_angariados', e.target.value)} /></label></div><div className="service-admin-actions"><button className="icon-btn" title="Abrir ficha & licenças" data-tip="Ficha completa, nota interna e licenças vendidas via este parceiro" onClick={() => { void abrirFicha(partner) }}><FolderOpen size={16} /></button><a className="icon-btn" title="WhatsApp do parceiro" data-tip="Abrir WhatsApp com este contacto" href={`https://wa.me/${partner.telefone_whatsapp.replace(/[^0-9]/g, '')}`} target="_blank" rel="noopener noreferrer"><MessageCircle size={16} /></a>{partner.status !== 'aprovado' && <button className="icon-btn" title="Aprovar" onClick={() => updatePartnerStatus(partner, 'aprovado')}><Check size={16} /></button>}{partner.status !== 'rejeitado' && <button className="icon-btn" title="Rejeitar" onClick={() => updatePartnerStatus(partner, 'rejeitado')}><X size={16} /></button>}<button className="icon-btn" title="Eliminar" onClick={() => setDeletingPartnerId(partner.id)}><Trash2 size={16} /></button></div></div>)}</div>}</Card>
+
+          {fichaPartner && <div className="admin-modal-backdrop" onMouseDown={() => setFichaPartner(null)}><div className="admin-modal admin-modal--lg" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">REVENDA NEGOMIL · FICHA</span><h2>{fichaPartner.nome_responsavel}</h2></div><button onClick={() => setFichaPartner(null)}><X size={18} /></button></div><form className="settings-form" onSubmit={(e) => { e.preventDefault(); void guardarFicha() }}><div className="settings-row"><label className="settings-field">Responsável<input value={fichaForm.nome} onChange={(e) => setFichaForm(f => ({ ...f, nome: e.target.value }))} required maxLength={150} /></label><label className="settings-field">WhatsApp<input value={fichaForm.telefone} onChange={(e) => setFichaForm(f => ({ ...f, telefone: e.target.value }))} required maxLength={20} /></label></div><div className="settings-row"><label className="settings-field">Empresa / NIF<input value={fichaForm.nif} onChange={(e) => setFichaForm(f => ({ ...f, nif: e.target.value }))} maxLength={40} placeholder="Opcional" /></label><label className="settings-field">Província<input value={fichaForm.provincia} onChange={(e) => setFichaForm(f => ({ ...f, provincia: e.target.value }))} maxLength={60} placeholder="Opcional" /></label></div><div className="settings-row"><label className="settings-field">Modalidade<select value={fichaForm.modalidade} onChange={(e) => setFichaForm(f => ({ ...f, modalidade: e.target.value }))}><option>Individual</option><option>Profissional</option><option>Empresa</option></select></label><label className="settings-field">Estado<select value={fichaForm.status} onChange={(e) => setFichaForm(f => ({ ...f, status: e.target.value }))}><option value="pendente">Pendente</option><option value="em_analise">Em análise</option><option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option></select></label></div><div className="settings-row"><label className="settings-field">Vendas<input className="metric-input" type="number" min="0" value={fichaForm.vendas} onChange={(e) => setFichaForm(f => ({ ...f, vendas: e.target.value }))} /></label><label className="settings-field">Clientes angariados<input className="metric-input" type="number" min="0" value={fichaForm.clientes} onChange={(e) => setFichaForm(f => ({ ...f, clientes: e.target.value }))} /></label></div><label className="settings-field">Nota interna<textarea rows={2} maxLength={600} value={fichaForm.nota} onChange={(e) => setFichaForm(f => ({ ...f, nota: e.target.value }))} placeholder="Acordos de comissão, contactos feitos, observações..." /></label><div className="settings-actions"><Button size="sm" type="submit" disabled={savingFicha}>{savingFicha ? 'A guardar…' : <><Check size={14} /> Guardar ficha</>}</Button></div></form><div className="partner-licencas"><h3>Licenças vendidas via este parceiro <i>{licenses.filter(l => l.parceiro_id === fichaPartner.id).length}</i></h3>{licenses.filter(l => l.parceiro_id === fichaPartner.id).length === 0 ? <p className="settings-hint">Nenhuma licença atribuída ainda — atribua abaixo uma licença livre da carteira.</p> : <ul>{licenses.filter(l => l.parceiro_id === fichaPartner.id).map((lic) => <li key={lic.id}><code className="partner-key" data-tip="Clique para copiar a chave" onClick={() => { void navigator.clipboard?.writeText(lic.chave_licenca); notify('Chave copiada') }}>{lic.chave_licenca}</code><span className="partner-key-cliente">{lic.cliente_nome} · expira {lic.data_expiracao ? new Date(lic.data_expiracao).toLocaleDateString('pt-PT') : '—'}</span><span className={`contact-status contact-status--${lic.status === 'activa' ? 'aprovado' : lic.status === 'cancelada' ? 'rejeitado' : 'em_analise'}`}>{lic.status}</span><button className="icon-btn" title="Devolver à carteira livre" onClick={() => { void removerLicencaParceiro(lic.id) }}><Undo2 size={14} /></button></li>)}</ul>}<div className="partner-atribuir"><select value={licNovaId} onChange={(e) => setLicNovaId(e.target.value)}><option value="">Atribuir licença livre…</option>{licenses.filter(l => !l.parceiro_id).map((lic) => <option key={lic.id} value={lic.id}>{lic.chave_licenca} · {lic.cliente_nome} · {lic.status}</option>)}</select><Button size="sm" type="button" disabled={!licNovaId} onClick={() => { void atribuirLicenca() }}><Plus size={14} /> Atribuir</Button></div></div></div></div>}
+
+          {novaParceiro && <div className="admin-modal-backdrop" onMouseDown={() => setNovaParceiro(false)}><div className="admin-modal" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">INSCRIÇÃO MANUAL</span><h2>Inscrever sub-parceiro</h2></div><button onClick={() => setNovaParceiro(false)}><X size={18} /></button></div><form className="settings-form" onSubmit={(e) => { e.preventDefault(); void criarParceiroNovo() }}><label className="settings-field">Responsável<input value={novaParceiroForm.nome} onChange={(e) => setNovaParceiroForm(f => ({ ...f, nome: e.target.value }))} required maxLength={150} /></label><div className="settings-row"><label className="settings-field">WhatsApp<input value={novaParceiroForm.telefone} onChange={(e) => setNovaParceiroForm(f => ({ ...f, telefone: e.target.value }))} required maxLength={20} placeholder="+244 9…" /></label><label className="settings-field">Empresa / NIF<input value={novaParceiroForm.nif} onChange={(e) => setNovaParceiroForm(f => ({ ...f, nif: e.target.value }))} maxLength={40} placeholder="Opcional" /></label></div><div className="settings-row"><label className="settings-field">Província<input value={novaParceiroForm.provincia} onChange={(e) => setNovaParceiroForm(f => ({ ...f, provincia: e.target.value }))} maxLength={60} placeholder="Opcional" /></label><label className="settings-field">Modalidade<select value={novaParceiroForm.modalidade} onChange={(e) => setNovaParceiroForm(f => ({ ...f, modalidade: e.target.value }))}><option>Individual</option><option>Profissional</option><option>Empresa</option></select></label></div><label className="settings-field">Nota<input value={novaParceiroForm.nota} onChange={(e) => setNovaParceiroForm(f => ({ ...f, nota: e.target.value }))} maxLength={600} placeholder="Como foi encontrado, acordos..." /></label><div className="settings-actions"><Button variant="outline" type="button" onClick={() => setNovaParceiro(false)}>Cancelar</Button><Button type="submit" disabled={savingNovaParceiro}>{savingNovaParceiro ? 'A inscrever…' : <><Plus size={14} /> Inscrever parceiro</>}</Button></div></form></div></div>}
+          </>
+        })()}
 
         {activeSection === 'contactos' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PEDIDOS DE CONTACTO</span><h2>Contactos recebidos</h2></div><span className="admin-muted">{contacts.length} contacto(s) · últimos 30</span></div>{visibleContacts.length === 0 ? <div className="admin-empty-state"><UsersRound size={48} /><h3>{contacts.length ? 'Sem correspondências' : 'Sem contactos ainda'}</h3><p>{contacts.length ? `Nenhum contacto corresponde a "${search}".` : 'Quando alguém submeter o formulário do site, o pedido aparece aqui.'}</p></div> : <div className="contact-list">{visibleContacts.map((contact) => <div key={contact.id} className={`contact-item ${selectedContactId === contact.id ? 'contact-item--open' : ''}`}><button type="button" className="contact-item-head" onClick={() => setSelectedContactId(selectedContactId === contact.id ? null : contact.id)} aria-expanded={selectedContactId === contact.id}><span className="contact-initials">{contact.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}</span><span className="contact-main"><strong>{contact.name}</strong><small>{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</small></span><span className="contact-interest">{contact.service_interest}</span><span className={`contact-status contact-status--${contactStatusTone(contact.status)}`} data-tip={contact.status === 'unread' || contact.status === 'new' ? 'Aguarda a primeira resposta da equipa' : contact.status === 'em_contacto' ? 'Em conversa com o cliente' : contact.status === 'proposta' ? 'Proposta enviada — aguarda confirmação' : contact.status === 'fechado' ? 'Negócio concluído' : 'Tratado ou arquivado'}>{contactStatusLabel(contact.status)}</span><time>{formatDate(contact.created_at)}</time><ChevronRight size={16} className="contact-chevron" /></button>{selectedContactId === contact.id && <div className="contact-detail"><p>{contact.message || '(Sem mensagem.)'}</p><div className="contact-detail-actions">{contact.status !== 'read' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'read')}><Check size={14} /> Marcar como lido</Button>}{contact.status !== 'unread' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'unread')}><Bell size={14} /> Marcar como novo</Button>}{contact.status !== 'em_contacto' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'em_contacto')}><Headphones size={14} /> Em contacto</Button>}{contact.status !== 'proposta' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'proposta')}><FilePlus2 size={14} /> Proposta enviada</Button>}{contact.status !== 'fechado' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'fechado')}><Check size={14} /> Fechar</Button>}<Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'archived')}><Archive size={14} /> Arquivar</Button><Button size="sm" variant="dark" className="btn-danger" onClick={() => setDeletingContactId(contact.id)}><Trash2 size={14} /> Eliminar</Button></div></div>}</div>)}</div>}</Card>}
 
