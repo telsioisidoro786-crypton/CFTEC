@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { cftecApi } from '../server/api'
+import { cftecApi } from '../server/api.js'
 
 /**
  * CFTEC — função única do backend em produção (Vercel).
