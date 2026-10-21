@@ -842,3 +842,10 @@
 .user-admin-row--dev{background:#faf5ff;border-color:#ddd6fe}
 .user-admin-row--dev .user-main strong small{color:#7c3aed;font-weight:700}
 @media (max-width:640px){.dev-toggle-row{flex-direction:column;align-items:flex-start}.dev-switch{align-self:flex-end;margin-top:-22px}}
+
+/* contadores de caracteres no modal da wiki técnica */
+.wiki-char-count{display:block;margin:-6px 0 12px;color:#94a3b8;font:600 .58rem 'DM Mono',monospace;letter-spacing:.04em;transition:color .15s ease}
+.wiki-char-count--warn{color:#b45309}
+.wiki-char-count--max{color:#be123c}
+/* passo-a-passo: textarea com hint colado */
+.admin-form-section .admin-field-hint{margin-top:0}
