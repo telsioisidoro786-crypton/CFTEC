@@ -66,6 +66,7 @@ import {
   ScrollText,
 } from 'lucide-react'
 import PushNotificationBanner from './components/PushNotificationBanner'
+import SystemTour, { marcarTour, tourFeito } from './SystemTour'
 import { Pricing } from './components/ui/pricing-9'
 
 // Icon mapping for services
@@ -301,6 +302,11 @@ export default function AdminDashboard() {
   const [authStatus, setAuthStatus] = useState<'loading' | 'authenticated' | 'unauthenticated'>('loading')
   const [adminUser, setAdminUser] = useState<AdminUser | null>(null)
   const [activeSection, setActiveSection] = useState<AdminSection>('dashboard')
+  const [tourOpen, setTourOpen] = useState(false)
+  // tour guiado: abre automaticamente no primeiro login do utilizador (por conta)
+  useEffect(() => {
+    if (adminUser?.email && !tourFeito(adminUser.email)) setTourOpen(true)
+  }, [adminUser?.email])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [summary, setSummary] = useState<Summary>(fallbackSummary)
   const [contacts, setContacts] = useState<Contact[]>(fallbackContacts)
@@ -2326,7 +2332,7 @@ export default function AdminDashboard() {
     </aside>
 
     <div className="admin-main">
-      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
+      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><button className="admin-icon-btn" aria-label="Guia de Uso" title="Guia de Uso do Sistema" onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
         {(ehDev || sysLic.bypassActivo || (sysLic.licencaAtiva !== false && sysLic.licencaEfetiva !== false)) ? null : <div className="licenca-suspensa"><span className="licenca-suspensa-icon"><Power size={44} /></span><h2>{sysLic.expirada ? 'Licença expirada' : 'Plataforma suspensa'}</h2><p>{sysLic.expirada && !sysLic.mensagem ? 'A licença de manutenção venceu-se — a plataforma entrou em suspensão automática.' : sysLic.mensagem}</p><small>Licença de uso do software — contacte o Developer da plataforma (Nexora Systems) para reactivar.</small>
           {sysLic.bypassActivo ? <small className="licenca-bypass-activo">🔓 Acesso de emergência activo — as suas acções estão desbloqueadas temporariamente.</small> : <>
@@ -2344,6 +2350,13 @@ export default function AdminDashboard() {
           return <div className={`licenca-aviso ${aviso ? 'licenca-aviso--forte' : ''}`} data-tip={aviso ? `Aviso de vencimento (regra de ${sysLic.diasAviso || 5} dias definida pelo developer)` : 'Aviso de validade definido pelo developer da plataforma'}>{aviso ? '⚠️ ' : ''}{aviso ? `A sua licença de manutenção vence em ${dias === 0 ? 'hoje' : `${dias} dia(s)`}. Regularize o pagamento para evitar interrupções.` : `Licença de manutenção expira a ${new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')}`}</div>
         })()}
         <PushNotificationBanner />
+        <SystemTour
+          open={tourOpen}
+          level={adminUser?.level}
+          userName={adminUser?.name}
+          onClose={() => { if (adminUser?.email) marcarTour(adminUser.email); setTourOpen(false) }}
+          onNavigate={(s) => { setActiveSection(s); setSidebarOpen(false) }}
+        />
         {showUpgrade && (
           <div
             className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm"
