@@ -912,3 +912,9 @@
 .dev-bypass-codigo code{font:600 .85rem 'JetBrains Mono',ui-monospace,monospace;color:#4ade80;letter-spacing:1.2px;word-break:break-all}
 .dev-bypass-codigo small{color:#94a3b8;font-size:.64rem;width:100%}
 .dev-bypass-codigo .icon-btn{color:#e2e8f0}
+
+/* Pop-up de upgrade do plano (Pricing 9) — botões de entrada nos banners */
+.licenca-aviso-cta{display:inline-flex;align-items:center;gap:6px;margin-left:10px;padding:4px 12px;border-radius:999px;border:1px solid currentColor;background:rgba(255,255,255,.7);color:inherit;font-size:.72rem;font-weight:700;cursor:pointer;transition:background .2s,transform .2s}
+.licenca-aviso-cta:hover{background:#ffffff;transform:translateY(-1px)}
+.licenca-aviso-cta--escuro{background:rgba(15,23,42,.55);color:#e2e8f0;border-color:rgba(148,163,184,.4);font-size:.76rem;padding:8px 16px}
+.licenca-aviso-cta--escuro:hover{background:rgba(15,23,42,.85)}

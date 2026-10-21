@@ -65,6 +65,7 @@ import {
   ScrollText,
 } from 'lucide-react'
 import PushNotificationBanner from './components/PushNotificationBanner'
+import { Pricing } from './components/ui/pricing-9'
 
 // Icon mapping for services
 const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
@@ -450,6 +451,8 @@ export default function AdminDashboard() {
   const [codigoEmergencia, setCodigoEmergencia] = useState('')
   const [enviandoCodigo, setEnviandoCodigo] = useState(false)
   const [baixandoBackup, setBaixandoBackup] = useState(false)
+  // pop-up de upgrade (Pricing 9) — abre quando uma quota do contrato bloqueia uma acção
+  const [showUpgrade, setShowUpgrade] = useState(false)
   // licenciamento da plataforma — flags geridas pelo developer (Master Admin)
   const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, licencaEfetiva: true, expirada: false, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: '', diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false, diasParaVencer: null })
   // vista kanban do pipeline comercial (arrastar cartões muda o estado do pedido)
@@ -596,6 +599,53 @@ export default function AdminDashboard() {
     loadDashboardData()
     loadSysLic()
   }, [authStatus])
+
+  // POP-UP DE UPGRADE — abre sozinho quando a API devolve 403/413 de quota do contrato
+  useEffect(() => {
+    const fetchOriginal = window.fetch.bind(window)
+    window.fetch = async (...args: Parameters<typeof fetch>) => {
+      const resposta = await fetchOriginal(...(args as Parameters<typeof fetch>))
+      if (resposta.status === 403 || resposta.status === 413) {
+        try {
+          const b = await resposta.clone().json()
+          const erro = String(b?.error || '')
+          if (/Limite do contrato atingido|Limite de armazenamento do contrato/.test(erro)) {
+            setShowUpgrade(true)
+          }
+        } catch { /* corpo não-JSON (ex.: blob) — ignora */ }
+      }
+      return resposta
+    }
+    return () => { window.fetch = fetchOriginal }
+  }, [])
+
+  // fecha o pop-up de upgrade com ESC
+  useEffect(() => {
+    if (!showUpgrade) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setShowUpgrade(false) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showUpgrade])
+
+  // pedido real de upgrade → canal de contactos (fica no painel + e-mail à Nexora)
+  const solicitarUpgrade = async (itens: string, total: string): Promise<boolean> => {
+    try {
+      const r = await fetch('/api/contact', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: adminUser?.name || 'Equipa CFTEC',
+          email: adminUser?.email || 'admin@cftec.co',
+          interest: 'Upgrade de licença (plataforma)',
+          message: `A equipa do painel solicitou o seguinte plano à Nexora Systems:\n\n${itens.split('\n').map(i => '  ' + i).join('\n')}\n\nValor estimado: ${total}.\nPedido gerado automaticamente pelo pop-up de upgrade do painel.`,
+        }),
+      })
+      if (r.ok) notify('Pedido de upgrade enviado — a Nexora Systems entra em contacto em breve')
+      return r.ok
+    } catch {
+      return false
+    }
+  }
 
   const [refreshingHealth, setRefreshingHealth] = useState(false)
 
@@ -2244,18 +2294,38 @@ export default function AdminDashboard() {
       <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">AM</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'} · {labelRole(adminUser?.level || 'super_admin')}</small></div><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
         {(ehDev || sysLic.bypassActivo || (sysLic.licencaAtiva !== false && sysLic.licencaEfetiva !== false)) ? null : <div className="licenca-suspensa"><span className="licenca-suspensa-icon"><Power size={44} /></span><h2>{sysLic.expirada ? 'Licença expirada' : 'Plataforma suspensa'}</h2><p>{sysLic.expirada && !sysLic.mensagem ? 'A licença de manutenção venceu-se — a plataforma entrou em suspensão automática.' : sysLic.mensagem}</p><small>Licença de uso do software — contacte o Developer da plataforma (Nexora Systems) para reactivar.</small>
-          {sysLic.bypassActivo ? <small className="licenca-bypass-activo">🔓 Acesso de emergência activo — as suas acções estão desbloqueadas temporariamente.</small> : <form className="licenca-bloqueio-codigo" onSubmit={(e) => { e.preventDefault(); usarCodigoEmergencia() }}>
+          {sysLic.bypassActivo ? <small className="licenca-bypass-activo">🔓 Acesso de emergência activo — as suas acções estão desbloqueadas temporariamente.</small> : <>
+          <form className="licenca-bloqueio-codigo" onSubmit={(e) => { e.preventDefault(); usarCodigoEmergencia() }}>
             <input value={codigoEmergencia} onChange={(e) => setCodigoEmergencia(e.target.value)} placeholder="Código de emergência (ex.: NEX-CFTEC-...)" maxLength={60} autoComplete="off" aria-label="Código de emergência" />
             <Button type="submit" size="sm" variant="outline" disabled={enviandoCodigo || !codigoEmergencia.trim()}>{enviandoCodigo ? 'A validar…' : 'Desbloquear 48h'}</Button>
-          </form>}
+          </form>
+          <button type="button" className="licenca-aviso-cta licenca-aviso-cta--escuro" onClick={() => setShowUpgrade(true)}><Sparkles size={13} /> Não tem o código? Solicitar plano ao developer</button>
+        </>}
         </div>}
-        {!ehDev && sysLic.licencaEfetiva !== false && sysLic.somenteLeitura && <div className="licenca-aviso licenca-aviso--leitura" data-tip="Activo pelo Developer da plataforma — consulta livre, escrita bloqueada"><AlertTriangle size={15} /> Modo somente leitura: pode consultar tudo, mas criar/alterar/apagar está bloqueado até regularizar o contrato.</div>}
+        {!ehDev && sysLic.licencaEfetiva !== false && sysLic.somenteLeitura && <div className="licenca-aviso licenca-aviso--leitura" data-tip="Activo pelo Developer da plataforma — consulta livre, escrita bloqueada"><AlertTriangle size={15} /> Modo somente leitura: pode consultar tudo, mas criar/alterar/apagar está bloqueado até regularizar o contrato.<button type="button" className="licenca-aviso-cta" onClick={() => setShowUpgrade(true)}><Sparkles size={13} /> Ver planos de upgrade</button></div>}
         {!ehDev && sysLic.licencaEfetiva !== false && sysLic.expiraEm && (() => {
           const dias = typeof sysLic.diasParaVencer === 'number' ? sysLic.diasParaVencer : null
           const aviso = dias !== null && dias >= 0 && dias <= (sysLic.diasAviso || 5)
           return <div className={`licenca-aviso ${aviso ? 'licenca-aviso--forte' : ''}`} data-tip={aviso ? `Aviso de vencimento (regra de ${sysLic.diasAviso || 5} dias definida pelo developer)` : 'Aviso de validade definido pelo developer da plataforma'}>{aviso ? '⚠️ ' : ''}{aviso ? `A sua licença de manutenção vence em ${dias === 0 ? 'hoje' : `${dias} dia(s)`}. Regularize o pagamento para evitar interrupções.` : `Licença de manutenção expira a ${new Date(sysLic.expiraEm).toLocaleDateString('pt-PT')}`}</div>
         })()}
         <PushNotificationBanner />
+        {showUpgrade && (
+          <div
+            className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm"
+            onClick={(e) => { if (e.target === e.currentTarget) setShowUpgrade(false) }}
+            role="dialog" aria-modal="true" aria-label="Upgrade do plano"
+          >
+            <div className="relative my-8">
+              <button
+                type="button"
+                onClick={() => setShowUpgrade(false)}
+                aria-label="Fechar"
+                className="absolute right-3 top-3 z-20 flex size-9 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md transition-colors hover:bg-muted"
+              ><X size={17} /></button>
+              <Pricing onRequest={solicitarUpgrade} />
+            </div>
+          </div>
+        )}
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && role !== 'gestor' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
         {activeSection !== 'dashboard' && modBloqueado(activeSection) && <Card className="admin-panel admin-section-panel"><div className="admin-empty-state module-off"><AlertTriangle size={48} /><h3>Módulo não disponível</h3><p>{sysLic.mensagem}</p><Button variant="outline" size="sm" onClick={() => setActiveSection('dashboard')}><ChevronRight size={14} /> Voltar à visão geral</Button></div></Card>}

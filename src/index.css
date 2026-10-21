@@ -22,6 +22,7 @@
   --color-input: #e2e8f0;
   --color-ring: #00e5ff;
   --radius: 0.75rem;
+  --shadow-elevated-lg: 0 12px 32px -8px rgb(15 23 42 / 0.18), 0 4px 12px -4px rgb(15 23 42 / 0.10);
   --font-sans: "Manrope", sans-serif;
   --font-heading: "Space Grotesk", sans-serif;
   --font-mono: "DM Mono", monospace;
