@@ -445,7 +445,6 @@ async function revokeSessionTokenByReq(req: IncomingMessage) {
     if (!token) return
     const payload = jwt.decode(token) as { sub?: string; jti?: string } | null
     if (payload?.sub && payload.jti) {
-    if (payload?.sub && payload.jti) {
       const own = sessionRegistry.get(payload.sub)
       if (own) { own.delete(payload.jti); if (!own.size) sessionRegistry.delete(payload.sub) }
       if (supabase) {
