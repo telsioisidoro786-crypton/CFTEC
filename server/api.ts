@@ -405,6 +405,44 @@ function notifyCliente(email: string, telefone: string, assunto: string, corpoHt
   )
 }
 
+// ============================================================
+// ALERTAS GRÁTIS AO ADMIN — CallMeBot (WhatsApp pessoal, sem conta
+// Twilio nem cartão). Configurável no painel: Definições →
+// NOTIFICAÇÕES WHATSAPP (chaves: callmebot_phone, callmebot_key).
+// Sem as chaves → desligado em silêncio (Web Push + e-mail continuam).
+// ============================================================
+async function callmebotAdmin(texto: string): Promise<WhatsResult> {
+  let telefone = (process.env.CALLMEBOT_PHONE || '').trim()
+  let apiKey = (process.env.CALLMEBOT_API_KEY || '').trim()
+  if (supabase && (!telefone || !apiKey)) {
+    try {
+      const { data } = await supabase.from('settings').select('key, value').in('key', ['callmebot_phone', 'callmebot_key'])
+      const g = (k: string) => (data || []).find((s: { key: string; value: string }) => s.key === k)?.value || ''
+      telefone = telefone || g('callmebot_phone') || ''
+      apiKey = apiKey || g('callmebot_key') || ''
+    } catch { /* segue com o que tiver */ }
+  }
+  if (!telefone || !apiKey) return { enviado: false, detalhe: 'sem chaves CallMeBot configuradas' }
+  const destino = telE164(telefone)
+  if (!destino) return { enviado: false, detalhe: 'telefone CallMeBot inválido' }
+  try {
+    const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(destino)}&text=${encodeURIComponent(texto).replace(/%20/g, '+')}&apikey=${encodeURIComponent(apiKey)}`
+    const response = await fetch(url)
+    const body = await response.text()
+    if (!response.ok || /error/i.test(body.slice(0, 200))) return { enviado: false, detalhe: `CallMeBot HTTP ${response.status}: ${body.slice(0, 120)}` }
+    return { enviado: true, detalhe: 'CallMeBot aceite' }
+  } catch (e) {
+    return { enviado: false, detalhe: e instanceof Error ? e.message : 'exception' }
+  }
+}
+
+/** Aviso instantâneo ao administração no WhatsApp pessoal (CallMeBot), fire-and-forget. */
+function fireAdminAlert(texto: string): void {
+  void callmebotAdmin(texto).then(r => {
+    console.log(`[ALERTA] ${r.enviado ? 'enviado' : 'não enviado'} · ${r.detalhe} · ${texto.slice(0, 60)}`)
+  })
+}
+
 type MultipartPart = { name: string; filename?: string; mimetype?: string; data: Buffer }
 
 /**
@@ -1429,6 +1467,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             }
             // Web Push ao técnico (fire-and-forget: não atrasa a resposta ao cliente)
             void pushNotifyEquipa('chamado', '🛠️ Novo chamado de suporte', `${nomeEmpresa} pediu apoio (${software}) — verifique no painel.`)
+            fireAdminAlert(`🛠️ Chamado do site: ${nomeEmpresa} — ${software}. Painel → Chamados.`)
             logAuditoria(null, 'chamado_recebido', 'chamado', data?.id, { empresa: nomeEmpresa, software })
             return json(res, 201, { ok: true, chamado_id: data?.id })
           }
@@ -1489,6 +1528,7 @@ ${emailLinha('Responsável', escHtml(responsavel || '—'))}${emailLinha('WhatsA
 ${emailLinha('E-mail', escHtml(email))}</table>
 <p style="margin:14px 0 0">Aprove (ou rejeite) no painel: <b>Painel → Portal</b>.</p>`),
             )
+            fireAdminAlert(`🔔 Novo registo no portal: ${nomeEmpresa} (NIF ${nif}). Painel → Portal do Cliente → aprovar.`)
             notifyCliente(
               email, telefone,
               'Recebemos o seu registo — CFTEC',
@@ -1603,6 +1643,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               .select('id').single()
             if (error) return json(res, 500, { ok: false, error: error.message })
             void pushNotifyEquipa('chamado', '🛠️ Novo chamado (portal do cliente)', `${conta.nome_empresa} pediu apoio (${software}) — verifique no painel.`)
+            fireAdminAlert(`🛠️ Chamado (portal): ${conta.nome_empresa} — ${software}. Painel → Chamados.`)
             fireAdminEmail('Chamado do portal — ' + conta.nome_empresa,
               emailShell('Novo chamado do portal do cliente',
                 `<table style="border-collapse:collapse;background:#f8fafc;border-radius:8px;padding:8px">
@@ -1709,6 +1750,7 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
             )
             // Web Push ao comercial (fire-and-forget)
             void pushNotifyEquipa('pedido', '📋 Novo pedido de licença', `${nomeEmpresa} pediu ${softwareNome} — verifique no painel.`)
+            fireAdminAlert(`📋 Novo pedido: ${nomeEmpresa} — ${softwareNome} (${formaPagamento}). Painel → Pedidos.`)
             logAuditoria(null, 'pedido_recebido', 'pedido', data.id, { empresa: nomeEmpresa, software: softwareNome, forma_pagamento: formaPagamento })
             return json(res, 201, {
               ok: true,
@@ -2481,8 +2523,16 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, { ok: true, settings: lidas })
             }
 
-            if (path === '/api/admin/settings' && req.method === 'PATCH') {
-              const payload = await readBody(req) as { entries?: { key: string; value: string }[] }
+            // TESTE de notificação WhatsApp (CallMeBot) — valida as chaves a partir do painel
+            if (path === '/api/admin/settings/whatsapp-teste' && req.method === 'POST') {
+              const adminTeste = currentAdmin(req)
+              if (!adminTeste || !nivelPleno(adminTeste.level || '')) return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou Developer testam as notificações.' })
+              const resultado = await callmebotAdmin(`✅ Teste de notificações CFTEC — se recebeu esta mensagem, os alertas WhatsApp do sistema estão activos (${new Date().toLocaleTimeString('pt-PT')}).`)
+              logAuditoria(adminTeste, resultado.enviado ? 'whatsapp_teste_ok' : 'whatsapp_teste_falhou', 'definições', null, { detalhe: resultado.detalhe })
+              return json(res, resultado.enviado ? 200 : 400, { ok: resultado.enviado, detalhe: resultado.detalhe })
+            }
+
+            if (path === '/api/admin/settings' && req.method === 'PATCH') {const payload = await readBody(req) as { entries?: { key: string; value: string }[] }
               const entries = (payload.entries || []).filter((e) => e && e.key && typeof e.value === 'string').slice(0, 20)
               if (!entries.length) return json(res, 400, { ok: false, error: 'Envie pelo menos uma chave/valor.' })
               // chaves de licenciamento: tentativa do super_admin (ou outro) é recusada
