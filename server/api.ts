@@ -421,7 +421,7 @@ const sessionRegistry = new Map<string, Map<string, number>>() // cache local: s
 const chamadoRate = new Map<string, number[]>() // limitação pública: ip → timestamps de chamados submissos
 const SESSION_DB_TTL_MS = 30 * 24 * 60 * 60 * 1000 // higiene: linhas de sessão com mais de 30 dias saem
 
-async function registerSessionJti(sub: string, jti: string) {
+async function registerSessionJti(sub: string, jti: string, meta?: { userAgent?: string }) {
   const own = sessionRegistry.get(sub) || new Map<string, number>()
   own.set(jti, Date.now())
   // basta o último token do utilizador + poucos anteriores; cap de 20 registos/sub na memória
@@ -433,7 +433,7 @@ async function registerSessionJti(sub: string, jti: string) {
   sessionRegistry.set(sub, own)
   if (supabase) {
     try {
-      await supabase.from('admin_sessions').insert({ user_id: sub, jti, issued_at: Date.now() })
+      await supabase.from('admin_sessions').insert({ user_id: sub, jti, issued_at: Date.now(), user_agent: meta?.userAgent || null })
       void supabase.from('admin_sessions').delete().lt('issued_at', Date.now() - SESSION_DB_TTL_MS)
     } catch { /* tabela pode não existir ainda — sessão fica só na memória (dev) */ }
   }
@@ -461,6 +461,192 @@ async function revokeAllSessionsForUser(sub: string) {
     try { await supabase.from('admin_sessions').delete().eq('user_id', sub) } catch { /* ok */ }
   }
 }
+
+// ============================================================
+// CÓPIA DE SEGURANÇA — dump completo (reutilizado pelo download
+// manual do Developer e pelo backup automático diário).
+// admin_users sai SEM password_hash nem segredos 2FA (nunca exportar credenciais).
+// Devolve {..., _contagens} — o manual mantém o resto, limpa _contagens.
+// ============================================================
+const TABELAS_BACKUP = ['pedidos_licencas', 'licencas_palancasoft', 'chamados_suporte', 'wiki_tecnica', 'admin_users', 'settings', 'parceiros_candidaturas', 'contacts', 'blog_posts', 'novidades_destaques', 'media', 'softwares', 'services', 'audit_log'] as const
+async function backupDump(por: string): Promise<Record<string, unknown> & { _contagens: [string, number][] } | null> {
+  if (!supabase) return null
+  const dados: Record<string, unknown[]> = {}
+  for (const tabela of TABELAS_BACKUP) {
+    const { data, error } = tabela === 'audit_log'
+      ? await supabase.from(tabela).select('*').order('created_at', { ascending: false }).limit(20000)
+      : await supabase.from(tabela).select('*').limit(20000)
+    if (error) { console.error('[BACKUP]', `${tabela}: ${error.message}`); return null }
+    dados[tabela] = data || []
+  }
+  dados.admin_users = (dados.admin_users as Record<string, unknown>[])
+    .map(({ password_hash, twofa_secret, ...resto }) => ({ ...resto, twofa_enabled: resto.twofa_enabled ?? false }))
+  const licenca = await licencaAtual()
+  return {
+    _backup: {
+      app: 'CFTEC',
+      gerado_em: new Date().toISOString(),
+      por,
+      licenca: { activa: licenca.licencaAtiva, comercial: licenca.moduloComercial, tecnico: licenca.moduloTecnico, novidades: licenca.moduloNovidades, expiraEm: licenca.expiraEm },
+      restauro: 'Cada chave de topo é uma tabela do Supabase, pronta para bulk insert.',
+    },
+    ...dados,
+    _contagens: TABELAS_BACKUP.map((t) => [t, (dados[t] as unknown[]).length]),
+  }
+}
+
+// BACKUP AUTOMÁTICO — 1×/dia, disparado pelo primeiro pedido admin autenticado
+// (cron-lazy: funciona na Vercel Hobby sem funcionalidades extra). Grava o JSON
+// no bucket privado `backups` e mantém só os 30 mais recentes.
+const BACKUP_AUTO_BUCKET = 'backups'
+const BACKUP_AUTO_MS = 24 * 60 * 60 * 1000
+let backupAutoEmCurso = false
+async function backupAutomaticoTalvez(claims: { sub?: string; email?: string; level?: AdminLevel }): Promise<void> {
+  if (!supabase || backupAutoEmCurso) return
+  backupAutoEmCurso = true
+  try {
+    const chave = 'ultimo_backup_automatico'
+    const { data: srow } = await supabase.from('settings').select('value').eq('key', chave).maybeSingle()
+    const ultimo = Date.parse(String((srow as { value?: string } | null)?.value || ''))
+    if (Number.isFinite(ultimo) && Date.now() - ultimo < BACKUP_AUTO_MS) return
+    const dump = await backupDump('automático')
+    if (!dump) return
+    const { _contagens, ...payload } = dump
+    const agora = new Date()
+    const caminho = `auto/${agora.toISOString().replace(/[:.]/g, '-')}.json`
+    const { error } = await supabase.storage.from(BACKUP_AUTO_BUCKET).upload(caminho, JSON.stringify(payload), { contentType: 'application/json', upsert: false })
+    if (error) { console.error('[BACKUP-AUTO] upload:', error.message); return }
+    await supabase.from('settings').upsert({ key: chave, value: agora.toISOString(), description: 'Timestamp do último backup automático no bucket privado «backups».', is_public: false }, { onConflict: 'key' })
+    logAuditoria({ email: 'sistema', level: 'developer' }, 'backup_automatico', 'plataforma', null, { ficheiro: caminho, por: claims.email || null })
+    // higiene: manter apenas os 30 ficheiros mais recentes
+    const { data: objetos } = await supabase.storage.from(BACKUP_AUTO_BUCKET).list('auto', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } })
+    const velhos = (objetos || []).slice(30).map((o) => `auto/${o.name}`)
+    if (velhos.length) await supabase.storage.from(BACKUP_AUTO_BUCKET).remove(velhos)
+  } catch (e) {
+    console.error('[BACKUP-AUTO]', e)
+  } finally {
+    backupAutoEmCurso = false
+  }
+}
+
+// ============================================================
+// LOCKOUT DO LOGIN — limite de falhas por IP+e-mail antes de novas tentativas.
+// Em server-less a memória não sobrevive a frio Irma/escalas, por isso o estado
+// fica na tabela `login_rate` (Supabase); memória só no dev sem BD.
+// POLÍTICA: 5 falhas em 15 min → bloqueio de 15 min. Acertar limpa o contador.
+// ============================================================
+const LOGIN_MAX_FALHAS = 5
+const LOGIN_JANELA_MS = 15 * 60 * 1000      // janela de 15 min para o contador de falhas
+const LOGIN_BLOQUEIO_MS = 15 * 60 * 1000    // bloqueio de 15 min após 5 falhas
+const LOGIN_RATE_HIGIENE_MS = 2 * 24 * 60 * 60 * 1000
+type RateRow = { chave: string; falhas: number; janela_inicio: number; bloqueado_ate: number; updated_at: number }
+const LOGIN_RATE_LIMPO: RateRow = { chave: '', falhas: 0, janela_inicio: 0, bloqueado_ate: 0, updated_at: 0 }
+const rateMem = new Map<string, RateRow>() // dev: chave → estado
+
+function rateMemGet(chave: string): RateRow { return rateMem.get(chave) || { ...LOGIN_RATE_LIMPO, chave } }
+
+async function rateGet(chave: string): Promise<RateRow> {
+  if (supabase) {
+    try {
+      const { data } = await supabase
+        .from('login_rate')
+        .select('falhas, janela_inicio, bloqueado_ate, updated_at')
+        .eq('chave', chave)
+        .maybeSingle()
+      if (data) return { ...LOGIN_RATE_LIMPO, chave, ...data } as RateRow
+    } catch { /* tabela pode não existir (ou dev). A memória continua. */ }
+  }
+  return rateMemGet(chave)
+}
+
+async function rateSave(row: RateRow) {
+  const agora = Date.now()
+  const valor = { ...row, updated_at: agora }
+  if (supabase) {
+    try {
+      await supabase.from('login_rate').upsert(valor, { onConflict: 'chave' })
+      void supabase.from('login_rate').delete().lt('updated_at', agora - LOGIN_RATE_HIGIENE_MS)
+    } catch { /* memória continua a valer */ }
+  }
+  rateMem.set(row.chave, valor)
+}
+
+async function rateFail(chave: string): Promise<void> {
+  const atual = await rateGet(chave)
+  const agora = Date.now()
+  if (atual.bloqueado_ate > agora) return
+  const janelaViva = atual.updated_at > 0 && agora - atual.updated_at <= LOGIN_JANELA_MS
+  const falhas = janelaViva ? atual.falhas + 1 : 1
+  const janela_inicio = janelaViva ? (atual.janela_inicio || agora) : agora
+  if (falhas >= LOGIN_MAX_FALHAS) {
+    await rateSave({ ...atual, chave, falhas: 0, janela_inicio: 0, bloqueado_ate: agora + LOGIN_BLOQUEIO_MS })
+    logAuditoria(null, 'login_bloqueado', 'sessão', null, { chave })
+  } else {
+    await rateSave({ ...atual, chave, falhas, janela_inicio })
+  }
+}
+
+async function rateReset(chave: string): Promise<void> {
+  if (supabase) {
+    try { await supabase.from('login_rate').delete().eq('chave', chave) } catch { /* ok */ }
+  }
+  rateMem.delete(chave)
+}
+
+function clientIp(req: IncomingMessage): string {
+  return String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'local'
+}
+
+// ============================================================
+// 2FA — TOTP (RFC 6238): HMAC-SHA1, 6 dígitos, janelas de 30 s,
+// tolerância de ±1 intervalo. Implementado sobre node:crypto
+// para não introduzir dependências no backend.
+// ============================================================
+const B32_ALFABETO = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+function base32Decode(valor: string): Buffer {
+  const limpo = valor.replace(/=+$/, '').replace(/\s+/g, '').toUpperCase()
+  let bits = 0, valorActual = 0
+  const bytes: number[] = []
+  for (const ch of limpo) {
+    const idx = B32_ALFABETO.indexOf(ch)
+    if (idx === -1) continue
+    valorActual = (valorActual << 5) | idx
+    bits += 5
+    if (bits >= 8) { bytes.push((valorActual >>> (bits - 8)) & 0xff); bits -= 8 }
+  }
+  return Buffer.from(bytes)
+}
+function base32Random(byteLen = 20): string {
+  let bits = 0, valor = 0, saida = ''
+  const bytes = cryptoRandomBytes(byteLen)
+  for (let i = 0; i < bytes.length; i++) {
+    valor = (valor << 8) | bytes[i]
+    bits += 8
+    while (bits >= 5) { saida += B32_ALFABETO[(valor >>> (bits - 5)) & 31]; bits -= 5 }
+  }
+  if (bits > 0) saida += B32_ALFABETO[(valor << (5 - bits)) & 31]
+  return saida
+}
+function totpNoInstante(secretB32: string, contador: number): string {
+  const chave = base32Decode(secretB32)
+  if (!chave.length) return ''
+  const buf = Buffer.alloc(8)
+  buf.writeUInt32BE(Math.floor(contador / 0x100000000), 0)
+  buf.writeUInt32BE(contador >>> 0, 4)
+  const digest = createHmac('sha1', chave).update(buf).digest()
+  const offset = digest[digest.length - 1] & 0x0f
+  const bin = ((digest[offset] & 0x7f) << 24) | (digest[offset + 1] << 16) | (digest[offset + 2] << 8) | digest[offset + 3]
+  return String(bin % 1_000_000).padStart(6, '0')
+}
+function verificarTotp(secretB32: string | null | undefined, codigo: string): boolean {
+  const limpo = String(codigo || '').replace(/\s+/g, '')
+  if (!secretB32 || !/^\d{6}$/.test(limpo)) return false
+  const janela = Math.floor(Date.now() / 1000 / 30)
+  for (let delta = -1; delta <= 1; delta++)
+    if (totpNoInstante(secretB32, janela + delta) === limpo) return true
+  return false
+}
+
 
 function isJtiRevoked(sub: string, jti: string) { return !sessionRegistry.get(sub)?.has(jti) }
 
@@ -664,20 +850,31 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           // antes das validações sincrónicas (currentAdmin). Sem cookie válido: no-op.
           const sc = decodeSessionClaims(req)
           if (sc?.sub && sc?.jti) await ensureJtiKnown(sc.sub, sc.jti)
+          // cron-lazy do backup automático (1×/dia): fire-and-forget, nunca atrasa o pedido
+          if (sc) void backupAutomaticoTalvez(sc)
 
           if (path === '/api/admin/login' && req.method === 'POST') {
             if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'JWT secret não configurado.' })
-            const payload = await readBody(req)
+            const payload = await readBody(req) as { email?: string; password?: string; code?: string }
             const email = String(payload.email || '').trim().toLowerCase()
             const password = String(payload.password || '')
+            const code2fa = String(payload.code || '').replace(/\s+/g, '')
 
-            let admin: { id: string; name: string; email: string; password_hash: string; level: AdminLevel } | undefined
+            // LOCKOUT — 5 falhas (password OU código 2FA) em 15 min bloqueia a origem por 15 min
+            const chaveRate = `${clientIp(req)}|${email}`
+            const estadoRate = await rateGet(chaveRate)
+            if (estadoRate.bloqueado_ate > Date.now()) {
+              const minutos = Math.max(1, Math.ceil((estadoRate.bloqueado_ate - Date.now()) / 60000))
+              return json(res, 429, { ok: false, error: `Demasiadas tentativas falhadas. Tente novamente em ${minutos} minuto(s).` })
+            }
+
+            let admin: { id: string; name: string; email: string; password_hash: string; level: AdminLevel; twofa_secret?: string | null; twofa_enabled?: boolean | null } | undefined
 
             if (supabase) {
               // Prioridade: admin_users (multi-utilizador com níveis)
               const { data: row, error: rowErr } = await supabase
                 .from('admin_users')
-                .select('id, name, email, password_hash, role, is_active')
+                .select('id, name, email, password_hash, role, is_active, twofa_secret, twofa_enabled')
                 .eq('email', email)
                 .single()
 
@@ -719,9 +916,23 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
               }
             }
 
+            const userAgent = String(req.headers['user-agent'] || '').slice(0, 255)
+
             if (!admin || !(await bcrypt.compare(password, admin.password_hash))) {
+              await rateFail(chaveRate)
               logAuditoria(null, 'login_falhado', 'sessão', null, { email })
               return json(res, 401, { ok: false, error: 'E-mail ou password incorrectos.' })
+            }
+
+            // 2FA — contas com o segundo passo activo exigem o código TOTP
+            if (admin.twofa_enabled) {
+              if (!code2fa)
+                return json(res, 401, { ok: false, needs2fa: true, error: 'Introduza o código do autenticador (2FA).' })
+              if (!verificarTotp(admin.twofa_secret, code2fa)) {
+                await rateFail(chaveRate)
+                logAuditoria(admin, 'login_2fa_falhado', 'sessão', admin.id, { email })
+                return json(res, 401, { ok: false, needs2fa: true, error: 'Código de verificação inválido ou expirado.' })
+              }
             }
 
             const jti = crypto.randomUUID()
@@ -730,7 +941,8 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
               JWT_SECRET,
               { algorithm: 'HS256', expiresIn: sessionMaxAge }
             )
-            await registerSessionJti(admin.id, jti)
+            await registerSessionJti(admin.id, jti, { userAgent })
+            void rateReset(chaveRate)
             setSessionCookie(res, token)
             logAuditoria(admin, 'login', 'sessão', admin.id, { nivel: admin.level })
             return json(res, 200, { ok: true, user: { name: admin.name, email: admin.email, level: admin.level } })
@@ -753,7 +965,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
                 return json(res, 403, { ok: false, error: lic.mensagem, expirada: lic.expirada })
               // MODO SOMENTE LEITURA — GET livre; mutações (escritas) bloqueadas, excepto operações pessoais
               if (lic.somenteLeitura && !desbloqueado && req.method !== 'GET') {
-                const pessoal = path === '/api/admin/logout' || path === '/api/admin/profile' || path.startsWith('/api/admin/push')
+                const pessoal = path === '/api/admin/logout' || path === '/api/admin/profile' || path.startsWith('/api/admin/push') || path.startsWith('/api/admin/2fa') || path.startsWith('/api/admin/sessions')
                 if (!pessoal)
                   return json(res, 403, { ok: false, error: 'Modo somente leitura: a consulta está livre, mas criar/alterar/apagar está bloqueado até regularizar o contrato com a Nexora Systems.' })
               }
@@ -845,6 +1057,117 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             // mata o token desta sessão no servidor (não apenas no browser)
             await revokeSessionTokenByReq(req)
             clearSessionCookie(res)
+            return json(res, 200, { ok: true })
+          }
+
+          // ─── SEGURANÇA: 2FA (TOTP) e SESSÕES ACTIVAS ───
+          // O estado 2FA e a revogação são operações "pessoais" (valem mesmo em
+          // modo somente leitura); ver a isenção na guarda de licença mais abaixo.
+
+          // 2FA — ESTADO (o painel mostra se o segundo passo está activo)
+          if (path === '/api/admin/2fa/status' && req.method === 'GET') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            if (!supabase) return json(res, 200, { ok: true, activado: false })
+            const { data } = await supabase.from('admin_users').select('twofa_enabled').eq('id', admin.sub).maybeSingle()
+            return json(res, 200, { ok: true, activado: !!((data as { twofa_enabled?: boolean } | null)?.twofa_enabled) })
+          }
+
+          // 2FA — SETUP: gera o segredo; só fica activo quando o utilizador confirma um código
+          if (path === '/api/admin/2fa/setup' && req.method === 'POST') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
+            const secret = base32Random(20)
+            const label = encodeURIComponent(`CFTEC:${admin.email}`)
+            const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=CFTEC&algorithm=SHA1&digits=6&period=30`
+            const { error } = await supabase.from('admin_users').update({ twofa_secret: secret, twofa_enabled: false }).eq('id', admin.sub)
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            logAuditoria(admin, '2fa_setup', 'utilizador', admin.sub)
+            return json(res, 200, { ok: true, secret, otpauth })
+          }
+
+          // 2FA — ACTIVAÇÃO: o primeiro código correcto liga definitivamente
+          if (path === '/api/admin/2fa/activate' && req.method === 'POST') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
+            const payload = await readBody(req) as { code?: string }
+            const { data: row } = await supabase.from('admin_users').select('twofa_secret').eq('id', admin.sub).maybeSingle()
+            const secret = (row as { twofa_secret?: string | null } | null)?.twofa_secret
+            if (!secret) return json(res, 400, { ok: false, error: 'Comece por gerar o segredo 2FA (Configurar).' })
+            if (!verificarTotp(secret, String(payload.code || '')))
+              return json(res, 400, { ok: false, error: 'Código inválido — confira a hora (automática, no telefone).' })
+            const { error } = await supabase.from('admin_users').update({ twofa_enabled: true }).eq('id', admin.sub)
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            logAuditoria(admin, '2fa_activada', 'utilizador', admin.sub)
+            return json(res, 200, { ok: true })
+          }
+
+          // 2FA — DESLIGAR: exige a password actual (prova de que é o dono da conta)
+          if (path === '/api/admin/2fa/disable' && req.method === 'POST') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
+            const payload = await readBody(req) as { password?: string }
+            const { data: row } = await supabase.from('admin_users').select('password_hash, twofa_enabled').eq('id', admin.sub).maybeSingle()
+            const dados = row as { password_hash?: string; twofa_enabled?: boolean } | null
+            if (!dados?.twofa_enabled) return json(res, 400, { ok: false, error: 'O 2FA já está desactivado.' })
+            if (!dados.password_hash || !(await bcrypt.compare(String(payload.password || ''), dados.password_hash)))
+              return json(res, 401, { ok: false, error: 'Password incorrecta.' })
+            const { error } = await supabase.from('admin_users').update({ twofa_secret: null, twofa_enabled: false }).eq('id', admin.sub)
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            logAuditoria(admin, '2fa_desactivada', 'utilizador', admin.sub)
+            return json(res, 200, { ok: true })
+          }
+
+          // SESSÕES ACTIVAS — o próprio utilizador vê e revoga os seus dispositivos
+          if (path === '/api/admin/sessions' && req.method === 'GET') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            if (!supabase) return json(res, 200, { ok: true, sessoes: [] })
+            const { data, error } = await supabase
+              .from('admin_sessions')
+              .select('jti, issued_at, user_agent')
+              .eq('user_id', admin.sub)
+              .order('issued_at', { ascending: false })
+              .limit(30)
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            const actual = decodeSessionClaims(req)?.jti
+            const sessoes = (data || []).map((s: { jti: string; issued_at: number; user_agent: string | null }) => ({
+              jti: s.jti,
+              actual: s.jti === actual,
+              emitida: new Date(Number(s.issued_at)).toISOString(),
+              dispositivo: s.user_agent || 'Não registado',
+            }))
+            return json(res, 200, { ok: true, sessoes })
+          }
+
+          // SESSÕES — revogar um dispositivo concreto (apenas os do próprio)
+          if (/^\/api\/admin\/sessions\/[a-f0-9-]+$/.test(path) && req.method === 'DELETE') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            const jtiAlvo = path.split('/api/admin/sessions/')[1]
+            if (!supabase) return json(res, 200, { ok: true })
+            const { error } = await supabase.from('admin_sessions').delete().eq('user_id', admin.sub).eq('jti', jtiAlvo)
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            sessionRegistry.get(admin.sub)?.delete(jtiAlvo)
+            logAuditoria(admin, 'sessao_revogada', 'sessão', jtiAlvo.slice(0, 8))
+            return json(res, 200, { ok: true })
+          }
+
+          // SESSÕES — «fechar as outras»: mantém só a sessão actual (ex. password suspeitada)
+          if (path === '/api/admin/sessions/revoke-others' && req.method === 'POST') {
+            const admin = currentAdmin(req)
+            if (!admin) return json(res, 401, { ok: false })
+            const actual = decodeSessionClaims(req)?.jti || ''
+            const own = sessionRegistry.get(admin.sub)
+            if (own) own.forEach((t, jti) => { if (jti !== actual) own.delete(jti) })
+            if (supabase) {
+              const { error } = await supabase.from('admin_sessions').delete().eq('user_id', admin.sub).neq('jti', actual)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+            }
+            logAuditoria(admin, 'sessoes_revogadas', 'sessão', null, { excepto: actual.slice(0, 8) })
             return json(res, 200, { ok: true })
           }
 
@@ -2899,29 +3222,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (!vez) return json(res, 401, { ok: false })
               if (vez.level !== 'developer')
                 return json(res, 403, { ok: false, error: 'As cópias de segurança são exclusivas do Developer (Master Admin).' })
-              const tabelasBackup = ['pedidos_licencas', 'licencas_palancasoft', 'chamados_suporte', 'wiki_tecnica', 'admin_users', 'settings', 'parceiros_candidaturas', 'contacts', 'blog_posts', 'novidades_destaques', 'media', 'softwares', 'services', 'audit_log']
-              const dados: Record<string, unknown[]> = {}
-              for (const tabela of tabelasBackup) {
-                const { data, error } = tabela === 'audit_log'
-                  ? await supabase.from(tabela).select('*').order('created_at', { ascending: false }).limit(20000)
-                  : await supabase.from(tabela).select('*').limit(20000)
-                if (error) return json(res, 500, { ok: false, error: `${tabela}: ${error.message}` })
-                dados[tabela] = data || []
-              }
-              // nunca exportar credenciais — admin_users sai sem password_hash
-              dados.admin_users = (dados.admin_users as Record<string, unknown>[]).map(({ password_hash, ...resto }) => resto)
-              const licenca = await licencaAtual()
-              const payload = {
-                _backup: {
-                  app: 'CFTEC',
-                  gerado_em: new Date().toISOString(),
-                  por: vez.email,
-                  licenca: { activa: licenca.licencaAtiva, comercial: licenca.moduloComercial, tecnico: licenca.moduloTecnico, novidades: licenca.moduloNovidades, expiraEm: licenca.expiraEm },
-                  restauro: 'Cada chave de topo é uma tabela do Supabase, pronta para bulk insert.',
-                },
-                ...dados,
-              }
-              logAuditoria(vez, 'backup_exportado', 'plataforma', null, Object.fromEntries(tabelasBackup.map((t) => [t, (dados[t] as unknown[]).length])))
+              const dump = await backupDump(vez.email || 'developer')
+              if (!dump) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
+              logAuditoria(vez, 'backup_exportado', 'plataforma', null, Object.fromEntries(dump._contagens as [string, number][]))
+              const { _contagens, ...payload } = dump
               return json(res, 200, payload)
             }
 

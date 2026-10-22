@@ -126,6 +126,16 @@ const ACAO_LABEL: Record<string, string> = {
   licenca_atribuida: 'Atribuiu licença a parceiro',
   definicoes_gravadas: 'Gravou definições do portal', licenca_alterada: 'Alterou a licença da plataforma',
   backup_exportado: 'Exportou cópia de segurança',
+  backup_automatico: 'Cópia de segurança automática (diária)',
+  '2fa_setup': 'Iniciou configuração do 2FA',
+  '2fa_activada': 'Activou o 2FA',
+  '2fa_desactivada': 'Desactivou o 2FA',
+  '2fa': '2FA',
+  sessao_revogada: 'Revogou uma sessão',
+  sessoes_revogadas: 'Revogou as outras sessões',
+  login_bloqueado: 'Login bloqueado (demasiadas falhas)',
+  login_2fa_falhado: 'Login: código 2FA errado',
+  '2FA': '2FA',
   utilizador_criado: 'Criou utilizador', utilizador_actualizado: 'Actualizou utilizador', utilizador_apagado: 'Apagou utilizador',
   wiki_criada: 'Registou artigo na wiki', wiki_actualizada: 'Actualizou artigo da wiki', wiki_apagada: 'Apagou artigo da wiki',
   servico_criado: 'Criou serviço', servico_actualizado: 'Actualizou serviço', servico_alternado: 'Activou/desactivou serviço', servico_apagado: 'Apagou serviço',
@@ -257,6 +267,8 @@ function StatCard({ label, value, sub, badge, icon: Icon, tone, onClick, index =
 function AdminLogin({ onAuthenticated }: { onAuthenticated: (user: AdminUser) => void }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [code2fa, setCode2fa] = useState('')
+  const [needs2fa, setNeeds2fa] = useState(false)
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -265,8 +277,14 @@ function AdminLogin({ onAuthenticated }: { onAuthenticated: (user: AdminUser) =>
     setSubmitting(true)
     setError('')
     try {
-      const response = await fetch('/api/admin/login', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) })
+      const response = await fetch('/api/admin/login', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password, code: code2fa.trim() }) })
       const result = await response.json()
+      if (result.needs2fa) {
+        // password certa, falta o segundo passo (código TOTP do app autenticador)
+        setNeeds2fa(true)
+        setError(result.error || 'Introduza o código de verificação (2FA).')
+        return
+      }
       if (!response.ok) throw new Error(result.error || 'Não foi possível iniciar sessão.')
       onAuthenticated(result.user)
     } catch (loginError) {
@@ -276,7 +294,7 @@ function AdminLogin({ onAuthenticated }: { onAuthenticated: (user: AdminUser) =>
     }
   }
 
-  return <div className="admin-auth-shell"><Card className="admin-auth-card"><AdminMark /><div className="admin-auth-heading"><span className="admin-kicker">ÁREA RESTRITA</span><h1>Entrar no painel.</h1><p>Use as credenciais de administrador da CFTEC para continuar.</p></div><form onSubmit={submit} className="admin-auth-form"><label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@cftec.co" autoComplete="username" required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="A sua password" autoComplete="current-password" required /></label>{error && <div className="admin-auth-error" role="alert">{error}</div>}<Button type="submit" size="lg" disabled={submitting}>{submitting ? 'A validar…' : 'Entrar no painel'} <ChevronRight size={16} /></Button></form><div className="admin-auth-note"><ShieldCheck size={15} /> Sessão protegida por JWT e cookie HttpOnly.</div><a href="/" className="admin-back-link">← Voltar ao website público</a></Card></div>
+  return <div className="admin-auth-shell"><Card className="admin-auth-card"><AdminMark /><div className="admin-auth-heading"><span className="admin-kicker">ÁREA RESTRITA</span><h1>Entrar no painel.</h1><p>Use as credenciais de administrador da CFTEC para continuar.</p></div><form onSubmit={submit} className="admin-auth-form"><label>E-mail<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="admin@cftec.co" autoComplete="username" required readOnly={needs2fa} /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="A sua password" autoComplete="current-password" required readOnly={needs2fa} /></label>{needs2fa && <label>Código de verificação (app autenticador)<input inputMode="numeric" pattern="[0-9]*" maxLength={6} value={code2fa} onChange={(event) => setCode2fa(event.target.value.replace(/\D/g, ''))} placeholder="000000" autoFocus autoComplete="one-time-code" required /></label>}{error && <div className="admin-auth-error" role="alert">{error}</div>}<Button type="submit" size="lg" disabled={submitting}>{submitting ? 'A validar…' : needs2fa ? 'Confirmar código' : 'Entrar no painel'} <ChevronRight size={16} /></Button></form><div className="admin-auth-note"><ShieldCheck size={15} /> Sessão protegida por JWT, cookie HttpOnly e 2FA (quando activo).</div><a href="/" className="admin-back-link">← Voltar ao website público</a></Card></div>
 }
 
 // INTERCEPTOR DE SESSÃO (equivalente ao onAuthStateChange do Supabase):
@@ -767,6 +785,97 @@ export default function AdminDashboard() {
       notify(error instanceof Error ? error.message : 'Erro ao alterar a password')
     } finally {
       setSavingPassword(false)
+    }
+  }
+
+  // ─── SEGURANÇA: 2FA (TOTP) e sessões activas ───
+  type SessaoActiva = { jti: string; actual: boolean; emitida: string; dispositivo: string }
+  const [twofaEstado, setTwofaEstado] = useState<'loading' | 'desligado' | 'activado'>('loading')
+  const [setup2fa, setSetup2fa] = useState<{ secret: string; otpauth: string } | null>(null)
+  const [codigo2fa, setCodigo2fa] = useState('')
+  const [pw2fa, setPw2fa] = useState('')
+  const [busy2fa, setBusy2fa] = useState(false)
+  const [sessoes, setSessoes] = useState<SessaoActiva[] | null>(null)
+  const [revogando, setRevogando] = useState(false)
+
+  useEffect(() => {
+    if (authStatus !== 'authenticated') return
+    fetch('/api/admin/2fa/status', { credentials: 'include' }).then((r) => r.json()).then((j) => setTwofaEstado(j.activado ? 'activado' : 'desligado')).catch(() => setTwofaEstado('desligado'))
+    fetch('/api/admin/sessions', { credentials: 'include' }).then((r) => r.json()).then((j) => setSessoes(j.sessoes || [])).catch(() => setSessoes([]))
+  }, [authStatus])
+
+  const iniciar2fa = async () => {
+    setBusy2fa(true)
+    try {
+      const response = await fetch('/api/admin/2fa/setup', { method: 'POST', credentials: 'include' })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao gerar o segredo 2FA')
+      setSetup2fa({ secret: body.secret, otpauth: body.otpauth })
+      setCodigo2fa('')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao configurar o 2FA')
+    } finally {
+      setBusy2fa(false)
+    }
+  }
+
+  const activar2fa = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy2fa(true)
+    try {
+      const response = await fetch('/api/admin/2fa/activate', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: codigo2fa.trim() }) })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Código inválido')
+      setTwofaEstado('activado')
+      setSetup2fa(null)
+      notify('2FA activado — o próximo login pede o código do autenticador')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao activar o 2FA')
+    } finally {
+      setBusy2fa(false)
+    }
+  }
+
+  const desactivar2fa = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setBusy2fa(true)
+    try {
+      const response = await fetch('/api/admin/2fa/disable', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: pw2fa }) })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao desactivar o 2FA')
+      setTwofaEstado('desligado')
+      setPw2fa('')
+      notify('2FA desactivado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao desactivar o 2FA')
+    } finally {
+      setBusy2fa(false)
+    }
+  }
+
+  const revogarSessao = async (jti: string) => {
+    try {
+      const response = await fetch(`/api/admin/sessions/${jti}`, { method: 'DELETE', credentials: 'include' })
+      if (!response.ok) throw new Error('Falha ao revogar a sessão')
+      setSessoes(prev => (prev || []).filter(s => s.jti !== jti))
+      notify('Sessão revogada — esse dispositivo precisará de entrar de novo')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao revogar a sessão')
+    }
+  }
+
+  const revogarOutras = async () => {
+    setRevogando(true)
+    try {
+      const response = await fetch('/api/admin/sessions/revoke-others', { method: 'POST', credentials: 'include' })
+      if (!response.ok) throw new Error('Falha ao fechar as outras sessões')
+      const refech = await fetch('/api/admin/sessions', { credentials: 'include' }).then((r) => r.json()).catch(() => null)
+      setSessoes(refech?.sessoes || [])
+      notify('As outras sessões foram fechadas')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao fechar as outras sessões')
+    } finally {
+      setRevogando(false)
     }
   }
 
@@ -2630,7 +2739,27 @@ export default function AdminDashboard() {
           <label className="settings-field settings-field--full">Mensagem do banner<input value={portalSettings.banner_mensagem || ''} onChange={(e) => setPortalSettings(p => ({ ...p, banner_mensagem: e.target.value }))} placeholder="Ex.: Novo PalancaSoft ERP 2026 já disponível — fale connosco!" maxLength={160} disabled={portalSettings.banner_activo !== 'true'} /></label>
           <label className="settings-field settings-field--full">E-mail de notificações<small>Aviso automático a este destino com cada contacto novo e pedido de licença (Resend). Vazio = desactivado.</small><input type="email" value={portalSettings.notify_email || ''} onChange={(e) => setPortalSettings(p => ({ ...p, notify_email: e.target.value }))} placeholder="ex.: vigilante@cftec.co" maxLength={160} /></label>
           </div><div className="settings-actions"><Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar e aplicar ao site</>}</Button></div></form></Card>}
-          <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTA</span><h2>Perfil do administrador</h2></div></div><p>Actualize o nome exibido no painel. O e-mail de acesso é fixo.</p><div className="settings-profile"><Avatar className="admin-avatar-large"><AvatarFallback>{(profileName.trim()[0] || adminUser?.name?.[0] || 'A').toUpperCase()}</AvatarFallback></Avatar><form className="settings-form" onSubmit={handleProfileSave}><label className="settings-field">Nome de exibição<input value={profileName} onChange={(e) => setProfileName(e.target.value)} required maxLength={120} /></label><label className="settings-field">E-mail de acesso<input value={adminUser?.email || ''} disabled /><small className="settings-hint">Não é alterável nesta versão.</small></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingProfile}>{savingProfile ? 'A guardar…' : <><Check size={14} /> Guardar perfil</>}</Button></div></form></div></Card><Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA</span><h2>Mudar password</h2></div></div><p>A password actual é verificada (bcrypt) antes de qualquer alteração. Mínimo 8 caracteres.</p><form className="settings-form" onSubmit={handlePasswordChange}><label className="settings-field">Password actual<input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} required autoComplete="current-password" /></label><div className="settings-row"><label className="settings-field">Nova password<input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} required minLength={8} autoComplete="new-password" /></label><label className="settings-field">Confirmar nova<input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} required minLength={8} autoComplete="new-password" /></label></div>{pwNew && pwConfirm && pwNew !== pwConfirm && <p className="settings-warn">As passwords não coincidem.</p>}{pwNew && pwNew.length < 8 && <p className="settings-warn">A nova password precisa de pelo menos 8 caracteres.</p>}<div className="settings-actions"><Button type="submit" size="sm" disabled={savingPassword || (pwNew.length > 0 && pwNew !== pwConfirm)}>{savingPassword ? 'A alterar…' : <><Check size={14} /> Alterar password</>}</Button></div></form><div className="security-list"><div className="security-item"><ShieldCheck size={18} /><div><span>Autenticação de administrador</span><small>Protegida por JWT + cookie HttpOnly</small></div><span className="security-badge security-badge--ok">Activa</span></div><div className="security-item"><Database size={18} /><div><span>Base de dados gerida</span><small>Conexão activa e monitorizada</small></div><span className="security-badge security-badge--ok">Ligada</span></div></div></Card>{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PORTAL PÚBLICO</span><h2>Configuração do site</h2></div></div><p>Directório telefónico, WhatsApp comercial e o banner de avisos exibido no topo do site.</p><form className="settings-form" onSubmit={handlePortalSave}><div className="settings-row"><label className="settings-field">Telefone do directório<input value={portalSettings['telefone_directorio'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, telefone_directorio: e.target.value }))} placeholder="+244 900 000 000" maxLength={40} /></label><label className="settings-field">WhatsApp comercial (só dígitos)<input value={portalSettings['whatsapp_comercial'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, whatsapp_comercial: e.target.value }))} placeholder="244900000000" maxLength={25} /></label></div><label className="settings-field">Mensagem do banner<input value={portalSettings['banner_mensagem'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, banner_mensagem: e.target.value }))} placeholder="Ex.: Nova versão do PalancaSoft disponível!" maxLength={140} /></label><label className="settings-field">Banner no site<select value={portalSettings['banner_activo'] || 'false'} onChange={(e) => setPortalSettings(f => ({ ...f, banner_activo: e.target.value }))}><option value="false">Desactivado</option><option value="true">Activado</option></select></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar configuração</>}</Button></div></form></Card>}{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">GESTÃO DE ACESSOS</span><h2>Utilizadores do painel</h2></div><Button size="sm" onClick={() => setShowUserForm(true)}><Plus size={15} /> Novo utilizador</Button></div><p>Níveis: <strong>Super Admin</strong> (tudo), <strong>Gestor Comercial</strong> (contactos, licenças, parceiros, catálogo) e <strong>Técnico de Suporte</strong> (contactos, catálogo e mídias).</p><div className="user-admin-list">{users.map((user) => { const isSelf = adminUser?.email?.toLowerCase() === user.email.toLowerCase(); const protegido = user.role === 'developer' && !ehDev; return <div key={user.id} className={`user-admin-row ${protegido ? 'user-admin-row--dev' : ''}`}><div className="user-main"><strong>{user.name}{isSelf && <small> (você)</small>}{protegido && <small> · conta Developer 🔒</small>}</strong><span>{user.email}</span></div><select className="user-role-select" value={user.role} disabled={isSelf || protegido} title={protegido ? 'A conta Developer (Master Admin) só é gerida por outra conta Developer' : undefined} onChange={(e) => updateUser(user, { role: e.target.value })}>{ROLES.map(r => <option key={r} value={r}>{labelRole(r)}</option>)}</select><span className={`active-pill ${user.is_active && user.role !== 'developer' ? '' : 'inactive'}`}>{user.role === 'developer' ? '🔒 Master' : user.is_active ? 'Activo' : 'Desactivado'}</span><div className="service-admin-actions">{!isSelf && !protegido && <button className="icon-btn" title={user.is_active ? 'Desactivar' : 'Activar'} onClick={() => updateUser(user, { is_active: !user.is_active })}><Power size={16} /></button>}{!protegido && <button className="icon-btn" title="Redefinir password" onClick={() => { setPwResetUser(user); setPwResetForm({ pw: '', pw2: '' }) }}><KeyRound size={16} /></button>}{!isSelf && !protegido && <button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingUserId(user.id)}><Trash2 size={16} /></button>}</div></div> })}</div></Card>}</div>}
+          <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTA</span><h2>Perfil do administrador</h2></div></div><p>Actualize o nome exibido no painel. O e-mail de acesso é fixo.</p><div className="settings-profile"><Avatar className="admin-avatar-large"><AvatarFallback>{(profileName.trim()[0] || adminUser?.name?.[0] || 'A').toUpperCase()}</AvatarFallback></Avatar><form className="settings-form" onSubmit={handleProfileSave}><label className="settings-field">Nome de exibição<input value={profileName} onChange={(e) => setProfileName(e.target.value)} required maxLength={120} /></label><label className="settings-field">E-mail de acesso<input value={adminUser?.email || ''} disabled /><small className="settings-hint">Não é alterável nesta versão.</small></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingProfile}>{savingProfile ? 'A guardar…' : <><Check size={14} /> Guardar perfil</>}</Button></div></form></div></Card><Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA</span><h2>Mudar password</h2></div></div><p>A password actual é verificada (bcrypt) antes de qualquer alteração. Mínimo 8 caracteres.</p><form className="settings-form" onSubmit={handlePasswordChange}><label className="settings-field">Password actual<input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} required autoComplete="current-password" /></label><div className="settings-row"><label className="settings-field">Nova password<input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} required minLength={8} autoComplete="new-password" /></label><label className="settings-field">Confirmar nova<input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} required minLength={8} autoComplete="new-password" /></label></div>{pwNew && pwConfirm && pwNew !== pwConfirm && <p className="settings-warn">As passwords não coincidem.</p>}{pwNew && pwNew.length < 8 && <p className="settings-warn">A nova password precisa de pelo menos 8 caracteres.</p>}<div className="settings-actions"><Button type="submit" size="sm" disabled={savingPassword || (pwNew.length > 0 && pwNew !== pwConfirm)}>{savingPassword ? 'A alterar…' : <><Check size={14} /> Alterar password</>}</Button></div></form><div className="security-list"><div className="security-item"><ShieldCheck size={18} /><div><span>Autenticação de administrador</span><small>Protegida por JWT + cookie HttpOnly</small></div><span className="security-badge security-badge--ok">Activa</span></div><div className="security-item"><Database size={18} /><div><span>Base de dados gerida</span><small>Conexão activa e monitorizada</small></div><span className="security-badge security-badge--ok">Ligada</span></div></div></Card>{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PORTAL PÚBLICO</span><h2>Configuração do site</h2></div></div><p>Directório telefónico, WhatsApp comercial e o banner de avisos exibido no topo do site.</p><form className="settings-form" onSubmit={handlePortalSave}><div className="settings-row"><label className="settings-field">Telefone do directório<input value={portalSettings['telefone_directorio'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, telefone_directorio: e.target.value }))} placeholder="+244 900 000 000" maxLength={40} /></label><label className="settings-field">WhatsApp comercial (só dígitos)<input value={portalSettings['whatsapp_comercial'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, whatsapp_comercial: e.target.value }))} placeholder="244900000000" maxLength={25} /></label></div><label className="settings-field">Mensagem do banner<input value={portalSettings['banner_mensagem'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, banner_mensagem: e.target.value }))} placeholder="Ex.: Nova versão do PalancaSoft disponível!" maxLength={140} /></label><label className="settings-field">Banner no site<select value={portalSettings['banner_activo'] || 'false'} onChange={(e) => setPortalSettings(f => ({ ...f, banner_activo: e.target.value }))}><option value="false">Desactivado</option><option value="true">Activado</option></select></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar configuração</>}</Button></div></form></Card>}{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">GESTÃO DE ACESSOS</span><h2>Utilizadores do painel</h2></div><Button size="sm" onClick={() => setShowUserForm(true)}><Plus size={15} /> Novo utilizador</Button></div><p>Níveis: <strong>Super Admin</strong> (tudo), <strong>Gestor Comercial</strong> (contactos, licenças, parceiros, catálogo) e <strong>Técnico de Suporte</strong> (contactos, catálogo e mídias).</p><div className="user-admin-list">{users.map((user) => { const isSelf = adminUser?.email?.toLowerCase() === user.email.toLowerCase(); const protegido = user.role === 'developer' && !ehDev; return <div key={user.id} className={`user-admin-row ${protegido ? 'user-admin-row--dev' : ''}`}><div className="user-main"><strong>{user.name}{isSelf && <small> (você)</small>}{protegido && <small> · conta Developer 🔒</small>}</strong><span>{user.email}</span></div><select className="user-role-select" value={user.role} disabled={isSelf || protegido} title={protegido ? 'A conta Developer (Master Admin) só é gerida por outra conta Developer' : undefined} onChange={(e) => updateUser(user, { role: e.target.value })}>{ROLES.map(r => <option key={r} value={r}>{labelRole(r)}</option>)}</select><span className={`active-pill ${user.is_active && user.role !== 'developer' ? '' : 'inactive'}`}>{user.role === 'developer' ? '🔒 Master' : user.is_active ? 'Activo' : 'Desactivado'}</span><div className="service-admin-actions">{!isSelf && !protegido && <button className="icon-btn" title={user.is_active ? 'Desactivar' : 'Activar'} onClick={() => updateUser(user, { is_active: !user.is_active })}><Power size={16} /></button>}{!protegido && <button className="icon-btn" title="Redefinir password" onClick={() => { setPwResetUser(user); setPwResetForm({ pw: '', pw2: '' }) }}><KeyRound size={16} /></button>}{!isSelf && !protegido && <button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingUserId(user.id)}><Trash2 size={16} /></button>}</div></div> })}</div></Card>}
+          <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · 2º PASSO</span><h2>Autenticação em dois passos (2FA)</h2></div></div><p>Com o 2FA activo, depois da password o painel pede um código de 6 dígitos de um app autenticador (Google Authenticator, Authy, …). Cada conta activa o seu — aqui.</p>
+            {twofaEstado === 'loading' && <small className="settings-hint">A verificar…</small>}
+            {twofaEstado === 'activado' ? <form className="settings-form" onSubmit={desactivar2fa}><div className="settings-field settings-field--full">Estado: <strong style={{ color: 'var(--success, #16a34a)' }}>activo</strong> — este login exige o código TOTP.</div><label className="settings-field">Password actual<small>Prove que é o dono da conta para desligar</small><input type="password" value={pw2fa} onChange={(e) => setPw2fa(e.target.value)} required autoComplete="current-password" /></label><div className="settings-actions"><Button variant="outline" type="submit" size="sm" disabled={busy2fa || !pw2fa || savingPassword}>{busy2fa ? 'A desactivar…' : 'Desactivar 2FA'}</Button></div></form>
+            : setup2fa ? <form className="settings-form" onSubmit={activar2fa}><div className="settings-field settings-field--full">1. No app autenticador, escolha «+» → «Introduzir chave de configuração» e cole este segreto:<code className="settings-2fa-secret" style={{ display: 'block', margin: '8px 0', padding: '10px 12px', font: '600 15px/1.3 ui-monospace, monospace', letterSpacing: '2px', borderRadius: 10, background: 'rgba(0,0,0,.35)' }}>{setup2fa.secret.slice(0, 4)} {setup2fa.secret.slice(4, 12)} {setup2fa.secret.slice(12, 20)} {setup2fa.secret.slice(20)}</code><small>Conta: CFTEC:{adminUser?.email || ''}</small></div><label className="settings-field">2. Código de 6 dígitos que o app mostra<input inputMode="numeric" pattern="[0-9]*" maxLength={6} value={codigo2fa} onChange={(e) => setCodigo2fa(e.target.value.replace(/\D/g, ''))} placeholder="000000" autoComplete="one-time-code" required /></label><div className="settings-actions"><Button type="submit" size="sm" disabled={busy2fa || codigo2fa.length !== 6}>{busy2fa ? 'A verificar…' : <><Check size={14} /> Activar 2FA</>}</Button><Button variant="outline" type="button" size="sm" onClick={() => setSetup2fa(null)}>Cancelar</Button></div></form>
+            : <Button type="button" size="sm" onClick={iniciar2fa} disabled={busy2fa}>{busy2fa ? 'A gerar segredo…' : <>Configurar 2FA <ShieldCheck size={14} /></>}</Button>}
+          </Card>
+          <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA</span><h2>Sessões activas</h2></div><Button variant="outline" type="button" size="sm" onClick={revogarOutras} disabled={revogando || !sessoes?.some(s => !s.actual)}>{revogando ? 'A fechar…' : 'Fechar as outras'}</Button></div><p>Navegadores onde esta conta entrou nos últimos 30 dias. «Fechar as outras» revoga-os — quem estiver noutro dispositivo precisará de iniciar sessão de novo.</p>
+            <div className="upg-lista">{sessoes === null ? <small className="settings-hint">A carregar…</small> : sessoes.length === 0 ? <small className="settings-hint">Nenhuma sessão registada (entrar de novo para registar).</small> : sessoes.map((s) => (
+              <div className="upg-row" key={s.jti}>
+                <div className="upg-row-main">
+                  <span className="upg-data">{formatDate(s.emitida)}</span>
+                  {s.actual && <span className="upg-chip upg-chip--autorizado">Sessão actual</span>}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span title={s.dispositivo} style={{ opacity: .65, fontSize: 12.5, maxWidth: 340, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.dispositivo.slice(0, 64)}{s.dispositivo.length > 64 ? '…' : ''}</span>
+                  {!s.actual && <button className="icon-btn danger" title="Revogar esta sessão" onClick={() => void revogarSessao(s.jti)}><X size={15} /></button>}
+                </div>
+              </div>
+            ))}</div>
+          </Card></div>}
       </main>
     </div>
 
