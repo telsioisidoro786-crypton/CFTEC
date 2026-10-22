@@ -15,9 +15,12 @@ create index if not exists login_rate_updated_idx on login_rate (updated_at);
 -- O middleware usa SERVICE ROLE (contorna RLS); as public keys nunca acedem.
 alter table login_rate enable row level security;
 
--- 2) 2FA (TOTP) por utilizador admin.
+-- 2) 2FA (TOTP) por utilizador admin — nas DUAS tabelas de administradores:
+--    admin_users (multi-utilizador) e admins (conta única legada).
 alter table admin_users add column if not exists twofa_secret  text;
 alter table admin_users add column if not exists twofa_enabled boolean not null default false;
+alter table admins      add column if not exists twofa_secret  text;
+alter table admins      add column if not exists twofa_enabled boolean not null default false;
 
 -- 3) Sessões: registo do navegador/dispositivo (preenchido no início de sessão).
 alter table admin_sessions add column if not exists user_agent text;

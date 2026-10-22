@@ -887,12 +887,14 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
                   email: row.email,
                   password_hash: row.password_hash,
                   level: (['super_admin', 'gestor', 'tecnico', 'developer'].includes(row.role) ? row.role : 'gestor') as AdminLevel,
+                  twofa_secret: row.twofa_secret ?? null,
+                  twofa_enabled: row.twofa_enabled ?? false,
                 }
               } else {
                 // Compatibilidade: tabela admins antiga (utilizador único = super admin)
                 const { data, error } = await supabase
                   .from('admins')
-                  .select('id, name, email, password_hash')
+                  .select('id, name, email, password_hash, twofa_secret, twofa_enabled')
                   .eq('email', email)
                   .single()
 
@@ -903,6 +905,8 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
                     email: data.email,
                     password_hash: data.password_hash,
                     level: 'super_admin',
+                    twofa_secret: data.twofa_secret ?? null,
+                    twofa_enabled: data.twofa_enabled ?? false,
                   }
                 }
               }
@@ -1064,13 +1068,31 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           // O estado 2FA e a revogação são operações "pessoais" (valem mesmo em
           // modo somente leitura); ver a isenção na guarda de licença mais abaixo.
 
+          // 2FA — acesso à conta nas DUAS tabelas (admin_users primeiro;
+          // conta única legada `admins` como fallback).
+          type TwofaPatch = { twofa_secret?: string | null; twofa_enabled?: boolean }
+          const twofaRead = async (adminId: string, colunas: string): Promise<Record<string, unknown> | null> => {
+            if (!supabase) return null
+            const ownResult = await supabase.from('admin_users').select(colunas).eq('id', adminId).maybeSingle()
+            if (ownResult.data) return ownResult.data as unknown as Record<string, unknown>
+            const legacyResult = await supabase.from('admins').select(colunas).eq('id', adminId).maybeSingle()
+            return legacyResult.data ? (legacyResult.data as unknown as Record<string, unknown>) : null
+          }
+          const twofaWrite = async (adminId: string, patch: TwofaPatch): Promise<boolean> => {
+            if (!supabase) return false
+            const a = await supabase.from('admin_users').update(patch).eq('id', adminId).select('id')
+            if (a.data && a.data.length) return true
+            const b = await supabase.from('admins').update(patch).eq('id', adminId).select('id')
+            return !!(b.data && b.data.length)
+          }
+
           // 2FA — ESTADO (o painel mostra se o segundo passo está activo)
           if (path === '/api/admin/2fa/status' && req.method === 'GET') {
             const admin = currentAdmin(req)
             if (!admin) return json(res, 401, { ok: false })
             if (!supabase) return json(res, 200, { ok: true, activado: false })
-            const { data } = await supabase.from('admin_users').select('twofa_enabled').eq('id', admin.sub).maybeSingle()
-            return json(res, 200, { ok: true, activado: !!((data as { twofa_enabled?: boolean } | null)?.twofa_enabled) })
+            const row = await twofaRead(admin.sub, 'twofa_enabled')
+            return json(res, 200, { ok: true, activado: !!row?.twofa_enabled })
           }
 
           // 2FA — SETUP: gera o segredo; só fica activo quando o utilizador confirma um código
@@ -1081,8 +1103,8 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             const secret = base32Random(20)
             const label = encodeURIComponent(`CFTEC:${admin.email}`)
             const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=CFTEC&algorithm=SHA1&digits=6&period=30`
-            const { error } = await supabase.from('admin_users').update({ twofa_secret: secret, twofa_enabled: false }).eq('id', admin.sub)
-            if (error) return json(res, 500, { ok: false, error: error.message })
+            const gravado = await twofaWrite(admin.sub, { twofa_secret: secret, twofa_enabled: false })
+            if (!gravado) return json(res, 500, { ok: false, error: 'Não foi possível gravar o segredo 2FA na base de dados.' })
             logAuditoria(admin, '2fa_setup', 'utilizador', admin.sub)
             return json(res, 200, { ok: true, secret, otpauth })
           }
@@ -1093,13 +1115,13 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             if (!admin) return json(res, 401, { ok: false })
             if (!supabase) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
             const payload = await readBody(req) as { code?: string }
-            const { data: row } = await supabase.from('admin_users').select('twofa_secret').eq('id', admin.sub).maybeSingle()
-            const secret = (row as { twofa_secret?: string | null } | null)?.twofa_secret
+            const row = await twofaRead(admin.sub, 'twofa_secret')
+            const secret = row?.twofa_secret as string | undefined
             if (!secret) return json(res, 400, { ok: false, error: 'Comece por gerar o segredo 2FA (Configurar).' })
             if (!verificarTotp(secret, String(payload.code || '')))
               return json(res, 400, { ok: false, error: 'Código inválido — confira a hora (automática, no telefone).' })
-            const { error } = await supabase.from('admin_users').update({ twofa_enabled: true }).eq('id', admin.sub)
-            if (error) return json(res, 500, { ok: false, error: error.message })
+            const gravado = await twofaWrite(admin.sub, { twofa_enabled: true })
+            if (!gravado) return json(res, 500, { ok: false, error: 'Não foi possível gravar a activação do 2FA.' })
             logAuditoria(admin, '2fa_activada', 'utilizador', admin.sub)
             return json(res, 200, { ok: true })
           }
@@ -1110,13 +1132,12 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             if (!admin) return json(res, 401, { ok: false })
             if (!supabase) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
             const payload = await readBody(req) as { password?: string }
-            const { data: row } = await supabase.from('admin_users').select('password_hash, twofa_enabled').eq('id', admin.sub).maybeSingle()
-            const dados = row as { password_hash?: string; twofa_enabled?: boolean } | null
-            if (!dados?.twofa_enabled) return json(res, 400, { ok: false, error: 'O 2FA já está desactivado.' })
-            if (!dados.password_hash || !(await bcrypt.compare(String(payload.password || ''), dados.password_hash)))
+            const row = await twofaRead(admin.sub, 'password_hash, twofa_enabled')
+            if (!row?.twofa_enabled) return json(res, 400, { ok: false, error: 'O 2FA já está desactivado.' })
+            if (!row.password_hash || !(await bcrypt.compare(String(payload.password || ''), row.password_hash as string)))
               return json(res, 401, { ok: false, error: 'Password incorrecta.' })
-            const { error } = await supabase.from('admin_users').update({ twofa_secret: null, twofa_enabled: false }).eq('id', admin.sub)
-            if (error) return json(res, 500, { ok: false, error: error.message })
+            const gravado = await twofaWrite(admin.sub, { twofa_secret: null, twofa_enabled: false })
+            if (!gravado) return json(res, 500, { ok: false, error: 'Não foi possível gravar a desactivação do 2FA.' })
             logAuditoria(admin, '2fa_desactivada', 'utilizador', admin.sub)
             return json(res, 200, { ok: true })
           }
