@@ -67,6 +67,8 @@ import {
   BookOpen,
   Banknote,
   ScrollText,
+  Moon,
+  Sun,
 } from 'lucide-react'
 import PushNotificationBanner from './components/PushNotificationBanner'
 import SystemTour, { marcarTour, tourFeito } from './SystemTour'
@@ -212,23 +214,8 @@ type HealthCheck = {
   warnings?: { level: 'info' | 'warning'; message: string }[]
 }
 
-const fallbackSummary: Summary = { softwares: 3, media: 18, services: 4, contacts: 24 }
-const fallbackContacts: Contact[] = [
-  { id: '1', name: 'Marta Silva', email: 'marta@atlas.co', phone: '+244 923 111 222', service_interest: 'CFTEC Flow', message: 'Gostaria de uma demonstração do CFTEC Flow para a nossa equipa comercial.', status: 'unread', created_at: 'Hoje, 09:42' },
-  { id: '2', name: 'Paulo António', email: 'paulo@kairo.co', phone: null, service_interest: 'Serviço à medida', message: 'Precisamos de integrar o nosso sistema de stock com relatórios executivos.', status: 'read', created_at: 'Ontem, 16:18' },
-  { id: '3', name: 'Inês Gomes', email: 'ines@nortelab.co', phone: null, service_interest: 'CFTEC Insight', message: 'Quanto custa a licença anual do CFTEC Insight?', status: 'archived', created_at: '12 Out, 11:05' },
-]
-const fallbackSoftware: Software[] = [
-  { id: '1', name: 'CFTEC Flow', version: 'v2.4', file_size: '45 MB', downloads_count: 183, created_at: '12 Out 2025' },
-  { id: '2', name: 'CFTEC Insight', version: 'v1.8', file_size: '32 MB', downloads_count: 97, created_at: '07 Out 2025' },
-  { id: '3', name: 'CFTEC Desk', version: 'v3.1', file_size: '58 MB', downloads_count: 246, created_at: '27 Set 2025' },
-]
-const fallbackServices: Service[] = [
-  { id: '1', title: 'Desenvolvimento à medida', slug: 'desenvolvimento-a-medida', short_description: 'Aplicações web robustas para a realidade da sua equipa.', full_description: 'Produtos digitais pensados para os processos e objectivos específicos do seu negócio.', icon: 'Code2', is_active: true, created_at: '2025-01-15' },
-  { id: '2', title: 'Cloud & conectividade', slug: 'cloud-conectividade', short_description: 'Arquitecturas seguras, escaláveis e sob controlo.', full_description: 'Infraestrutura preparada para manter os seus dados disponíveis e a sua operação em movimento.', icon: 'Network', is_active: true, created_at: '2025-02-20' },
-  { id: '3', title: 'Dados & automação', slug: 'dados-automacao', short_description: 'Informação accionável para decidir com confiança.', full_description: 'Dashboards, integrações e automações que reduzem ruído e desbloqueiam performance.', icon: 'BarChart3', is_active: true, created_at: '2025-03-10' },
-  { id: '4', title: 'Suporte especializado', slug: 'suporte-especializado', short_description: 'Uma equipa técnica próxima para manter tudo a avançar.', full_description: 'Acompanhamento contínuo, resolução rápida e evolução sustentada da sua tecnologia.', icon: 'Headphones', is_active: true, created_at: '2025-04-05' },
-]
+const zeroSummary: Summary = { softwares: 0, media: 0, services: 0, contacts: 0 }
+
 
 type SysLic = {
   licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean
@@ -369,10 +356,12 @@ export default function AdminDashboard() {
     if (adminUser?.email && !tourFeito(adminUser.email)) setTourOpen(true)
   }, [adminUser?.email])
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [summary, setSummary] = useState<Summary>(fallbackSummary)
-  const [contacts, setContacts] = useState<Contact[]>(fallbackContacts)
-  const [software, setSoftware] = useState<Software[]>(fallbackSoftware)
-  const [services, setServices] = useState<Service[]>(fallbackServices)
+  const [summary, setSummary] = useState<Summary>(zeroSummary)
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [software, setSoftware] = useState<Software[]>([])
+  const [services, setServices] = useState<Service[]>([])
+  const [dashboardPronto, setDashboardPronto] = useState(false)
+  const [tema, setTema] = useState<'light' | 'dark'>(() => (localStorage.getItem('cftec_admin_tema') === 'dark' ? 'dark' : 'light'))
   const [media, setMedia] = useState<Media[]>([])
   const [health, setHealth] = useState<HealthCheck | null>(null)
   const [toast, setToast] = useState('')
@@ -696,6 +685,11 @@ export default function AdminDashboard() {
     }).catch(() => setAuthStatus('unauthenticated'))
   }, [])
 
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', tema)
+    localStorage.setItem('cftec_admin_tema', tema)
+  }, [tema])
+
   const loadDashboardData = async () => {
     if (authStatus !== 'authenticated') return
     
@@ -719,10 +713,10 @@ export default function AdminDashboard() {
       ])
 
       const [summaryData, contactsData, softwareData, servicesData, mediaData, healthData, licensesData, partnersData, downloadsData, settingsData, usersData, ordersData, destaquesData, blogData, chamadosData] = await Promise.all([
-        summaryRes.ok ? summaryRes.json() : fallbackSummary,
-        contactsRes.ok ? contactsRes.json() : fallbackContacts,
-        softwareRes.ok ? softwareRes.json() : fallbackSoftware,
-        servicesRes.ok ? servicesRes.json() : fallbackServices,
+        summaryRes.ok ? summaryRes.json() : zeroSummary,
+        contactsRes.ok ? contactsRes.json() : [],
+        softwareRes.ok ? softwareRes.json() : [],
+        servicesRes.ok ? servicesRes.json() : [],
         mediaRes.ok ? mediaRes.json() : [],
         healthRes.ok ? healthRes.json() : null,
         licensesRes.ok ? licensesRes.json() : [],
@@ -736,8 +730,8 @@ export default function AdminDashboard() {
         chamadosRes.ok ? chamadosRes.json() : [],
       ])
       
-      const resolvedSoftware = Array.isArray(softwareData) && softwareData.length > 0 ? softwareData : fallbackSoftware
-      const resolvedServices = Array.isArray(servicesData) && servicesData.length > 0 ? servicesData : fallbackServices
+      const resolvedSoftware = Array.isArray(softwareData) ? softwareData : []
+      const resolvedServices = Array.isArray(servicesData) ? servicesData : []
 
       setSummary(summaryData.summary || summaryData)
       setContacts(contactsData)
@@ -763,12 +757,14 @@ export default function AdminDashboard() {
       }
     } catch (err) {
       console.error('[ADMIN] Error loading data:', err)
-      setSummary(fallbackSummary)
-      setContacts(fallbackContacts)
-      setSoftware(fallbackSoftware)
-      setServices(fallbackServices)
+      setSummary(zeroSummary)
+      setContacts([])
+      setSoftware([])
+      setServices([])
       setMedia([])
       setHealth(null)
+    } finally {
+      setDashboardPronto(true)
     }
   }
 
@@ -2682,7 +2678,7 @@ export default function AdminDashboard() {
     </aside>
 
     <div className="admin-main">
-      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><button className="admin-icon-btn" aria-label="Guia de Uso" title="Guia de Uso do Sistema" onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">{(adminUser?.name || 'Admin CFTEC').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'}</small></div><i className="admin-role-chip">{labelRole(adminUser?.level || 'super_admin')}</i><ChevronRight size={14} /></div></div></header>
+      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><button className="admin-icon-btn admin-help-btn" aria-label="Guia de Uso" title="Guia de Uso do Sistema" onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button><button className="admin-icon-btn admin-tema-btn" aria-label="Alternar tema" title={tema === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'} onClick={() => setTema(t => t === 'dark' ? 'light' : 'dark')}>{tema === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">{(adminUser?.name || 'Admin CFTEC').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}</span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'}</small></div><i className="admin-role-chip">{labelRole(adminUser?.level || 'super_admin')}</i><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
         {(ehDev || sysLic.bypassActivo || (sysLic.licencaAtiva !== false && sysLic.licencaEfetiva !== false)) ? null : <div className="licenca-suspensa"><span className="licenca-suspensa-icon"><Power size={44} /></span><h2>{sysLic.expirada ? 'Licença expirada' : 'Plataforma suspensa'}</h2><p>{sysLic.expirada && !sysLic.mensagem ? 'A licença de manutenção venceu-se — a plataforma entrou em suspensão automática.' : sysLic.mensagem}</p><small>Licença de uso do software — contacte o Developer da plataforma (Nexora Systems) para reactivar.</small>
           {sysLic.bypassActivo ? <small className="licenca-bypass-activo">🔓 Acesso de emergência activo — as suas acções estão desbloqueadas temporariamente.</small> : <>
@@ -2727,7 +2723,8 @@ export default function AdminDashboard() {
         <div className="admin-page-heading"><div><span className="admin-kicker">{new Date().toLocaleDateString('pt-PT', { day: '2-digit', month: 'long', year: 'numeric' })}</span><h1>{activeSection === 'dashboard' ? `${new Date().getHours() < 12 ? 'Bom dia' : new Date().getHours() < 19 ? 'Boa tarde' : 'Boa noite'}, ${(adminUser?.name || 'Admin').split(' ')[0]}.` : sectionTitle}</h1><p>{activeSection === 'dashboard' ? 'Aqui está o que está a acontecer no seu workspace hoje.' : 'Faça a gestão do conteúdo que alimenta a experiência CFTEC.'}</p></div><div className="admin-page-actions"><span className="admin-online"><i /> Sistema online</span>{activeSection === 'software' && role !== 'gestor' && <Button size="sm" onClick={() => { setEditingSoftware(null); resetSoftwareForm(); setShowSoftwareForm(true) }}><Plus size={15} /> Adicionar software</Button>}</div></div>
 
         {activeSection !== 'dashboard' && modBloqueado(activeSection) && <Card className="admin-panel admin-section-panel"><div className="admin-empty-state module-off"><AlertTriangle size={48} /><h3>Módulo não disponível</h3><p>{sysLic.mensagem}</p><Button variant="outline" size="sm" onClick={() => setActiveSection('dashboard')}><ChevronRight size={14} /> Voltar à visão geral</Button></div></Card>}
-        {activeSection === 'dashboard' && <>
+        {activeSection === 'dashboard' && !dashboardPronto && <div className="admin-sk-grid">{[0, 1, 2, 3].map(i => <div className="sk-card" key={i} />)}<div className="sk-panel sk-panel--tall" /><div className="sk-panel" /></div>}
+        {activeSection === 'dashboard' && dashboardPronto && <>
           <div className="admin-stats-grid admin-stats-grid--four">
             {role === 'gestor' ? <>
               <StatCard index={0} label="Pedidos de Licença" value={summary.orders || 0} sub={`${summary.ordersPending ?? 0} pendente(s) · ${summary.ordersApproved ?? 0} aprovado(s)`} badge={(summary.ordersPending || 0) + (summary.ordersVerificacao || 0)} icon={ShoppingCart} tone="blue" share={(summary.orders || 0) / statMax} onClick={() => setActiveSection('pedidos')} />
