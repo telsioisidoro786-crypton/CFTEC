@@ -1033,3 +1033,24 @@
 .sla-barra-fill i.sla-barra-ok{background:#10b981}
 .sla-barra span{font:700 .56rem 'DM Mono',monospace;color:#64748b}
 @media (max-width:820px){.sla-grid{grid-template-columns:1fr 1fr}.sla-kpi--wide{grid-column:1/-1}}
+
+
+/* ===== FIX DE LARGURA: a página deixou de deslizar para os lados =====
+   Corrente de encolhimento (cada contentor pode encolher; quem é demasiado
+   largo corta/rola DENTRO de si — as tabelas já tinham .admin-table-wrap)
+   + pistas de grelha com mínimo 0 em vez de "auto" e nomes longos truncados. */
+.admin-shell{grid-template-columns:260px minmax(0,1fr)}
+.admin-main,.admin-content,.admin-panel,
+.admin-dashboard-grid>*,.admin-stats-grid>*,.health-score>div:not(.health-ring){min-width:0}
+.admin-topbar{min-width:0}
+.admin-topbar-actions{min-width:0;flex:1 1 auto}
+.admin-search{position:relative;min-width:0;flex:0 1 280px}
+.admin-search input{width:100%;min-width:0}
+.timeline-main strong,.timeline-main span{white-space:normal;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}
+.health-lines{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (min-width:1025px){
+  .admin-stats-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .admin-stats-grid--four{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .admin-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .mini-table>div{grid-template-columns:36px 36px minmax(0,1fr) auto auto 80px}
+}
