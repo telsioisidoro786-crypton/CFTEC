@@ -6,13 +6,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Activity, BadgeCheck, Building2, CheckCircle2, FileText, KeyRound, LifeBuoy,
-  Lock, LogIn, LogOut, Mail, MessageCircle, Phone, Send, ShieldCheck, UserPlus,
+  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Send, ShieldCheck, Star, Timer, UserPlus,
 } from 'lucide-react'
 
 type Sessao = { empresa: string; email: string }
 type Pedido = { id: string; created_at: string; software_nome: string; status: string; forma_pagamento: string | null; provincia: string | null; observacoes: string | null }
 type Licenca = { id: string; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }
-type Chamado = { id: string; created_at: string; updated_at: string; software: string | null; problema: string; resolucao: string | null; estado: string; prioridade: string; origem: string | null }
+type Chamado = { id: string; created_at: string; updated_at: string; software: string | null; problema: string; resolucao: string | null; estado: string; prioridade: string; origem: string | null; sla_horas?: number | null; prazo_sla?: string | null; resolvido_em?: string | null; escalonado?: boolean | null; csat?: number | null }
+type Mensagem = { id: string; created_at: string; autor: 'cliente' | 'tecnico' | 'sistema'; autor_nome: string | null; corpo: string }
 
 const statusTone = (s: string) =>
   s === 'Aprovado' || s === 'Pago' || s === 'Activo' || s === 'Resolvido' ? 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10'
@@ -21,6 +22,22 @@ const statusTone = (s: string) =>
         : 'text-slate-300 border-slate-500/30 bg-slate-500/10'
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—')
+
+// Pílula de SLA tal como o cliente vê no portal
+const slaDoCliente = (c: { estado: string; prazo_sla?: string | null; resolvido_em?: string | null; escalonado?: boolean | null; created_at: string }): { texto: string; classe: string } => {
+  if (c.estado === 'Resolvido') {
+    if (c.resolvido_em) {
+      const dentro = !c.prazo_sla || new Date(c.resolvido_em) <= new Date(c.prazo_sla)
+      return dentro ? { texto: 'resolvido no prazo', classe: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' } : { texto: 'resolvido fora do prazo', classe: 'text-amber-400 border-amber-400/30 bg-amber-400/10' }
+    }
+    return { texto: 'resolvido', classe: 'text-emerald-400 border-emerald-400/30 bg-emerald-400/10' }
+  }
+  if (!c.prazo_sla) return { texto: 'sem prazo contado', classe: 'text-slate-400 border-slate-500/30 bg-slate-500/10' }
+  const restante = new Date(c.prazo_sla).getTime() - Date.now()
+  if (c.escalonado) return { texto: 'ESCALADO — prioridade máxima', classe: 'text-rose-300 border-rose-400/40 bg-rose-400/10' }
+  if (restante <= 0) return { texto: `prazo vencido há ${Math.abs(restante / 3600000).toFixed(0)} h`, classe: 'text-rose-300 border-rose-400/40 bg-rose-400/10' }
+  return { texto: `resposta em até ${Math.ceil(restante / 3600000)} h`, classe: 'text-cyan-300 border-cyan-400/30 bg-cyan-400/10' }
+}
 
 async function apiJson<T>(url: string, opts?: RequestInit): Promise<{ status: number; body: T & { error?: string; message?: string } }> {
   const r = await fetch(url, { credentials: 'same-origin', ...opts, headers: opts?.body ? { 'Content-Type': 'application/json', ...(opts.headers || {}) } : opts?.headers })
@@ -45,6 +62,12 @@ export default function ClientePortal() {
   const [fChamado, setFChamado] = useState({ software: '', descricao_problema: '' })
   const [fSenha, setFSenha] = useState({ password_actual: '', password_nova: '' })
   const [ocupado, setOcupado] = useState(false)
+  // Conversa do chamado + CSAT (parte 3)
+  const [conversaId, setConversaId] = useState<string | null>(null)
+  const [mensagens, setMensagens] = useState<Mensagem[]>([])
+  const [carregandoMsgs, setCarregandoMsgs] = useState(false)
+  const [novaMsg, setNovaMsg] = useState('')
+  const [csatRascunho, setCsatRascunho] = useState<{ id: string; nota: number; comentario: string } | null>(null)
 
   // sessão existente (cookie) — levanta dados de imediato
   useEffect(() => {
@@ -105,6 +128,32 @@ export default function ClientePortal() {
       await carregarTudo()
       window.setTimeout(() => setAviso(''), 5000)
     } else setAviso(body.error || 'Não foi possível registar o chamado.')
+  }
+
+  // conversa do chamado — thread cliente ↔ equipa (parte 3)
+  const abrirConversa = async (chamado: Chamado) => {
+    if (conversaId === chamado.id) return setConversaId(null)
+    setConversaId(chamado.id)
+    setMensagens([])
+    setCarregandoMsgs(true)
+    const { body } = await apiJson<{ ok: boolean; mensagens?: Mensagem[] }>(`/api/portal/chamados/${chamado.id}/mensagens`)
+    setMensagens(body.mensagens || [])
+    setCarregandoMsgs(false)
+  }
+  const enviarMensagem = async (chamadoId: string) => {
+    const corpo = novaMsg.trim()
+    if (!corpo || ocupado) return
+    setOcupado(true)
+    const { status, body } = await apiJson<{ mensagem?: Mensagem }>(`/api/portal/chamados/${chamadoId}/mensagens`, { method: 'POST', body: JSON.stringify({ corpo }) })
+    if (status === 201 && body.mensagem) { setMensagens(m => [...m, body.mensagem as Mensagem]); setNovaMsg(''); setAviso('Mensagem enviada à equipa técnica.') } else setAviso(body.error || 'Não foi possível enviar a mensagem.')
+    setOcupado(false)
+  }
+  const enviarCsat = async (chamadoId: string) => {
+    if (!csatRascunho || csatRascunho.id !== chamadoId || !csatRascunho.nota) return
+    setOcupado(true)
+    const { status, body } = await apiJson<{ message?: string }>(`/api/portal/chamados/${chamadoId}/csat`, { method: 'POST', body: JSON.stringify({ nota: csatRascunho.nota, comentario: csatRascunho.comentario }) })
+    if (status === 200) { setChamados(l => l.map(c => c.id === chamadoId ? { ...c, csat: csatRascunho.nota } : c)); setCsatRascunho(null); setAviso(body.message || 'Obrigado pela avaliação!') } else setAviso(body.error || 'Não foi possível registar a avaliação.')
+    setOcupado(false)
   }
 
   const trocarSenha = async (e: React.FormEvent) => {
@@ -320,11 +369,45 @@ export default function ClientePortal() {
                       <strong>{c.software || 'Apoio geral'}</strong>
                       <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusTone(c.estado === 'Resolvido' ? 'Resolvido' : c.estado === 'Em Resolução' ? 'Em Resolução' : 'Pendente')}`}>{c.estado}</span>
                       <span className="text-[11px] text-slate-500">{c.prioridade}</span>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full border inline-flex items-center gap-1`}><Timer size={10} /> {slaDoCliente(c).texto}</span>
                     </div>
                     <span className="text-xs text-slate-500">{fmt(c.created_at)}{c.updated_at !== c.created_at ? ` · actualizado ${fmt(c.updated_at)}` : ''}</span>
                   </div>
                   <p className="mt-2.5 text-sm text-slate-300 leading-relaxed">{c.problema}</p>
                   {c.resolucao && <p className="mt-2 text-sm text-emerald-300 bg-emerald-400/5 border border-emerald-400/20 rounded-lg px-3 py-2"><b className="text-xs block text-emerald-400 mb-0.5">Resolução da equipa:</b>{c.resolucao}</p>}
+                  <button onClick={() => void abrirConversa(c)} className="mt-3 text-xs font-bold text-cyan-300 hover:text-cyan-200 inline-flex items-center gap-1.5"><MessageSquare size={13} /> {conversaId === c.id ? 'Fechar conversa' : 'Ver conversa / responder'}</button>
+                  {conversaId === c.id && <div className="mt-3 space-y-2">
+                    {carregandoMsgs ? <p className="text-xs text-slate-500">A abrir conversa…</p>
+                      : mensagens.length === 0 ? <p className="text-xs text-slate-500">Sem mensagens ainda — escreva a primeira ou aguarde a equipa.</p>
+                        : mensagens.map(m => (
+                          <div key={m.id} className={m.autor === 'tecnico' ? 'bg-emerald-400/5 border border-emerald-400/20 rounded-lg px-3 py-2' : m.autor === 'cliente' ? 'bg-cyan-400/5 border border-cyan-400/20 rounded-lg px-3 py-2 ml-8' : 'text-[11px] text-slate-500 px-3'}>
+                            <b className="text-[10px] block mb-0.5 uppercase tracking-wide text-slate-400">{m.autor_nome || (m.autor === 'cliente' ? 'Você' : 'Equipa CFTEC')} · {fmt(m.created_at)}</b>
+                            <span className="text-sm text-slate-200 whitespace-pre-wrap">{m.corpo}</span>
+                          </div>
+                        ))}
+                    {c.estado !== 'Resolvido' && <form onSubmit={e => { e.preventDefault(); void enviarMensagem(c.id) }} className="flex gap-2 items-end">
+                      <textarea value={novaMsg} onChange={e => setNovaMsg(e.target.value)} maxLength={1500} rows={2} placeholder="Escreva aqui a sua resposta…" className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-cyan-400/60" />
+                      <button type="submit" disabled={ocupado || !novaMsg.trim()} className="bg-cyan-400 text-slate-950 font-bold rounded-lg px-3 py-2 text-xs hover:bg-cyan-300 transition-colors disabled:opacity-50"><Send size={13} /></button>
+                    </form>}
+                  </div>}
+                  {c.estado === 'Resolvido' && (
+                    typeof c.csat === 'number'
+                      ? <div className="mt-3 text-xs text-amber-300 inline-flex items-center gap-1.5">{Array.from({ length: 5 }, (_, i) => <Star key={i} size={13} className={i < (c.csat as number) ? 'fill-amber-300 text-amber-300' : 'text-slate-600'} />)} <span className="ml-1">avaliado: {c.csat}/5 — obrigado!</span></div>
+                      : <div className="mt-3 bg-white/[.04] border border-white/10 rounded-xl p-4">
+                        <p className="text-xs text-slate-400 mb-2 font-semibold">💬 O atendimento ficou a fechar? Avalie este chamado (1-5 estrelas):</p>
+                        <div className="flex items-center gap-1.5">
+                          {([1, 2, 3, 4, 5] as const).map(n => (
+                            <button key={n} onClick={() => setCsatRascunho({ id: c.id, nota: n, comentario: csatRascunho?.id === c.id ? csatRascunho.comentario : '' })} className="p-0.5">
+                              <Star size={22} className={(csatRascunho?.id === c.id && (csatRascunho?.nota || 0) >= n) ? 'fill-amber-300 text-amber-300' : 'text-slate-600 hover:text-amber-200'} />
+                            </button>
+                          ))}
+                        </div>
+                        {csatRascunho?.id === c.id && csatRascunho.nota > 0 && <div className="mt-2.5 flex gap-2 items-end flex-wrap">
+                          <textarea value={csatRascunho.comentario} onChange={e => setCsatRascunho({ ...csatRascunho, comentario: e.target.value })} rows={1} maxLength={500} placeholder="Comentário (opcional)" className="flex-1 min-w-[200px] bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-cyan-400/60" />
+                          <button onClick={() => void enviarCsat(c.id)} disabled={ocupado} className="bg-amber-300 text-slate-950 font-bold rounded-lg px-3.5 py-2 text-xs hover:bg-amber-200 transition-colors disabled:opacity-50">Enviar nota {csatRascunho.nota}/5</button>
+                        </div>}
+                      </div>
+                  )}
                 </div>
               ))}</div>}
           </div>

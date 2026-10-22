@@ -758,6 +758,53 @@ function verificarTotp(secretB32: string | null | undefined, codigo: string): bo
 
 function isJtiRevoked(sub: string, jti: string) { return !sessionRegistry.get(sub)?.has(jti) }
 
+// ============================================================
+// SLA DE CHAMADOS — prazo por prioridade (Crítica 8 h, Média 24 h,
+// Baixa 48 h) + escalonamento automático (cron-lazy 1×/hora no
+// primeiro acesso admin autenticado, como o backup diário).
+// ============================================================
+const SLA_POR_PRIORIDADE: Record<string, number> = { 'Crítica': 8, 'Média': 24, 'Baixa': 48 }
+const slaHoras = (prioridade: string | null | undefined) => SLA_POR_PRIORIDADE[prioridade || 'Média'] || 24
+const prazoSlaDe = (iso: string | undefined, prioridade: string | null | undefined) =>
+  new Date(new Date(String(iso || new Date().toISOString())).getTime() + slaHoras(prioridade) * 3600000).toISOString()
+
+type ChamadoSla = { id: string; respostas?: number }
+
+/** Escalonamento automático: chamados abertos passados do prazo → Crítica + novo prazo (+8 h) + alerta. */
+const SLA_CRON_INTERVALO = 60 * 60 * 1000
+async function escalacaoSlaTalvez(): Promise<void> {
+  if (!supabase) return
+  let ultima = 0
+  try {
+    const { data } = await supabase.from('settings').select('value').eq('key', '_sla_ultimo_cron').limit(1)
+    ultima = Number((data || [])[0]?.value) || 0
+  } catch { return }
+  const agora = Date.now()
+  if (agora - ultima < SLA_CRON_INTERVALO) return
+  try { void supabase.from('settings').upsert({ key: '_sla_ultimo_cron', value: String(agora) }, { onConflict: 'key' }) } catch { /* corre de novo na próxima hora */ }
+  // vencido e ainda aberto → escala
+  const { data: vencidos } = await supabase
+    .from('chamados_suporte')
+    .select('id, cliente, software, prioridade, escalonado, prazo_sla')
+    .neq('estado', 'Resolvido')
+    .lt('prazo_sla', new Date().toISOString())
+    .eq('escalonado', false)
+    .limit(50)
+  for (const c of (vencidos || []) as unknown as { id: string; cliente: string; software: string | null }[]) {
+    const { error } = await supabase.from('chamados_suporte')
+      .update({ escalonado: true, prioridade: 'Crítica', prazo_sla: new Date(Date.now() + 8 * 3600000).toISOString() })
+      .eq('id', c.id)
+    if (!error) {
+      fireAdminAlert(`⏰ SLA vencido → ESCALADO para Crítica: ${c.cliente} (${c.software || 'suporte'}). VER AGORA no painel.`)
+      void supabase.from('chamados_mensagens').insert({ chamado_id: c.id, autor: 'sistema', autor_nome: 'Sistema', corpo: 'SLA vencido — chamado escalado automaticamente para prioridade CRÍTICA.' })
+      logAuditoria(null, 'chamado_escalado', 'chamado', c.id, { cliente: c.cliente })
+    }
+  }
+}
+
+/** Critérios: carimbar prazo SLA nas criações e em mudanças de prioridade. */
+
+
 // server-less: instância nova não tem o jti em memória → consulta o Supabase;
 // se lá estiver, repõe a cache. Se não estiver, está mesmo revogado (logout/revogação).
 async function ensureJtiKnown(sub: string, jti: string): Promise<void> {
@@ -987,8 +1034,9 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           // antes das validações sincrónicas (currentAdmin). Sem cookie válido: no-op.
           const sc = decodeSessionClaims(req)
           if (sc?.sub && sc?.jti) await ensureJtiKnown(sc.sub, sc.jti)
-          // cron-lazy do backup automático (1×/dia): fire-and-forget, nunca atrasa o pedido
+          // cron-lazy do backup automático (1×/dia) e da ESCALAÇÃO de SLA (1×/h): fire-and-forget
           if (sc) void backupAutomaticoTalvez(sc)
+          if (sc) void escalacaoSlaTalvez()
 
           if (path === '/api/admin/login' && req.method === 'POST') {
             if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'JWT secret não configurado.' })
@@ -1459,7 +1507,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             const nif = String(payload.nif || '').trim().slice(0, 20) || null
             const software = String(payload.software || '').trim().slice(0, 120) || 'Outro'
             const { data, error } = await supabase.from('chamados_suporte')
-              .insert({ cliente: nomeEmpresa, nif, telefone: telefone.slice(0, 20), software, problema: descricao, estado: 'Pendente', prioridade: 'Média', origem: 'site' })
+              .insert({ cliente: nomeEmpresa, nif, telefone: telefone.slice(0, 20), software, problema: descricao, estado: 'Pendente', prioridade: 'Média', origem: 'site', sla_horas: 24, prazo_sla: prazoSlaDe(undefined, 'Média') })
               .select('id').single()
             if (error) {
               if (String(error.message).includes('chamados_suporte')) return json(res, 503, { ok: false, error: 'A central de suporte será activada em breve. Entre em contacto com a CFTEC via WhatsApp.' })
@@ -1614,9 +1662,54 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               return json(res, 200, { ok: true, licencas: data })
             }
             if (path === '/api/portal/chamados' && req.method === 'GET') {
-              const { data, error } = await supabase.from('chamados_suporte').select('id, created_at, updated_at, cliente, nif, software, problema, resolucao, estado, prioridade, origem').eq('nif', conta.nif).order('created_at', { ascending: false })
+              const { data, error } = await supabase.from('chamados_suporte').select('id, created_at, updated_at, cliente, nif, software, problema, resolucao, estado, prioridade, origem, prazo_sla, resolvido_em, escalonado, csat, sla_horas').eq('nif', conta.nif).order('created_at', { ascending: false })
               if (error) return json(res, 500, { ok: false, error: error.message })
               return json(res, 200, { ok: true, chamados: data })
+            }
+
+            // CONVERSA DO CHAMADO (cliente) — vê a thread e responde
+            if (path.match(/^\/api\/portal\/chamados\/[a-f0-9-]+\/mensagens$/) && (req.method === 'GET' || req.method === 'POST')) {
+              const chamadoId = path.split('/')[4]
+              const dono = await supabase.from('chamados_suporte').select('id, estado, origem').eq('id', chamadoId).eq('nif', conta.nif).limit(1)
+              const linha = ((dono.data || []) as unknown as { id: string; estado: string }[])[0]
+              if (!linha) return json(res, 404, { ok: false, error: 'Chamado não encontrado para a sua conta.' })
+              if (req.method === 'GET') {
+                const { data, error } = await supabase.from('chamados_mensagens').select('id, created_at, autor, autor_nome, corpo').eq('chamado_id', chamadoId).order('created_at', { ascending: true }).limit(200)
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 200, { ok: true, mensagens: data })
+              }
+              const payload = await readBody(req) as { corpo?: string }
+              const corpo = String(payload.corpo || '').trim()
+              if (corpo.length < 1 || corpo.length > 1500) return json(res, 400, { ok: false, error: 'Escreva a mensagem (máx. 1500 caracteres).' })
+              const { data: msg, error } = await supabase.from('chamados_mensagens')
+                .insert({ chamado_id: chamadoId, autor: 'cliente', autor_nome: clienteSessao?.name || 'Cliente', corpo })
+                .select('id, created_at, autor, autor_nome, corpo').single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              // equipa toma conhecimento na hora (push + alerta admin)
+              void pushNotifyEquipa('chamado', '💬 Nova mensagem de cliente', `${clienteSessao?.name || 'Cliente'} respondeu ao chamado — verifique a conversa.`)
+              fireAdminAlert(`💬 ${clienteSessao?.name || 'Cliente'} respondeu no chamado (${chamadoId.slice(0, 8)}). Painel → Chamados → Conversa.`)
+              logAuditoria(null, 'portal_chamado_mensagem', 'chamado', chamadoId)
+              return json(res, 201, { ok: true, mensagem: msg })
+            }
+
+            // CSAT — avaliação pós-fecho (1-5 estrelas + comentário, uma única vez)
+            if (path.match(/^\/api\/portal\/chamados\/[a-f0-9-]+\/csat$/) && req.method === 'POST') {
+              const chamadoId = path.split('/')[4]
+              const dono = await supabase.from('chamados_suporte').select('id, estado, csat, software, cliente').eq('id', chamadoId).eq('nif', conta.nif).limit(1)
+              const linha = ((dono.data || []) as unknown as { id: string; estado: string; csat: number | null; software: string | null; cliente: string }[])[0]
+              if (!linha) return json(res, 404, { ok: false, error: 'Chamado não encontrado para a sua conta.' })
+              if (linha.estado !== 'Resolvido') return json(res, 400, { ok: false, error: 'A avaliação abre quando o chamado está Resolvido.' })
+              if (typeof linha.csat === 'number') return json(res, 400, { ok: false, error: 'Este chamado já foi avaliado — obrigado!' })
+              const payload = await readBody(req) as { nota?: number | string; comentario?: string }
+              const nota = Math.max(1, Math.min(5, Math.round(Number(payload.nota || 0))))
+              if (!nota) return json(res, 400, { ok: false, error: 'Indique uma nota de 1 a 5.' })
+              const comentario = String(payload.comentario || '').trim().slice(0, 500)
+              const { error } = await supabase.from('chamados_suporte').update({ csat: nota, csat_comentario: comentario || null }).eq('id', chamadoId)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              fireAdminAlert(`${nota >= 4 ? '🎉' : '🚨'} CSAT ${nota}/5 de ${linha.cliente} (${linha.software || 'suporte'})${comentario ? `: ${comentario.slice(0, 120)}` : ''}`)
+              void supabase.from('chamados_mensagens').insert({ chamado_id: chamadoId, autor: 'sistema', autor_nome: 'Sistema', corpo: `Cliente avaliou o atendimento: ${nota}/5.${comentario ? ` "${comentario}"` : ''}` })
+              logAuditoria(null, 'portal_csat', 'chamado', chamadoId, { nota })
+              return json(res, 200, { ok: true, message: 'Obrigado pela avaliação! É dela que vêm as melhorias do serviço.' })
             }
           }
 
@@ -1639,7 +1732,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
             const descricao = String(payload.descricao_problema || '').trim()
             if (descricao.length < 10 || descricao.length > 1200) return json(res, 400, { ok: false, error: 'Descreve o problema com pelo menos 10 caracteres.' })
             const { data, error } = await supabase.from('chamados_suporte')
-              .insert({ cliente: conta.nome_empresa, nif: conta.nif, telefone: conta.telefone_whatsapp.slice(0, 20), software, problema: descricao, estado: 'Pendente', prioridade: 'Média', origem: 'portal' })
+              .insert({ cliente: conta.nome_empresa, nif: conta.nif, telefone: conta.telefone_whatsapp.slice(0, 20), software, problema: descricao, estado: 'Pendente', prioridade: 'Média', origem: 'portal', sla_horas: 24, prazo_sla: prazoSlaDe(undefined, 'Média') })
               .select('id').single()
             if (error) return json(res, 500, { ok: false, error: error.message })
             void pushNotifyEquipa('chamado', '🛠️ Novo chamado (portal do cliente)', `${conta.nome_empresa} pediu apoio (${software}) — verifique no painel.`)
@@ -2934,7 +3027,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const telefone = String(payload.telefone || '').trim().slice(0, 20) || null
               const software = String(payload.software || '').trim().slice(0, 120) || null
               const { data, error } = await supabase.from('chamados_suporte')
-                .insert({ cliente, nif, telefone, software, problema, estado, prioridade, origem: 'painel' })
+                .insert({ cliente, nif, telefone, software, problema, estado, prioridade, origem: 'painel', sla_horas: slaHoras(prioridade), prazo_sla: prazoSlaDe(undefined, prioridade) })
                 .select('*').single()
               if (error) return json(res, 500, { ok: false, error: error.message })
               logAuditoria(currentAdmin(req), 'chamado_criado', 'chamado', data.id, { cliente, estado, prioridade })
@@ -2947,12 +3040,19 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 const payload = await readBody(req) as { estado?: string; prioridade?: string; resolucao?: string }
                 const update: Record<string, string> = {}
                 if (payload.estado && ['Pendente', 'Em Resolução', 'Resolvido'].includes(payload.estado)) update.estado = payload.estado
-                if (payload.prioridade && ['Baixa', 'Média', 'Crítica'].includes(payload.prioridade)) update.prioridade = payload.prioridade
+                if (payload.prioridade && ['Baixa', 'Média', 'Crítica'].includes(payload.prioridade)) {
+                  update.prioridade = payload.prioridade
+                  update.sla_horas = String(slaHoras(payload.prioridade))
+                  update.prazo_sla = new Date(Date.now() + slaHoras(payload.prioridade) * 3600000).toISOString() // prazo reconsiderado na mudança manual
+                }
                 if (typeof payload.resolucao === 'string') update.resolucao = payload.resolucao.trim().slice(0, 1200) || null
                 if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
                 // estado prévio — o aviso ao cliente só dispara quando o estado muda de verdade
                 const { data: antesCh } = await supabase.from('chamados_suporte').select('estado').eq('id', id).limit(1)
                 const estadoAnterior = (antesCh && antesCh[0]?.estado) || null
+                // carimbo de tempo de resolução (é disto que vivem as métricas do Relatório)
+                if (update.estado === 'Resolvido' && estadoAnterior !== 'Resolvido') update.resolvido_em = new Date().toISOString()
+                if (estadoAnterior === 'Resolvido' && update.estado && update.estado !== 'Resolvido') update.resolvido_em = null as unknown as string
                 const { data, error } = await supabase.from('chamados_suporte').update(update).eq('id', id).select('*').single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
                 // Notificação ao cliente (WhatsApp) quando o estado muda de verdade
@@ -2963,9 +3063,11 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   const softwareCh = String((data as { software?: string }).software || '').replace(/<[^>]+>/g, '')
                   const resolucaoTxt = String(((data as { resolucao?: string }).resolucao || '')).trim().replace(/<[^>]+>/g, '').slice(0, 300)
                   const texto = novoEstado === 'Resolvido'
-                    ? `CFTEC: ${empresaCh} — o seu chamado de suporte (${softwareCh}) foi RESOLVIDO ✓. Acompanhe a resolução no portal: cftec.co/cliente${resolucaoTxt ? `\nResolução: ${resolucaoTxt}` : ''}`
+                    ? `CFTEC: ${empresaCh} — o seu chamado de suporte (${softwareCh}) foi RESOLVIDO ✓. Avalie o atendimento no portal: cftec.co/cliente${resolucaoTxt ? `\nResolução: ${resolucaoTxt}` : ''}`
                     : `CFTEC: ${empresaCh} — o seu chamado (${softwareCh}) entrou EM RESOLUÇÃO. A equipa técnica está no assunto. Acompanhe em cftec.co/cliente.`
                   void sendWhats(telefoneCh, texto)
+                  // a transição fica na conversa do chamado (histórico fiel)
+                  void supabase.from('chamados_mensagens').insert({ chamado_id: id, autor: 'sistema', autor_nome: 'Sistema', corpo: novoEstado === 'Resolvido' ? `Chamado RESOLVIDO pela equipa.${resolucaoTxt ? ` Resolução: ${resolucaoTxt}` : ''}` : `Estado → ${novoEstado}.` })
                 }
                 logAuditoria(currentAdmin(req), 'chamado_actualizado', 'chamado', id, { campos: Object.keys(update) })
                 return json(res, 200, { ok: true, chamado: data })
@@ -2973,9 +3075,100 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (req.method === 'DELETE') {
                 const { error } = await supabase.from('chamados_suporte').delete().eq('id', id)
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                void supabase.from('chamados_mensagens').delete().eq('chamado_id', id || '')
                 logAuditoria(currentAdmin(req), 'chamado_apagado', 'chamado', id)
                 return json(res, 200, { ok: true })
               }
+
+            // CONVERSA DO CHAMADO (admin) — histórico + resposta do técnico
+            if (path.match(/^\/api\/admin\/chamados\/[a-f0-9-]+\/mensagens$/) && (req.method === 'GET' || req.method === 'POST')) {
+              const chamadoId = path.split('/')[4]
+              if (req.method === 'GET') {
+                const { data, error } = await supabase.from('chamados_mensagens').select('id, created_at, autor, autor_nome, corpo').eq('chamado_id', chamadoId).order('created_at', { ascending: true }).limit(200)
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                return json(res, 200, { ok: true, mensagens: data })
+              }
+              const payload = await readBody(req) as { corpo?: string }
+              const corpo = String(payload.corpo || '').trim()
+              if (corpo.length < 1 || corpo.length > 1500) return json(res, 400, { ok: false, error: 'Escreva a resposta (máx. 1500 caracteres).' })
+              const { data: ch } = await supabase.from('chamados_suporte').select('id, cliente, nif, telefone, software, estado').eq('id', chamadoId).limit(1)
+              const chamado = (ch as unknown as { id: string; cliente: string; nif: string | null; telefone: string | null; software: string | null; estado: string }[] || [])[0]
+              if (!chamado) return json(res, 404, { ok: false, error: 'Chamado não encontrado.' })
+              // primeira resposta técnica → chamado entra automaticamente em resolução
+              if (chamado.estado === 'Pendente') await supabase.from('chamados_suporte').update({ estado: 'Em Resolução' }).eq('id', chamadoId)
+              const admin2 = currentAdmin(req)
+              const { data: msg, error } = await supabase.from('chamados_mensagens')
+                .insert({ chamado_id: chamadoId, autor: 'tecnico', autor_nome: admin2?.name || 'Equipa CFTEC', corpo })
+                .select('id, created_at, autor, autor_nome, corpo').single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              // notificar o cliente (e-mail + WhatsApp, fire-and-forget)
+              let emailCliente: string | null = null
+              if (chamado.nif && supabase) {
+                try {
+                  const { data: cont } = await supabase.from('clientes_portal').select('email').eq('nif', chamado.nif).limit(1)
+                  emailCliente = ((cont as unknown as { email?: string }[] || [])[0]?.email) || null
+                } catch { /* cliente sem conta no portal → whatsapp chega */ }
+              }
+              notifyCliente(
+                emailCliente || '', String(chamado.telefone || ''),
+                `Resposta da equipa — chamado CFTEC (${chamado.software || 'suporte'})`,
+                `<p>Olá <b>${escHtml(chamado.cliente)}</b>,</p><p>A equipa CFTEC respondeu ao seu chamado de <b>${escHtml(chamado.software || 'suporte')}</b>:</p>
+                 <div style="padding:10px 12px;background:#f0f9ff;border-left:3px solid #0ea5e9;border-radius:8px">${escHtml(corpo)}</div>
+                 <p style="margin:14px 0 0">Responda ou acompanhe em <b>cftec.co/cliente → Chamados</b>.</p>`,
+                `CFTEC: resposta ao seu chamado (${chamado.software || 'suporte'}): ${corpo.slice(0, 300)}\nAcompanhe em cftec.co/cliente`,
+              )
+              logAuditoria(admin2, 'chamado_respondido', 'chamado', chamadoId)
+              return json(res, 201, { ok: true, mensagem: msg })
+            }
+
+            // ESTATÍSTICAS DE SLA (Relatórios & Metas — números reais de resolução)
+            if (path === '/api/admin/chamados/estatisticas' && req.method === 'GET') {
+              const { data: todos } = await supabase.from('chamados_suporte')
+                .select('id, created_at, updated_at, resolvido_em, prazo_sla, estado, prioridade, software, cliente, nif, csat, origem, escalonado')
+                .order('created_at', { ascending: false }).limit(1000)
+              const linhas = ((todos || []) as unknown as {
+                created_at: string; resolvido_em: string | null; prazo_sla: string | null; estado: string
+                prioridade: string; software: string | null; cliente: string; nif: string | null
+                csat: number | null; origem: string | null; escalonado: boolean | null
+              }[]).filter(c => !!c.created_at)
+              const horas = (criado: string, resolv: string | null) => resolv ? (new Date(resolv).getTime() - new Date(criado).getTime()) / 3600000 : null
+              const resolvidos = linhas.filter(c => c.resolvido_em)
+              const tempos = resolvidos.map(c => horas(c.created_at, c.resolvido_em)).filter((h): h is number => h !== null && h >= 0)
+              const mediaHoras = tempos.length ? tempos.reduce((a, b) => a + b, 0) / tempos.length : null
+              const dentroSla = resolvidos.filter(c => c.prazo_sla && new Date(c.resolvido_em as string) <= new Date(c.prazo_sla)).length
+              const pctSla = resolvidos.length ? Math.round((dentroSla / resolvidos.length) * 100) : null
+              const csats = linhas.map(c => c.csat).filter((n): n is number => typeof n === 'number')
+              const csatMedia = csats.length ? Math.round(((csats.reduce((a, b) => a + b, 0) / csats.length) * 10) / 10) : null
+              const listo = (campo: (c: typeof linhas[number]) => string, n = 5): { nome: string; total: number }[] => {
+                const m = new Map<string, number>()
+                for (const c of linhas) { const k = campo(c) || 'Outro'; m.set(k, (m.get(k) || 0) + 1) }
+                return Array.from(m.entries()).sort((a, b) => b[1] - a[1]).slice(0, n).map(([nome, total]) => ({ nome, total }))
+              }
+              // série dos últimos 6 meses (resolvidos + tempo médio de cada mês)
+              const meses: { mes: string; resolvidos: number; mediaHoras: number | null; recebidos: number }[] = []
+              for (let i = 5; i >= 0; i--) {
+                const d = new Date(); d.setMonth(d.getMonth() - i, 1)
+                const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                const doMes = linhas.filter(c => (c.created_at || '').startsWith(chave))
+                const rMes = doMes.filter(c => c.resolvido_em)
+                const tMes = rMes.map(c => horas(c.created_at, c.resolvido_em)).filter((h): h is number => h !== null && h >= 0)
+                meses.push({ mes: chave, resolvidos: rMes.length, recebidos: doMes.length, mediaHoras: tMes.length ? Math.round((tMes.reduce((a, b) => a + b, 0) / tMes.length) * 10) / 10 : null })
+              }
+              return json(res, 200, {
+                ok: true,
+                total: linhas.length,
+                abertos: linhas.filter(c => c.estado !== 'Resolvido').length,
+                escalados: linhas.filter(c => c.escalonado).length,
+                resolvidos: resolvidos.length,
+                mediaHoras: mediaHoras !== null ? Math.round(mediaHoras * 10) / 10 : null,
+                dentroSlaPct: pctSla,
+                csatMedia,
+                csatsRecebidos: csats.length,
+                porSoftware: listo(c => String(c.software || 'Outro')),
+                porCliente: listo(c => String(c.cliente || 'Desconhecido')),
+                porMes: meses,
+              })
+            }
             }
 
             // WEB PUSH — chave pública VAPID para o banner do painel assinar o dispositivo
