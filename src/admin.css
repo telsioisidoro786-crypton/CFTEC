@@ -1045,7 +1045,7 @@
 .admin-topbar{min-width:0}
 .admin-topbar-actions{min-width:0;flex:1 1 auto}
 .admin-search{position:relative;min-width:0;flex:0 1 280px}
-.admin-search input{width:100%;min-width:0}
+.admin-search input{width:100%;min-width:170px}
 .timeline-main strong,.timeline-main span{white-space:normal;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere;word-break:break-word}
 .health-lines{grid-template-columns:repeat(3,minmax(0,1fr))}
 @media (min-width:1025px){
@@ -1087,3 +1087,28 @@
 .act-val{font:700 .5rem 'DM Mono',monospace;color:#94a3b8;height:9px;line-height:1;white-space:nowrap}
 .act-axis{display:flex;justify-content:space-between;margin-top:9px;font:700 .55rem 'DM Mono',monospace;color:#64748b;letter-spacing:.05em}
 .act-axis span:last-child{color:#38bdf8}
+
+
+/* ===== TOPBAR MODERNA — migalha pílula, pesquisa limpa, perfil em cápsula ===== */
+.admin-topbar{height:66px;padding:0 26px 0 22px;background:rgba(255,255,255,.86);border-bottom:1px solid #eaf0f6;box-shadow:0 1px 2px rgba(15,23,42,.03)}
+.admin-breadcrumb{background:#fff;border:1px solid #eaf0f6;border-radius:999px;padding:7px 15px;box-shadow:0 1px 3px rgba(15,23,42,.05);gap:7px;white-space:nowrap;flex:0 0 auto}
+.admin-breadcrumb span,.admin-breadcrumb strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-breadcrumb span{color:#94a3b8;font-weight:600}
+.admin-breadcrumb svg{color:#cbd5e1}
+.admin-search input{background:#fff;border:1px solid #e8edf3;border-radius:12px;height:38px;box-shadow:0 1px 2px rgba(15,23,42,.04);transition:border-color .15s ease,box-shadow .15s ease}
+.admin-search input::placeholder{color:#a6b4c4}
+.admin-search input:focus{border-color:#22d3ee;box-shadow:0 0 0 3px rgba(34,211,238,.14)}
+.admin-icon-btn{width:38px;height:38px;border-radius:11px;border:1px solid transparent;transition:all .18s ease}
+.admin-icon-btn:hover{background:#f4f7fb;color:#0f172a;border-color:#e2e8f0}
+.admin-icon-btn i{top:7px;right:7px;box-shadow:0 0 0 2px #fff;animation:admin-dot 1.8s ease-in-out infinite}
+@keyframes admin-dot{0%,100%{transform:scale(1)}50%{transform:scale(1.28)}}
+.admin-separator{height:26px}
+.admin-profile{border:1px solid #eaf0f6;background:#fff;border-radius:999px;padding:5px 13px 5px 6px;gap:9px;box-shadow:0 1px 3px rgba(15,23,42,.05)}
+.admin-profile:hover{border-color:#bfdbfe;background:#fbfdff}
+.admin-profile div{text-align:left}
+.admin-profile strong{font-size:.78rem}
+.admin-profile small{color:#8ea3b8}
+.admin-profile>svg{color:#cbd5e1}
+.admin-role-chip{flex:0 0 auto;font:700 .53rem 'Space Grotesk',sans-serif;font-style:normal;letter-spacing:.07em;text-transform:uppercase;color:#0891b2;background:#ecfeff;border:1px solid #a5f3fc;border-radius:999px;padding:3px 9px}
+@media (max-width:1120px){.admin-role-chip{display:none}}
+@media (max-width:1120px){.admin-profile div small{max-width:150px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
