@@ -3,7 +3,7 @@
 // Registo (approvação depois) → login → pedidos, licenças, chamados.
 // Estilo do site (Tailwind) para o cliente sentir-se "dentro" da marca.
 // ============================================================
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, BadgeCheck, Building2, CheckCircle2, FileText, KeyRound, LifeBuoy,
   Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Send, ShieldCheck, Star, Timer, UserPlus,
@@ -140,6 +140,32 @@ export default function ClientePortal() {
     setMensagens(body.mensagens || [])
     setCarregandoMsgs(false)
   }
+
+  // conversa ao vivo: enquanto aberta, re-busca as mensagens — a resposta da
+  // equipa entra sozinha na conversa do cliente, sem fechar e abrir de novo
+  useEffect(() => {
+    if (!conversaId) return
+    const chamadoId = conversaId
+    const timer = setInterval(() => {
+      void (async () => {
+        try {
+          const r = await fetch(`/api/portal/chamados/${chamadoId}/mensagens`, { credentials: 'same-origin' })
+          const d = await r.json()
+          if (!r.ok || !d.ok) return
+          setMensagens(prev => {
+            const todas = new Map(prev.map(m => [m.id, m]))
+            for (const m of (d.mensagens || []) as Mensagem[]) todas.set(m.id, m)
+            return [...todas.values()].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+          })
+        } catch { /* silencioso — mantém o que já tem */ }
+      })()
+    }, 4000)
+    return () => clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversaId])
+  const fimConversa = useRef<HTMLDivElement>(null)
+  useEffect(() => { fimConversa.current?.scrollIntoView({ block: 'end', behavior: 'smooth' }) }, [mensagens.length])
+
   const enviarMensagem = async (chamadoId: string) => {
     const corpo = novaMsg.trim()
     if (!corpo || ocupado) return
@@ -385,6 +411,7 @@ export default function ClientePortal() {
                             <span className="text-sm text-slate-200 whitespace-pre-wrap">{m.corpo}</span>
                           </div>
                         ))}
+                    <div ref={fimConversa} />
                     {c.estado !== 'Resolvido' && <form onSubmit={e => { e.preventDefault(); void enviarMensagem(c.id) }} className="flex gap-2 items-end">
                       <textarea value={novaMsg} onChange={e => setNovaMsg(e.target.value)} maxLength={1500} rows={2} placeholder="Escreva aqui a sua resposta…" className="flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm outline-none focus:border-cyan-400/60" />
                       <button type="submit" disabled={ocupado || !novaMsg.trim()} className="bg-cyan-400 text-slate-950 font-bold rounded-lg px-3 py-2 text-xs hover:bg-cyan-300 transition-colors disabled:opacity-50"><Send size={13} /></button>
