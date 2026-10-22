@@ -476,6 +476,7 @@ function App() {
             <a href="#suporte" onClick={closeMenu}>Suporte</a>
             <a href="#parcerias" onClick={closeMenu}>Parcerias</a>
             <a href="#contacto" onClick={closeMenu}>Contacto</a>
+            <a href="/cliente" className="nav-cta" onClick={closeMenu}>Portal do Cliente</a>
           </nav>
           <button className="menu-toggle" onClick={() => setMenuOpen(!menuOpen)} aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuOpen}>
             {menuOpen ? <X size={22} /> : <Menu size={22} />}
@@ -656,7 +657,7 @@ function App() {
         <BlogSection onOpen={openBlogPost} />
       </main>
 
-      <footer className="site-footer"><div className="container footer-top"><div><BrandMark inverse /><p>Tecnologia que simplifica.<br />Resultados que ficam.</p></div><div className="footer-links"><div><span>Navegar</span><a href="#sobre">Sobre nós</a><a href="#servicos">Serviços</a><a href="#softwares">Softwares</a><a href="#blog">Blog</a><a href="#suporte">Suporte</a></div><div><span>Fale connosco</span><a href={`mailto:${siteCfg.email}`}>{siteCfg.email}</a><a href={siteWhatsHREF} target="_blank" rel="noreferrer noopener">{siteCfg.whatsapp}</a><a href="#contacto">Pedir contacto</a><a href={tecnicoWhatsHREF} target="_blank" rel="noreferrer noopener">Apoio técnico a clientes</a></div><div><span>Social</span><a href={siteCfg.linkedin} target="_blank" rel="noreferrer noopener"><Linkedin size={14} /> LinkedIn</a><a href={siteCfg.x} target="_blank" rel="noreferrer noopener"><Twitter size={14} /> Twitter / X</a></div></div></div><div className="container footer-bottom"><span>© 2025 CFTEC. Todos os direitos reservados.</span><div><a href={`mailto:${siteCfg.email}?subject=Política%20de%20Privacidade`}>Privacidade</a><a href={`mailto:${siteCfg.email}?subject=Termos%20de%20Utilização`}>Termos</a><span>Feito com intenção <Sparkles size={12} /></span></div></div></footer>
+      <footer className="site-footer"><div className="container footer-top"><div><BrandMark inverse /><p>Tecnologia que simplifica.<br />Resultados que ficam.</p></div><div className="footer-links"><div><span>Navegar</span><a href="#sobre">Sobre nós</a><a href="#servicos">Serviços</a><a href="#softwares">Softwares</a><a href="#blog">Blog</a><a href="#suporte">Suporte</a><a href="/cliente">Portal do Cliente</a></div><div><span>Fale connosco</span><a href={`mailto:${siteCfg.email}`}>{siteCfg.email}</a><a href={siteWhatsHREF} target="_blank" rel="noreferrer noopener">{siteCfg.whatsapp}</a><a href="#contacto">Pedir contacto</a><a href={tecnicoWhatsHREF} target="_blank" rel="noreferrer noopener">Apoio técnico a clientes</a></div><div><span>Social</span><a href={siteCfg.linkedin} target="_blank" rel="noreferrer noopener"><Linkedin size={14} /> LinkedIn</a><a href={siteCfg.x} target="_blank" rel="noreferrer noopener"><Twitter size={14} /> Twitter / X</a></div></div></div><div className="container footer-bottom"><span>© 2025 CFTEC. Todos os direitos reservados.</span><div><a href={`mailto:${siteCfg.email}?subject=Política%20de%20Privacidade`}>Privacidade</a><a href={`mailto:${siteCfg.email}?subject=Termos%20de%20Utilização`}>Termos</a><span>Feito com intenção <Sparkles size={12} /></span></div></div></footer>
     </div>
   )
 }

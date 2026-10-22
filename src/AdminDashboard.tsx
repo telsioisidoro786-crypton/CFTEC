@@ -85,7 +85,10 @@ const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
   UsersRound: UsersRound as any,
 }
 
-type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'destaques' | 'blog' | 'parceiros' | 'contactos' | 'chamados' | 'wiki' | 'relatorios' | 'settings' | 'developer' | 'auditoria'
+type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'destaques' | 'blog' | 'parceiros' | 'contactos' | 'chamados' | 'portal' | 'wiki' | 'relatorios' | 'settings' | 'developer' | 'auditoria'
+type ClientePortalRow = { id: string; created_at: string; updated_at: string; nome_empresa: string; nif: string; nome_responsavel: string | null; telefone_whatsapp: string; email: string; estado: string; aprovado_em: string | null; observacoes_admin: string | null }
+const CLIENTES_PORTAL_ESTADOS = ['Todos', 'Pendente', 'Activo', 'Rejeitado', 'Suspenso'] as const
+
 type Chamado = { id: string; created_at: string; updated_at: string; cliente: string; nif: string | null; software: string | null; problema: string; resolucao: string | null; estado: string; prioridade: string; telefone?: string | null; origem?: string | null }
 const CHAMADO_ESTADOS = ['Pendente', 'Em Resolução', 'Resolvido'] as const
 const CHAMADO_PRIOS = ['Baixa', 'Média', 'Crítica'] as const
@@ -130,6 +133,9 @@ const ACAO_LABEL: Record<string, string> = {
   '2fa_setup': 'Iniciou configuração do 2FA',
   '2fa_activada': 'Activou o 2FA',
   '2fa_desactivada': 'Desactivou o 2FA',
+  portal_registo: 'Registo de empresa no portal', portal_login: 'Cliente entrou no portal', portal_login_falhado: 'Login de cliente falhado',
+  portal_chamado_novo: 'Abriram chamado pelo portal',
+  portal_cliente_criado: 'Criou conta de cliente no portal', portal_cliente_estado: 'Mudou estado de cliente do portal', portal_cliente_apagado: 'Apagou conta de cliente do portal',
   '2fa': '2FA',
   sessao_revogada: 'Revogou uma sessão',
   sessoes_revogadas: 'Revogou as outras sessões',
@@ -212,6 +218,7 @@ const navItems: { id: AdminSection; label: string; icon: typeof LayoutDashboard;
   { id: 'parceiros', label: 'Revenda Negomil', icon: Network, levels: ['super_admin', 'gestor', 'developer'] },
   { id: 'contactos', label: 'Contactos', icon: UsersRound, levels: ['super_admin', 'gestor', 'tecnico', 'developer'] },
   { id: 'chamados', label: 'Chamados de Suporte', icon: LifeBuoy, levels: ['super_admin', 'gestor', 'tecnico', 'developer'] },
+  { id: 'portal', label: 'Portal do Cliente', icon: Users, levels: ['super_admin', 'gestor', 'developer'] },
   { id: 'wiki', label: 'Wiki Técnica', icon: BookOpen, levels: ['super_admin', 'tecnico', 'developer'] },
   { id: 'settings', label: 'Definições', icon: Settings, levels: ['super_admin', 'developer'] },
   { id: 'auditoria', label: 'Registo de actividades', icon: ScrollText, levels: ['super_admin', 'developer'] },
@@ -371,6 +378,18 @@ export default function AdminDashboard() {
   const [chamadoSaving, setChamadoSaving] = useState(false)
   const [chamadoForm, setChamadoForm] = useState({ cliente: '', nif: '', telefone: '', software: '', problema: '', prioridade: 'Média' })
 
+  // PORTAL DO CLIENTE — contas B2B (aprovação, suspensão, criação)
+  const [clientesP, setClientesP] = useState<ClientePortalRow[]>([])
+  const [contagensP, setContagensP] = useState<Record<string, { pedidos: number; chamados: number; licencas: number }>>({})
+  const [clientesPFilter, setClientesPFilter] = useState<(typeof CLIENTES_PORTAL_ESTADOS)[number]>('Todos')
+  const [portalCarregado, setPortalCarregado] = useState(false)
+  const [portalMsg, setPortalMsg] = useState('')
+  const [showNovaConta, setShowNovaConta] = useState(false)
+  const [novaContaForm, setNovaContaForm] = useState({ nome_empresa: '', nif: '', nome_responsavel: '', telefone_whatsapp: '', email: '', password: '' })
+  const [novaContaSaving, setNovaContaSaving] = useState(false)
+  const [senhaGerada, setSenhaGerada] = useState('')
+  const [deletingClienteP, setDeletingClienteP] = useState<string | null>(null)
+
   // WIKI TÉCNICA — base de conhecimento interna do técnico
   type WikiArtigo = { id: string; created_at: string; updated_at: string; titulo: string; software: string | null; problema: string; solucao: string; tags: string | null; autor: string | null }
   const [wiki, setWiki] = useState<WikiArtigo[]>([])
@@ -403,6 +422,94 @@ export default function AdminDashboard() {
     auditVisivelRef.current = activeSection === 'auditoria'
     if (activeSection === 'auditoria' && adminUser) void loadAudit()
   }, [activeSection, adminUser])
+
+  // PORTAL DO CLIENTE — carrega contas ao abrir a secção (a 1ª é pesada; depois fácil)
+  const loadClientesPortal = async (): Promise<{ ok: boolean; erro?: string }> => {
+    try {
+      const r = await fetch('/api/admin/portal/clientes', { credentials: 'include' })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) {
+        setPortalMsg(body.error || 'Falha ao carregar contas do portal.')
+        return { ok: false, erro: body.error || String(r.status) }
+      }
+      setClientesP(Array.isArray(body.clientes) ? body.clientes : [])
+      setContagensP(body.contagens || {})
+      setPortalMsg('')
+      setPortalCarregado(true)
+      return { ok: true }
+    } catch {
+      setPortalMsg('Falha de rede ao carregar contas do portal.')
+      return { ok: false, erro: 'rede' }
+    }
+  }
+  useEffect(() => {
+    if (activeSection === 'portal' && adminUser && !portalCarregado) void loadClientesPortal()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, adminUser])
+
+  const mudarEstadoClienteP = async (c: ClientePortalRow, estado: 'Activo' | 'Rejeitado' | 'Suspenso') => {
+    setClientesP(list => list.map(x => x.id === c.id ? { ...x, estado } : x)) // optimista
+    const r = await fetch(`/api/admin/portal/clientes/${c.id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado }),
+    })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) {
+      setClientesP(list => list.map(x => x.id === c.id ? { ...x, estado: c.estado } : x))
+      setPortalMsg(body.error || 'Falha ao actualizar a conta.')
+      return
+    }
+    setPortalMsg(`A conta de ${c.nome_empresa} ficou ${estado === 'Activo' ? 'activa — o cliente recebeu o aviso por e-mail e WhatsApp.' : estado + '.'} ${body.password_gerada ? '' : ''}`.trim())
+    window.setTimeout(() => setPortalMsg(''), 6000)
+    void loadClientesPortal()
+  }
+
+  const resetSenhaClienteP = async (c: ClientePortalRow) => {
+    const r = await fetch(`/api/admin/portal/clientes/${c.id}`, {
+      method: 'PATCH', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reset_password: true }),
+    })
+    const body = await r.json().catch(() => ({}))
+    if (!r.ok) { setPortalMsg(body.error || 'Falha ao redefinir a password.'); return }
+    if (body.password_gerada) setSenhaGerada(body.password_gerada)
+    setPortalMsg(`Nova password enviada a ${c.nome_empresa} por e-mail e WhatsApp.`)
+    window.setTimeout(() => setPortalMsg(''), 6000)
+  }
+
+  const criarContaPortal = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setNovaContaSaving(true)
+    try {
+      const r = await fetch('/api/admin/portal/clientes', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(novaContaForm),
+      })
+      const body = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(body.error || 'Falha ao criar a conta.')
+      setShowNovaConta(false)
+      if (body.password_gerada) setSenhaGerada(body.password_gerada)
+      setNovaContaForm({ nome_empresa: '', nif: '', nome_responsavel: '', telefone_whatsapp: '', email: '', password: '' })
+      setPortalMsg('Conta criada e activa! As credenciais foram enviadas por e-mail e WhatsApp.')
+      window.setTimeout(() => setPortalMsg(''), 6000)
+      await loadClientesPortal()
+    } catch (e) {
+      setPortalMsg(e instanceof Error ? e.message : 'Falha ao criar a conta.')
+    } finally { setNovaContaSaving(false) }
+  }
+
+  const apagarClienteP = async () => {
+    if (!deletingClienteP) return
+    const r = await fetch(`/api/admin/portal/clientes/${deletingClienteP}`, { method: 'DELETE', credentials: 'include' })
+    if (r.ok) {
+      setClientesP(prev => prev.filter(c => c.id !== deletingClienteP))
+      setPortalMsg('Conta apagada do portal.')
+      window.setTimeout(() => setPortalMsg(''), 5000)
+    }
+    setDeletingClienteP(null)
+  }
 
   const guardarWiki = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2436,7 +2543,7 @@ export default function AdminDashboard() {
     <aside className={`admin-sidebar ${sidebarOpen ? 'admin-sidebar--open' : ''}`}>
       <div className="admin-sidebar-top"><AdminMark /><button className="admin-close" onClick={() => setSidebarOpen(false)} aria-label="Fechar menu"><X size={20} /></button></div>
       <div className="admin-workspace"><span className="admin-avatar">CF</span><div><strong>CFTEC Workspace</strong><small>Plano empresarial <span /></small></div><ChevronRight size={15} /></div>
-      <nav className="admin-nav"><span className="admin-nav-label">Workspace</span>{navItems.filter(n => !adminUser?.level || n.levels.includes(adminUser.level)).filter(n => !modBloqueado(n.id)).map(({ id, label, icon: Icon }) => { const navId = String(id); const pendingBadge = summary.contactsUnread || 0; const badgeMap: Record<string, number> = { contactos: pendingBadge, pedidos: (summary.ordersPending || 0) + (summary.ordersVerificacao || 0), parceiros: summary.partnersPending || 0, licencas: summary.licensesExpiring || 0, chamados: chamados.filter(c => c.estado !== 'Resolvido').length, developer: upgradePedidos.filter(p => p.estado === 'pendente').length }; const badge = badgeMap[navId] || 0; return <button className={activeSection === id ? 'is-active' : ''} key={id} onClick={() => { setActiveSection(id); setSidebarOpen(false) }}><Icon size={17} /><span>{label}</span>{badge > 0 ? <i className="admin-nav-badge">{badge > 9 ? '9+' : badge}</i> : id === 'dashboard' ? <i className="admin-nav-pip" /> : null}</button> })}</nav>
+      <nav className="admin-nav"><span className="admin-nav-label">Workspace</span>{navItems.filter(n => !adminUser?.level || n.levels.includes(adminUser.level)).filter(n => !modBloqueado(n.id)).map(({ id, label, icon: Icon }) => { const navId = String(id); const pendingBadge = summary.contactsUnread || 0; const badgeMap: Record<string, number> = { contactos: pendingBadge, pedidos: (summary.ordersPending || 0) + (summary.ordersVerificacao || 0), parceiros: summary.partnersPending || 0, licencas: summary.licensesExpiring || 0, chamados: chamados.filter(c => c.estado !== 'Resolvido').length, portal: clientesP.filter(c => c.estado === 'Pendente').length, developer: upgradePedidos.filter(p => p.estado === 'pendente').length }; const badge = badgeMap[navId] || 0; return <button className={activeSection === id ? 'is-active' : ''} key={id} onClick={() => { setActiveSection(id); setSidebarOpen(false) }}><Icon size={17} /><span>{label}</span>{badge > 0 ? <i className="admin-nav-badge">{badge > 9 ? '9+' : badge}</i> : id === 'dashboard' ? <i className="admin-nav-pip" /> : null}</button> })}</nav>
       <div className="admin-sidebar-bottom"><div className="admin-help"><CircleHelp size={17} /><div><strong>Precisa de ajuda?</strong><small>Fale com o suporte CFTEC</small></div></div><button className="admin-logout" onClick={handleLogout}><LogOut size={16} /> Sair do painel</button></div>
     </aside>
 
@@ -2551,7 +2658,96 @@ export default function AdminDashboard() {
                 {activeSection === 'licencas' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PALANCASOFT</span><h2>{role === 'tecnico' ? 'Consulta de licenças & chaves' : 'Licenças & activações'}</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div className="license-search"><Search size={15} /><input value={licenseQuery} onChange={(e) => setLicenseQuery(e.target.value)} placeholder="Pesquisar cliente, NIF ou chave..." /></div>{role !== 'tecnico' && <Button size="sm" onClick={() => setShowLicenseForm(true)}><Plus size={15} /> Nova licença</Button>}</div></div>{role !== 'tecnico' && (() => { const renov = licenses.filter(l => l.status === 'activa' && l.data_expiracao).map(l => ({ ...l, dias: Math.ceil((new Date(l.data_expiracao + 'T00:00:00').getTime() - new Date(new Date().toDateString()).getTime()) / 86400000) })).filter(l => l.dias >= 0 && l.dias <= 15).sort((a, b) => a.dias - b.dias); return renov.length > 0 ? <div className="renew-strip"><span className="renew-icon"><RefreshCw size={15} /></span><div><strong>🔔 {renov.length} licença(s) a renovar nos próximos 15 dias — ligue ao cliente e proponha a renovação</strong>{renov.map(l => <small key={l.id}>{l.cliente_nome} · expira {new Date(l.data_expiracao + 'T00:00:00').toLocaleDateString('pt-PT')} ({l.dias === 0 ? 'hoje' : `em ${l.dias} dia(s)`}) · chave {l.chave_licenca}</small>)}</div></div> : null })()}{licenses.length === 0 ? <div className="admin-empty-state"><KeyRound size={48} /><h3>Sem licenças registadas</h3><p>{role === 'tecnico' ? 'Assim que as licenças forem criadas, as chaves e clientes aparecem aqui para consulta no suporte.' : 'Crie a primeira licença — a chave de activação é gerada automaticamente.'}</p>{role !== 'tecnico' && <Button size="lg" onClick={() => setShowLicenseForm(true)}><Plus size={16} /> Nova licença</Button>}</div> : (() => { const q = licenseQuery.trim().toLowerCase(); const visible = q ? licenses.filter(l => [l.chave_licenca, l.cliente_nome, l.nif].some(v => (v || '').toLowerCase().includes(q))) : licenses; return q && visible.length === 0 ? <div className="admin-empty-state"><Search size={40} /><h3>Sem resultados</h3><p>Nenhuma licença corresponde a "{licenseQuery}".</p></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Chave de activação</th><th>Cliente</th><th>NIF</th><th>Activada</th><th>Expira</th><th>Estado</th>{role !== 'tecnico' && <th />}</tr></thead><tbody>{visible.map((license) => <tr key={license.id}><td><code className="license-key" data-tip="Chave partilhável — o cliente activa o PalancaSoft com ela">{license.chave_licenca}</code> <button className="icon-btn" title="Copiar chave" onClick={() => copyKey(license.chave_licenca)}><Copy size={13} /></button></td><td>{license.cliente_nome}</td><td>{license.nif || '—'}</td><td>{license.data_ativacao || '—'}</td><td>{license.data_expiracao || 'Sem prazo'}</td><td><span className={`active-pill ${license.status === 'activa' ? '' : 'inactive'}`} data-tip={license.status === 'activa' ? 'Licença em vigor e pronta a activar' : 'Não em vigor — não pode activar um cliente com esta chave'}>{labelLicenca(license.status)}</span></td>{role !== 'tecnico' && <td className="row-actions">{license.status === 'activa' ? <button className="icon-btn" title="Cancelar licença" onClick={() => updateLicenseStatus(license, 'cancelada')}><Power size={15} /></button> : <button className="icon-btn" title="Reactivar licença" onClick={() => updateLicenseStatus(license, 'activa')}><Check size={15} /></button>}<button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingLicenseId(license.id)}><Trash2 size={14} /></button></td>}</tr>)}</tbody></table></div> })()}</Card>}
 
         {activeSection === 'chamados' && !modBloqueado('chamados') && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">HELPDESK · SUPORTE TÉCNICO</span><h2>Chamados de suporte</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><div className="timeline-chips">{(['Todos', 'Pendente', 'Em Resolução', 'Resolvido'] as const).map(tab => <button key={tab} className={`order-filter-tab ${chamadoEstadoFilter === tab ? 'is-active' : ''}`} onClick={() => setChamadoEstadoFilter(tab)}>{tab}</button>)}</div><Button size="sm" onClick={() => setShowChamadoForm(true)}><Plus size={15} /> Novo chamado</Button></div></div>{chamados.length === 0 ? <div className="admin-empty-state"><LifeBuoy size={48} /><h3>Sem chamados registados</h3><p>Os problemas que chegam por WhatsApp ou telefone ficam aqui registados — cliente, software, estado e prioridade — para nada se perder.</p><Button size="lg" onClick={() => setShowChamadoForm(true)}><Plus size={16} /> Novo chamado</Button></div> : (() => { const visible = chamadoEstadoFilter === 'Todos' ? chamados : chamados.filter(c => c.estado === chamadoEstadoFilter); return visible.length === 0 ? <div className="admin-empty-state"><LifeBuoy size={40} /><h3>Nada neste estado</h3><p>Não há chamados "{chamadoEstadoFilter}" neste momento. 👍</p></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Data</th><th>Cliente / empresa</th><th>Software</th><th>Problema reportado</th><th>Prioridade</th><th>Estado</th><th /></tr></thead><tbody>{visible.map((ch) => <tr key={ch.id}><td>{new Date(ch.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })}{ch.origem === 'site' && <span className="chamado-origem" data-tip="Chegou pelo formulário do site">site</span>}</td><td><strong>{ch.cliente}</strong>{(ch.telefone || ch.nif) && <><br /><small style={{ color: '#64748b' }}>{ch.telefone ? `${ch.telefone} · ` : ''}{ch.nif ? `NIF ${ch.nif}` : ''}</small></>}</td><td>{ch.software || '—'}</td><td className="chamado-problema">{ch.problema.length > 90 ? `${ch.problema.slice(0, 88)}…` : ch.problema}</td><td><span className={`chamado-prio chamado-prio--${ch.prioridade.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')}`} data-tip={ch.prioridade === 'Crítica' ? 'Loja parada — resolver antes de tudo' : ch.prioridade === 'Média' ? 'Impacta o trabalho, sem bloquear' : 'Sem urgência'}>{ch.prioridade}</span></td><td><span className={`order-status-pill order-status--${chamadoEstadoClass(ch.estado)}`} data-tip={ch.estado === 'Pendente' ? 'Ainda sem técnico no caso' : ch.estado === 'Em Resolução' ? 'Um técnico está a tratar do caso' : 'Resolvido e encerrado'}>{ch.estado}</span></td><td className="row-actions">{ch.estado === 'Pendente' && <button className="icon-btn" title="Marcar como em resolução" onClick={() => updateChamado(ch, { estado: 'Em Resolução' })}><LifeBuoy size={15} /></button>}{ch.estado !== 'Resolvido' && <button className="icon-btn" title="Marcar como resolvido" onClick={() => updateChamado(ch, { estado: 'Resolvido' })}><Check size={15} /></button>}{ch.estado === 'Resolvido' && <button className="icon-btn" title="Reabrir chamado" onClick={() => updateChamado(ch, { estado: 'Em Resolução' })}><Undo2 size={15} /></button>}{ch.prioridade !== 'Crítica' && <button className="icon-btn" title={`Elevar prioridade — agora ${ch.prioridade.toLowerCase()}`} onClick={() => updateChamado(ch, { prioridade: ch.prioridade === 'Baixa' ? 'Média' : 'Crítica' })}><Zap size={15} /></button>}<button className="icon-btn" title="Consultar na wiki técnica" data-tip="Pesquisa a wiki por este software do chamado" onClick={() => abrirWikiNaSecao(ch.software)}><BookOpen size={14} /></button><button className="icon-btn danger" title="Eliminar chamado" onClick={() => setDeletingChamadoId(ch.id)}><Trash2 size={14} /></button></td></tr>)}</tbody></table></div> })()}</Card>}
-                {activeSection === 'wiki' && !modBloqueado('wiki') && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">BASE DE CONHECIMENTO INTERNA</span><h2>Wiki técnica</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><div className="license-search"><Search size={15} /><input value={wikiSearch} onChange={(e) => setWikiSearch(e.target.value)} placeholder="Pesquisar problema, software ou tag..." /></div><Button size="sm" onClick={() => { setEditingWiki(null); setWikiForm({ titulo: '', software: '', problema: '', solucao: '', tags: '' }); setShowWikiForm(true) }}><Plus size={15} /> Nova solução</Button></div></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Soluções que a equipa técnica já resolveu — quando um chamado igual voltar, pesquise aqui antes de gastar tempo a descobrir de novo. Os <b>manuais públicos</b> do cliente moram no Blog/CMS.</p>{wiki.length === 0 ? <div className="admin-empty-state"><BookOpen size={48} /><h3>{wikiSearch ? 'Nada encontrado' : 'Wiki vazia'}</h3><p>{wikiSearch ? `Nenhum artigo corresponde a "${wikiSearch}" — tenta outros termos ou tags.` : 'Regista a primeira solução — passo-a-passo de um problema real que já resolveste. Da próxima vez, pesquise e resolva em segundos.'}</p><Button size="lg" onClick={() => { setEditingWiki(null); setWikiForm({ titulo: '', software: '', problema: '', solucao: '', tags: '' }); setShowWikiForm(true) }}><Plus size={16} /> Nova solução</Button></div> : (() => { const q = wikiSearch.trim().toLowerCase(); const visiveis = q ? wiki.filter(a => `${a.titulo} ${a.software || ''} ${a.problema} ${a.solucao} ${a.tags || ''}`.toLowerCase().includes(q)) : wiki; return visiveis.length === 0 ? <div className="admin-empty-state"><BookOpen size={40} /><h3>Nada para "{wikiSearch}"</h3><p>Guarda mesmo assim uma solução nova com este problema — assim o próximo collega encontra.</p></div> : <div className="wiki-list">{visiveis.map((a) => <details key={a.id} className="wiki-item"><summary><span className="wiki-software" data-tip={a.software ? `Aplica-se a ${a.software}` : 'Software não especificado'}>{a.software || 'Geral'}</span><strong>{a.titulo}</strong><small>actualizado {new Date(a.updated_at).toLocaleDateString('pt-PT')} · {a.autor || '—'}</small><b className="wiki-open-hint"><ChevronRight size={14} /></b></summary><div className="wiki-body"><div className="wiki-block"><span>Problema / sintoma</span><p>{a.problema}</p></div><div className="wiki-block wiki-block--sol"><span>Solução passo-a-passo</span><p>{a.solucao}</p></div>{a.tags && <div className="wiki-tags">{a.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => <span key={t} className="wiki-tag"><b onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWikiSearch(t) }}>#{t}</b></span>)}</div>}<div className="service-admin-actions"><button className="icon-btn" title="Editar solução" onClick={(e) => { e.preventDefault(); setEditingWiki(a); setWikiForm({ titulo: a.titulo, software: a.software || '', problema: a.problema, solucao: a.solucao, tags: a.tags || '' }); setShowWikiForm(true) }}><Pencil size={16} /></button><button className="icon-btn danger" title="Eliminar" onClick={(e) => { e.preventDefault(); setDeletingWikiId(a.id) }}><Trash2 size={16} /></button></div></div></details>)}</div> })()}{showWikiForm && (() => {
+                {activeSection === 'portal' && (
+          <>
+            <Card className="admin-panel admin-section-panel">
+              <div className="admin-panel-head">
+                <div><span className="admin-panel-kicker">PORTAL B2B · SELF-SERVICE</span><h2>Clientes do portal</h2></div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <a className="settings-site-link" href="/cliente" target="_blank" rel="noreferrer noopener">Ver portal <ChevronRight size={14} /></a>
+                  <Button size="sm" onClick={() => setShowNovaConta(v => !v)}><Plus size={15} /> {showNovaConta ? 'Fechar formulário' : 'Nova conta'}</Button>
+                </div>
+              </div>
+              <p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>
+                Empresas registadas em <b>cftec.co/cliente</b>. Contas <b>Pendentes</b> aguardam a sua aprovação — o cliente só entra depois de <b>Activa</b>. Cada mudança envia e-mail + WhatsApp automáticos.
+              </p>
+              {portalMsg && <div className="renew-strip" style={{ marginBottom: 16 }}><span className="renew-icon"><Users size={15} /></span><div><strong>{portalMsg}</strong></div></div>}
+              {senhaGerada && (
+                <div style={{ background: '#0f172a', border: '1px solid #eab308', borderRadius: 12, padding: '14px 18px', marginBottom: 16 }}>
+                  <div style={{ color: '#fbbf24', fontWeight: 700, fontSize: '.78rem', marginBottom: 6 }}>🔑 Password provisória — partilhe/aguarde que o envio automático chegue (pode copiar aqui):</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <code style={{ color: '#facc15', fontSize: '1.05rem', letterSpacing: 2, userSelect: 'all' }}>{senhaGerada}</code>
+                    <button className="icon-btn" title="Copiar password" onClick={() => { void navigator.clipboard.writeText(senhaGerada); setPortalMsg('Password copiada.'); window.setTimeout(() => setPortalMsg(''), 3000) }}><Copy size={15} /></button>
+                    <button className="icon-btn" title="Dispensar" onClick={() => setSenhaGerada('')}><X size={15} /></button>
+                  </div>
+                </div>
+              )}
+              {showNovaConta && (
+                <form className="settings-form" style={{ background: 'rgba(148,163,184,.06)', border: '1px solid var(--admin-line, rgba(148,163,184,.2))', borderRadius: 12, padding: 16, marginBottom: 16 }} onSubmit={criarContaPortal}>
+                  <div className="settings-row" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0,1fr))', gap: '10px 14px' }}>
+                    <label className="settings-field">Nome da empresa<input required value={novaContaForm.nome_empresa} onChange={e => setNovaContaForm(f => ({ ...f, nome_empresa: e.target.value }))} placeholder="Empresa Exemplo, Lda" /></label>
+                    <label className="settings-field">NIF<input required value={novaContaForm.nif} onChange={e => setNovaContaForm(f => ({ ...f, nif: e.target.value }))} placeholder="5412345678" /></label>
+                    <label className="settings-field">Responsável<input value={novaContaForm.nome_responsavel} onChange={e => setNovaContaForm(f => ({ ...f, nome_responsavel: e.target.value }))} placeholder="Maria Silva" /></label>
+                    <label className="settings-field">WhatsApp<input required value={novaContaForm.telefone_whatsapp} onChange={e => setNovaContaForm(f => ({ ...f, telefone_whatsapp: e.target.value }))} placeholder="+244 9xx xxx xxx" /></label>
+                    <label className="settings-field">E-mail de acesso<input required type="email" value={novaContaForm.email} onChange={e => setNovaContaForm(f => ({ ...f, email: e.target.value }))} placeholder="geral@empresa.co" /></label>
+                    <label className="settings-field">Password <small style={{ display: 'block', marginTop: 2 }}>(vazio = gerada automaticamente e enviada ao cliente)</small><input type="text" value={novaContaForm.password} onChange={e => setNovaContaForm(f => ({ ...f, password: e.target.value }))} placeholder="deixe vazio para gerar" /></label>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
+                    <Button type="submit" size="sm" disabled={novaContaSaving}>{novaContaSaving ? 'A criar…' : <><Check size={14} /> Criar conta activa</>}</Button>
+                    <Button type="button" variant="outline" size="sm" onClick={() => setShowNovaConta(false)}>Cancelar</Button>
+                  </div>
+                </form>
+              )}
+              <div className="timeline-chips" style={{ marginBottom: 14 }}>
+                {CLIENTES_PORTAL_ESTADOS.map(tab => (
+                  <button key={tab} className={`order-filter-tab ${clientesPFilter === tab ? 'is-active' : ''}`} onClick={() => setClientesPFilter(tab)}>{tab}{tab === 'Pendente' && clientesP.some(c => c.estado === 'Pendente') ? ' ⚠' : ''}</button>
+                ))}
+              </div>
+              {clientesP.length === 0
+                ? <div className="admin-empty-state"><Users size={48} /><h3>{portalCarregado ? 'Sem registos no portal ainda' : 'A carregar…'}</h3><p>As empresas registam-se em cftec.co/cliente — os pedidos aparecem aqui para aprovar com um clique.</p></div>
+                : (() => {
+                    const visiveis = clientesPFilter === 'Todos' ? clientesP : clientesP.filter(c => c.estado === clientesPFilter)
+                    const ordenado = [...visiveis].sort((a, b) => (a.estado === 'Pendente' ? 0 : 1) - (b.estado === 'Pendente' ? 0 : 1))
+                    return ordenado.length === 0
+                      ? <div className="admin-empty-state"><Users size={40} /><h3>Nada em "{clientesPFilter}"</h3><p>Não há contas neste estado neste momento.</p></div>
+                      : <div className="admin-table-wrap"><table className="admin-table">
+                        <thead><tr><th>Empresa</th><th>NIF</th><th>Contactos</th><th>No portal</th><th>Desde</th><th>Estado</th><th /></tr></thead>
+                        <tbody>{ordenado.map(c => {
+                          const cont = contagensP[c.id] || { pedidos: 0, chamados: 0, licencas: 0 }
+                          const wa = `https://wa.me/${c.telefone_whatsapp.replace(/\D/g, '')}`
+                          return <tr key={c.id}>
+                            <td><strong>{c.nome_empresa}</strong>{c.nome_responsavel && <><br /><small style={{ color: '#64748b' }}>{c.nome_responsavel}</small></>}{c.observacoes_admin && <><br /><small style={{ color: '#94a3b8' }}>📝 {c.observacoes_admin.slice(0, 90)}</small></>}</td>
+                            <td>{c.nif}</td>
+                            <td><small style={{ color: '#64748b' }}>{c.email}</small><br /><a href={wa} target="_blank" rel="noreferrer noopener" style={{ color: '#25D366', fontWeight: 600 }} data-tip="Abrir conversa WhatsApp">💬 {c.telefone_whatsapp}</a></td>
+                            <td><small>{cont.pedidos} pedido(s) · {cont.chamados} chamado(s) · {cont.licencas} licença(s)</small></td>
+                            <td><small style={{ color: '#64748b' }}>{new Date(c.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: '2-digit' })}</small></td>
+                            <td><span className={`active-pill ${c.estado === 'Activo' ? '' : 'inactive'}`} data-tip={c.estado === 'Pendente' ? 'Aguarda a sua aprovação' : c.estado === 'Activo' ? 'Pode entrar no portal' : c.estado === 'Suspenso' ? 'Acesso parado — pode reactivar' : 'Registo rejeitado'}>
+                              <span className={c.estado === 'Activo' ? 'status-ok' : c.estado === 'Pendente' ? 'status-warn' : 'status-error'} />{c.estado}</span></td>
+                            <td>
+                              <div className="service-admin-actions">
+                                {c.estado !== 'Activo' && <button className="icon-btn" title="Aprovar / Reactivar acesso (envia crédemciais por email+WhatsApp)" onClick={() => void mudarEstadoClienteP(c, 'Activo')}><Check size={16} /></button>}
+                                {c.estado === 'Activo' && <><button className="icon-btn" title="Redefinir password do cliente (gera nova e envia)" onClick={() => void resetSenhaClienteP(c)}><KeyRound size={16} /></button><button className="icon-btn" title="Suspender acesso" onClick={() => void mudarEstadoClienteP(c, 'Suspenso')}><Power size={16} /></button></>}
+                                {c.estado === 'Pendente' && <button className="icon-btn" title="Rejeitar registo" onClick={() => void mudarEstadoClienteP(c, 'Rejeitado')}><ChevronRight size={16} style={{ transform: 'rotate(90deg)' }} /></button>}
+                                <button className="icon-btn danger" title="Apagar conta do portal" onClick={() => setDeletingClienteP(c.id)}><Trash2 size={16} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        })}</tbody></table></div>
+                  })()}
+            </Card>
+            {deletingClienteP && <Card className="admin-panel admin-section-panel" style={{ borderColor: 'rgba(244,63,94,.4)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14 }}>
+                <div><strong>Apagar conta do portal?</strong><p style={{ margin: '4px 0 0', color: '#64748b', fontSize: '.8rem' }}>O cliente perde o acesso ao portal (os pedidos/licenças/chamados ficam). Esta acção não é reversível.</p></div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <Button variant="outline" size="sm" onClick={() => setDeletingClienteP(null)}>Cancelar</Button>
+                  <Button variant="destructive" size="sm" onClick={() => void apagarClienteP()}><Trash2 size={14} /> Apagar</Button>
+                </div>
+              </div>
+            </Card>}
+          </>
+        )}
+
+        {activeSection === 'wiki' && !modBloqueado('wiki') && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">BASE DE CONHECIMENTO INTERNA</span><h2>Wiki técnica</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><div className="license-search"><Search size={15} /><input value={wikiSearch} onChange={(e) => setWikiSearch(e.target.value)} placeholder="Pesquisar problema, software ou tag..." /></div><Button size="sm" onClick={() => { setEditingWiki(null); setWikiForm({ titulo: '', software: '', problema: '', solucao: '', tags: '' }); setShowWikiForm(true) }}><Plus size={15} /> Nova solução</Button></div></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Soluções que a equipa técnica já resolveu — quando um chamado igual voltar, pesquise aqui antes de gastar tempo a descobrir de novo. Os <b>manuais públicos</b> do cliente moram no Blog/CMS.</p>{wiki.length === 0 ? <div className="admin-empty-state"><BookOpen size={48} /><h3>{wikiSearch ? 'Nada encontrado' : 'Wiki vazia'}</h3><p>{wikiSearch ? `Nenhum artigo corresponde a "${wikiSearch}" — tenta outros termos ou tags.` : 'Regista a primeira solução — passo-a-passo de um problema real que já resolveste. Da próxima vez, pesquise e resolva em segundos.'}</p><Button size="lg" onClick={() => { setEditingWiki(null); setWikiForm({ titulo: '', software: '', problema: '', solucao: '', tags: '' }); setShowWikiForm(true) }}><Plus size={16} /> Nova solução</Button></div> : (() => { const q = wikiSearch.trim().toLowerCase(); const visiveis = q ? wiki.filter(a => `${a.titulo} ${a.software || ''} ${a.problema} ${a.solucao} ${a.tags || ''}`.toLowerCase().includes(q)) : wiki; return visiveis.length === 0 ? <div className="admin-empty-state"><BookOpen size={40} /><h3>Nada para "{wikiSearch}"</h3><p>Guarda mesmo assim uma solução nova com este problema — assim o próximo collega encontra.</p></div> : <div className="wiki-list">{visiveis.map((a) => <details key={a.id} className="wiki-item"><summary><span className="wiki-software" data-tip={a.software ? `Aplica-se a ${a.software}` : 'Software não especificado'}>{a.software || 'Geral'}</span><strong>{a.titulo}</strong><small>actualizado {new Date(a.updated_at).toLocaleDateString('pt-PT')} · {a.autor || '—'}</small><b className="wiki-open-hint"><ChevronRight size={14} /></b></summary><div className="wiki-body"><div className="wiki-block"><span>Problema / sintoma</span><p>{a.problema}</p></div><div className="wiki-block wiki-block--sol"><span>Solução passo-a-passo</span><p>{a.solucao}</p></div>{a.tags && <div className="wiki-tags">{a.tags.split(',').map((t) => t.trim()).filter(Boolean).map((t) => <span key={t} className="wiki-tag"><b onClick={(e) => { e.preventDefault(); e.stopPropagation(); setWikiSearch(t) }}>#{t}</b></span>)}</div>}<div className="service-admin-actions"><button className="icon-btn" title="Editar solução" onClick={(e) => { e.preventDefault(); setEditingWiki(a); setWikiForm({ titulo: a.titulo, software: a.software || '', problema: a.problema, solucao: a.solucao, tags: a.tags || '' }); setShowWikiForm(true) }}><Pencil size={16} /></button><button className="icon-btn danger" title="Eliminar" onClick={(e) => { e.preventDefault(); setDeletingWikiId(a.id) }}><Trash2 size={16} /></button></div></div></details>)}</div> })()}{showWikiForm && (() => {
           // sugestões datalist: softwares do catálogo + os já usados na wiki; tags existentes
           const sugerirSoft = [...new Set([...software.map(s => s.name), ...wiki.map(a => a.software).filter((s): s is string => Boolean(s))])].sort((a, b) => a.localeCompare(b))
           const sugerirTags = [...new Set(wiki.flatMap(a => (a.tags || '').split(',').map(t => t.trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b))

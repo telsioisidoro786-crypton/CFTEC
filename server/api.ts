@@ -335,6 +335,76 @@ function fireAdminEmail(subject: string, html: string): void {
   })
 }
 
+// ============================================================
+// WHATSAPP VIA TWILIO (Business API) — notificações automáticas ao
+// cliente. Sem credenciais no .env → desligado em silêncio (o painel
+// continua com links wa.me para envio manual).
+//   .env:  TWILIO_ACCOUNT_SID=ACxxxx   TWILIO_AUTH_TOKEN=...
+//          TWILIO_WHATSAPP_FROM=+2449XXXXXXXX (número WhatsApp Business)
+// ============================================================
+type WhatsResult = { enviado: boolean; detalhe: string }
+
+/** Normaliza telefone para E.164 — Angola (+244) é o destino por defeito. */
+function telE164(bruto: string): string | null {
+  let d = String(bruto || '').replace(/\D/g, '')
+  if (!d) return null
+  if (d.startsWith('00')) d = d.slice(2)
+  if (d.startsWith('244')) return '+' + d
+  if (d.length === 9) return '+244' + d          // redes AO: 9xx xxx xxx
+  if (d.length >= 8) return '+' + d              // já tem indicativo
+  return null
+}
+
+/** Password provisória legível (12 caracteres, mín. 4 dígitos, sem símbolos confundíveis). */
+function gerarPasswordLegivel(): string {
+  const letra = 'ABCDEFGHJKMNPQRSTUVWXYZ'
+  const num = '23456789'
+  let pw = ''
+  for (let i = 0; i < 12; i++) pw += (i % 4 === 3 ? num : letra)[cryptoRandomBytes(1)[0] % (i % 4 === 3 ? num : letra).length]
+  if ((pw.match(/\d/g) || []).length < 4) {
+    pw = pw.slice(0, 8) + String(cryptoRandomBytes(2).readUInt16BE(0) % 10000).padStart(4, '0')
+  }
+  return pw
+}
+
+async function sendWhats(to: string, texto: string): Promise<WhatsResult> {
+  const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim()
+  const token = (process.env.TWILIO_AUTH_TOKEN || '').trim()
+  const from = (process.env.TWILIO_WHATSAPP_FROM || '').trim()
+  const destino = telE164(to)
+  if (!sid || !token || !from) return { enviado: false, detalhe: 'sem credenciais Twilio no .env' }
+  if (!destino) return { enviado: false, detalhe: 'telefone inválido' }
+  try {
+    const corpo = new URLSearchParams({
+      From: `whatsapp:${from.startsWith('+') ? from : `+${from}`}`,
+      To: `whatsapp:${destino}`,
+      Body: texto,
+    })
+    const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+      method: 'POST',
+      headers: { Authorization: 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'), 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: corpo.toString(),
+    })
+    const data = (await response.json().catch(() => ({}))) as { sid?: string; message?: string }
+    if (!response.ok) return { enviado: false, detalhe: `Twilio HTTP ${response.status}: ${data.message || 'erro desconhecido'}` }
+    return { enviado: true, detalhe: data.sid ? `sid=${data.sid}` : 'sem sid' }
+  } catch (e) {
+    return { enviado: false, detalhe: e instanceof Error ? e.message : 'exception' }
+  }
+}
+
+/** Notifica o cliente nos DOIS canais (e-mail formal + WhatsApp curto), fire-and-forget. */
+function notifyCliente(email: string, telefone: string, assunto: string, corpoHtml: string, textoWhats: string): void {
+  const mail = String(email || '').trim()
+  const destWhats = telE164(telefone)
+  if (mail) void sendEmailRaw(mail, assunto, emailShell(assunto, corpoHtml)).then(r =>
+    console.log(`[EMAIL] cliente · ${r.enviado ? 'enviado' : 'não enviado'} → ${mail} · ${r.detalhe} · ${assunto}`),
+  )
+  if (destWhats) void sendWhats(destWhats, textoWhats).then(r =>
+    console.log(`[WHATSAPP] ${r.enviado ? 'enviado' : 'não enviado'} → ${destWhats} · ${r.detalhe} · ${assunto}`),
+  )
+}
+
 type MultipartPart = { name: string; filename?: string; mimetype?: string; data: Buffer }
 
 /**
@@ -704,6 +774,35 @@ function setSessionCookie(res: ServerResponse, token: string) {
 function clearSessionCookie(res: ServerResponse) {
   const isProd = process.env.NODE_ENV === 'production'
   res.setHeader('Set-Cookie', `${authCookieName}=; Path=/; ${isProd ? 'HttpOnly; Secure; SameSite=None' : 'SameSite=Lax'}; Max-Age=0`)
+}
+
+// ─── PORTAL DO CLIENTE — sessão própria (cookie separado; JWT com role
+// 'cliente', por isso NÃO pode passar por admin nem vice-versa) ───
+const portalCookieName = 'cftec_portal_session'
+type ClienteClaims = { sub: string; email: string; role: 'cliente'; name: string; jti?: string }
+type ClienteEstado = 'Pendente' | 'Activo' | 'Rejeitado' | 'Suspenso'
+
+function setPortalCookie(res: ServerResponse, token: string) {
+  const isProd = process.env.NODE_ENV === 'production'
+  res.setHeader('Set-Cookie', `${portalCookieName}=${encodeURIComponent(token)}; Path=/; ${isProd ? 'HttpOnly; Secure; SameSite=None' : 'SameSite=Lax'}; Max-Age=${sessionMaxAge}`)
+}
+function clearPortalCookie(res: ServerResponse) {
+  const isProd = process.env.NODE_ENV === 'production'
+  res.setHeader('Set-Cookie', `${portalCookieName}=; Path=/; ${isProd ? 'HttpOnly; Secure; SameSite=None' : 'SameSite=Lax'}; Max-Age=0`)
+}
+function currentCliente(req: IncomingMessage): ClienteClaims | null {
+  const token = cookies(req)[portalCookieName]
+  if (!token || !JWT_SECRET) return null
+  try {
+    const claims = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] }) as ClienteClaims
+    if (claims.role !== 'cliente') return null
+    return claims
+  } catch { return null }
+}
+type ClienteRow = {
+  id: string; nome_empresa: string; nif: string; nome_responsavel: string | null
+  telefone_whatsapp: string; email: string; password_hash: string
+  estado: ClienteEstado; created_at: string; aprovado_em: string | null; observacoes_admin: string | null
 }
 
 // Developer (Master Admin) tem acesso pleno igual ao super_admin — mas só ele gere a licença
@@ -1334,6 +1433,213 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             return json(res, 201, { ok: true, chamado_id: data?.id })
           }
 
+          // ============================================================
+          // PORTAL DO CLIENTE (/cliente) — self-service B2B
+          // Registo público → aprovação no painel → pedidos, licenças,
+          // chamados próprios. Notificações: e-mail (Resend) + WhatsApp (Twilio).
+          // ============================================================
+
+          // REGISTO (sem auth) — cria a conta em estado 'Pendente' até o admin aprovar
+          if (path === '/api/portal/registo' && req.method === 'POST') {
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const ip = clientIp(req)
+            const agora = Date.now()
+            const hist = (chamadoRate.get('registo|' + ip) || []).filter(ts => agora - ts < 60 * 60 * 1000)
+            if (hist.length >= 5) return json(res, 429, { ok: false, error: 'Muitos registos seguidos deste origem. Tente mais tarde.' })
+            hist.push(agora); chamadoRate.set('registo|' + ip, hist)
+
+            const payload = await readBody(req) as Record<string, string>
+            const nomeEmpresa = String(payload.nome_empresa || '').trim()
+            const nif = String(payload.nif || '').replace(/\s+/g, '').trim()
+            const responsavel = String(payload.nome_responsavel || '').trim()
+            const telefone = String(payload.telefone_whatsapp || '').trim()
+            const email = String(payload.email || '').trim().toLowerCase()
+            const password = String(payload.password || '')
+            if (nomeEmpresa.length < 2 || nomeEmpresa.length > 150) return json(res, 400, { ok: false, error: 'Indique o nome da empresa.' })
+            if (!/^[A-Za-z0-9+@\-]{9,20}$/.test(nif)) return json(res, 400, { ok: false, error: 'NIF inválido.' })
+            if (!/[\d+\s()-]{9,20}/.test(telefone)) return json(res, 400, { ok: false, error: 'Telefone/WhatsApp inválido (mín. 9 dígitos).' })
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json(res, 400, { ok: false, error: 'E-mail inválido.' })
+            if (password.length < 8) return json(res, 400, { ok: false, error: 'A password precisa de pelo menos 8 caracteres.' })
+
+            const { data: duplicado } = await supabase.from('clientes_portal').select('id, estado, email, nif').or(`email.eq.${email},nif.eq.${nif}`)
+            if (duplicado && duplicado.length) {
+              const d = duplicado[0] as { estado: string }
+              if (d.estado === 'Pendente') return json(res, 409, { ok: false, error: 'Este registo já está pendente de aprovação — a equipa CFTEC trata em breve.' })
+              if (d.estado === 'Activo') return json(res, 409, { ok: false, error: 'Já existe uma conta com estes dados. Use a opção "Esqueci a password" ou fale connosco.' })
+              return json(res, 409, { ok: false, error: 'Já existe um registo com estes dados — contacte a equipa CFTEC.' })
+            }
+
+            const passwordHash = await bcrypt.hash(password, 12)
+            const { error } = await supabase.from('clientes_portal').insert({
+              nome_empresa: nomeEmpresa, nif, nome_responsavel: responsavel || null,
+              telefone_whatsapp: telefone.slice(0, 20), email, password_hash: passwordHash, estado: 'Pendente',
+            })
+            if (error) {
+              if (String(error.message).includes('clientes_portal')) return json(res, 503, { ok: false, error: 'O portal do cliente será activado em breve. Contacte a CFTEC.' })
+              return json(res, 500, { ok: false, error: error.message })
+            }
+            // Aviso à equipa + confirmação amigável ao cliente (e-mail + WhatsApp)
+            fireAdminEmail(
+              'Portal — novo registo de cliente para aprovar',
+              emailShell('Novo registo no portal do cliente',
+                `<p style="margin:0 0 14px">Uma empresa registou-se no portal e <b>aguarda aprovação</b>:</p>
+<table style="border-collapse:collapse;background:#f8fafc;border-radius:8px;padding:8px">
+${emailLinha('Empresa', escHtml(nomeEmpresa))}${emailLinha('NIF', escHtml(nif))}
+${emailLinha('Responsável', escHtml(responsavel || '—'))}${emailLinha('WhatsApp', escHtml(telefone))}
+${emailLinha('E-mail', escHtml(email))}</table>
+<p style="margin:14px 0 0">Aprove (ou rejeite) no painel: <b>Painel → Portal</b>.</p>`),
+            )
+            notifyCliente(
+              email, telefone,
+              'Recebemos o seu registo — CFTEC',
+              `<p>Olá <b>${escHtml(nomeEmpresa)}</b>,</p><p>O registo da sua empresa no <b>portal do cliente CFTEC</b> foi recebido e está a aguardar <b>aprovação da equipa</b> (normalmente no mesmo dia útil).</p><p>Assim que aprovada, entre em <b>cftec.co/cliente</b> com o seu e-mail e password para ver pedidos, licenças e chamados de suporte.</p>`,
+              `CFTEC: Olá ${nomeEmpresa} — recebemos o seu registo no portal do cliente. A conta será activada após aprovação da equipa. Será avisado por WhatsApp/email. ✓`,
+            )
+            logAuditoria(null, 'portal_registo', 'portal', null, { empresa: nomeEmpresa, nif })
+            return json(res, 201, { ok: true, message: 'Registo recebido! A equipa CFTEC vai aprovar a sua conta — falamos com você por e-mail e WhatsApp.' })
+          }
+
+          // LOGIN DO CLIENTE (sem auth) — só contas 'Activo' entram
+          if (path === '/api/portal/login' && req.method === 'POST') {
+            if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'Sessões não configuradas.' })
+            const payload = await readBody(req) as { email?: string; password?: string }
+            const email = String(payload.email || '').trim().toLowerCase()
+            const password = String(payload.password || '')
+            const chaveRate = `portal|${clientIp(req)}|${email}`
+            const estadoRate = await rateGet(chaveRate)
+            if (estadoRate.bloqueado_ate > Date.now()) {
+              const minutos = Math.max(1, Math.ceil((estadoRate.bloqueado_ate - Date.now()) / 60000))
+              return json(res, 429, { ok: false, error: `Demasiadas tentativas falhadas. Tente novamente em ${minutos} minuto(s).` })
+            }
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, nif, email, password_hash, estado').eq('email', email).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; nif: string; email: string; password_hash: string; estado: ClienteEstado } | null }
+            if (!conta || !(await bcrypt.compare(password, conta.password_hash))) {
+              await rateFail(chaveRate)
+              logAuditoria(null, 'portal_login_falhado', 'portal', conta?.id || null, { email })
+              return json(res, 401, { ok: false, error: 'E-mail ou password incorrectos.' })
+            }
+            if (conta.estado !== 'Activo') {
+              const motivo = conta.estado === 'Pendente'
+                ? 'A sua conta ainda aguarda aprovação da equipa CFTEC — será avisado por e-mail/WhatsApp.'
+                : conta.estado === 'Rejeitado'
+                  ? 'O registo não foi aprovado. Contacte a equipa CFTEC para esclarecer.'
+                  : 'A conta está suspensa. Contacte a equipa CFTEC.'
+              return json(res, 403, { ok: false, error: motivo })
+            }
+            const jti = crypto.randomUUID()
+            const token = jwt.sign(
+              { sub: conta.id, email: conta.email, role: 'cliente', name: conta.nome_empresa, jti } satisfies ClienteClaims,
+              JWT_SECRET,
+              { algorithm: 'HS256', expiresIn: sessionMaxAge },
+            )
+            void rateReset(chaveRate)
+            setPortalCookie(res, token)
+            logAuditoria(null, 'portal_login', 'portal', conta.id, { empresa: conta.nome_empresa })
+            return json(res, 200, { ok: true, user: { empresa: conta.nome_empresa, email: conta.email } })
+          }
+
+          // SESSÃO ACTIVA DO CLIENTE
+          if (path === '/api/portal/session' && req.method === 'GET') {
+            const cliente = currentCliente(req)
+            if (!cliente) return json(res, 401, { ok: false })
+            return json(res, 200, { ok: true, user: { empresa: cliente.name, email: cliente.email } })
+          }
+
+          if (path === '/api/portal/logout' && req.method === 'POST') {
+            clearPortalCookie(res)
+            return json(res, 200, { ok: true })
+          }
+
+          // DADOS DO PORTAL — cada rota devolve somente o que pertence ao próprio cliente
+          const clienteSessao = currentCliente(req)
+          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados')) {
+            if (!clienteSessao) return json(res, 401, { ok: false, error: 'Entre no portal (ou faça o registo).' })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, nif, email, estado').eq('id', clienteSessao.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; nif: string; email: string; estado: ClienteEstado } | null }
+            if (!conta || conta.estado !== 'Activo') { clearPortalCookie(res); return json(res, 401, { ok: false, error: 'Sessão inválida — entre de novo.' }) }
+
+            if (path === '/api/portal/pedidos' && req.method === 'GET') {
+              const porNif = await supabase.from('pedidos_licencas').select('id, created_at, software_nome, status, forma_pagamento, provincia, nome_empresa, nome_responsavel, email, observacoes').eq('nif', conta.nif).order('created_at', { ascending: false })
+              const porEmail = await supabase.from('pedidos_licencas').select('id, created_at, software_nome, status, forma_pagamento, provincia, nome_empresa, nome_responsavel, email, observacoes').eq('email', conta.email).order('created_at', { ascending: false })
+              const juntos = new Map<string,unknown>()
+              for (const lote of [porNif.data, porEmail.data] as unknown as Record<string,unknown>[][])
+                for (const p of lote) if (!juntos.has(String(p.id))) juntos.set(String(p.id), p)
+              const lista = Array.from(juntos.values()) as Record<string, unknown>[]
+              lista.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
+              return json(res, 200, { ok: true, pedidos: lista })
+            }
+            if (path === '/api/portal/licencas' && req.method === 'GET') {
+              const { data, error } = await supabase.from('licencas_palancasoft').select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, created_at').eq('nif', conta.nif).order('created_at', { ascending: false })
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true, licencas: data })
+            }
+            if (path === '/api/portal/chamados' && req.method === 'GET') {
+              const { data, error } = await supabase.from('chamados_suporte').select('id, created_at, updated_at, cliente, nif, software, problema, resolucao, estado, prioridade, origem').eq('nif', conta.nif).order('created_at', { ascending: false })
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true, chamados: data })
+            }
+          }
+
+          // NOVO CHAMADO DE SUPORTE (com conta activo) — alimenta o mesmo pipeline do site
+          if (path === '/api/portal/chamados' && req.method === 'POST') {
+            const cliente = currentCliente(req)
+            if (!cliente) return json(res, 401, { ok: false, error: 'Entre no portal (ou faça o registo).' })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            if (!(await licencaAtual()).moduloTecnico)
+              return json(res, 403, { ok: false, error: 'A central de suporte está temporariamente suspensa. Entre em contacto por WhatsApp.' })
+            const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, nif, telefone_whatsapp, email, estado').eq('id', cliente.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; nif: string; telefone_whatsapp: string; email: string; estado: ClienteEstado } | null }
+            if (!conta || conta.estado !== 'Activo') return json(res, 401, { ok: false, error: 'Sessão inválida — entre de novo.' })
+            const ip = clientIp(req)
+            const agora = Date.now()
+            const hist = (chamadoRate.get('portal|' + ip) || []).filter(ts => agora - ts < 60 * 60 * 1000)
+            if (hist.length >= 10) return json(res, 429, { ok: false, error: 'Muitos chamados seguidos — contacte-nos por WhatsApp para garantir prioridade.' })
+            hist.push(agora); chamadoRate.set('portal|' + ip, hist)
+            const payload = await readBody(req) as { software?: string; descricao_problema?: string; prioridade?: string }
+            const software = String(payload.software || '').trim().slice(0, 120) || 'Outro'
+            const descricao = String(payload.descricao_problema || '').trim()
+            if (descricao.length < 10 || descricao.length > 1200) return json(res, 400, { ok: false, error: 'Descreve o problema com pelo menos 10 caracteres.' })
+            const { data, error } = await supabase.from('chamados_suporte')
+              .insert({ cliente: conta.nome_empresa, nif: conta.nif, telefone: conta.telefone_whatsapp.slice(0, 20), software, problema: descricao, estado: 'Pendente', prioridade: 'Média', origem: 'portal' })
+              .select('id').single()
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            void pushNotifyEquipa('chamado', '🛠️ Novo chamado (portal do cliente)', `${conta.nome_empresa} pediu apoio (${software}) — verifique no painel.`)
+            fireAdminEmail('Chamado do portal — ' + conta.nome_empresa,
+              emailShell('Novo chamado do portal do cliente',
+                `<table style="border-collapse:collapse;background:#f8fafc;border-radius:8px;padding:8px">
+${emailLinha('Empresa', escHtml(conta.nome_empresa))}${emailLinha('Software', escHtml(software))}
+${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
+            )
+            notifyCliente(
+              conta.email, conta.telefone_whatsapp,
+              `Chamado recebido — CFTEC (${software})`,
+              `<p>Olá <b>${escHtml(conta.nome_empresa)}</b>,</p><p>Recebemos o chamado de suporte para <b>${escHtml(software)}</b> e a equipa técnica vai tratá-lo. Pode acompanhar o estado em <b>cftec.co/cliente → Chamados</b>.</p>`,
+              `CFTEC: Recebemos o seu chamado (${software}). Acompanhe o estado no portal: cftec.co/cliente ✓`,
+            )
+            logAuditoria(null, 'portal_chamado_novo', 'chamado', data?.id, { empresa: conta.nome_empresa, software })
+            return json(res, 201, { ok: true, chamado_id: data?.id, message: 'Chamado registado! A equipa técnica recebeu a notificação.' })
+          }
+
+          // ALTERAR A PRÓPRIA PASSWORD (exige a password actual)
+          if (path === '/api/portal/password' && req.method === 'POST') {
+            const cliente = currentCliente(req)
+            if (!cliente) return json(res, 401, { ok: false, error: 'Entre no portal.' })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const payload = await readBody(req) as { password_actual?: string; password_nova?: string }
+            const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, email, password_hash, telefone_whatsapp').eq('id', cliente.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; email: string; password_hash: string; telefone_whatsapp: string } | null }
+            if (!conta) return json(res, 401, { ok: false, error: 'Sessão inválida — entre de novo.' })
+            if (!(await bcrypt.compare(String(payload.password_actual || ''), conta.password_hash)))
+              return json(res, 401, { ok: false, error: 'Password actual incorrecta.' })
+            const nova = String(payload.password_nova || '')
+            if (nova.length < 8) return json(res, 400, { ok: false, error: 'A password nova precisa de pelo menos 8 caracteres.' })
+            const passwordHash = await bcrypt.hash(nova, 12)
+            const { error } = await supabase.from('clientes_portal').update({ password_hash: passwordHash, updated_at: new Date().toISOString() }).eq('id', conta.id)
+            if (error) return json(res, 500, { ok: false, error: error.message })
+            fireAdminEmail('Portal — password alterada por cliente',
+              emailShell('Password alterada no portal', `<p>O cliente <b>${escHtml(conta.nome_empresa)}</b> (${escHtml(conta.email)}) alterou a própria password no portal.</p>`),
+            )
+            return json(res, 200, { ok: true, message: 'Password actualizada.' })
+          }
+
           if (path === '/api/license-orders' && req.method === 'POST') {
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             // módulo comercial suspenso pelo developer → checkout encerrado
@@ -1919,6 +2225,14 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   )
                 }
                 console.log(`[EMAIL] cliente ${novoStatus} → ${cliMail} · ${emailCliente.detalhe}`)
+                // WhatsApp ao cliente no caso de o pedido mudar de status realmente
+                const telPedido = String((data as { telefone_whatsapp?: string }).telefone_whatsapp || '')
+                if (telPedido) {
+                  const resumo = novoStatus === 'Aprovado'
+                    ? `CFTEC: ${empresa.replace(/<[^>]+>/g, '')} — o seu pedido ${ref} (${software.replace(/<[^>]+>/g, '')}) foi APROVADO ✓. Confirme o pagamento (IBAN no e-mail) e envie o comprovativo para o WhatsApp comercial.`
+                    : `CFTEC: ${empresa.replace(/<[^>]+>/g, '')} — o pedido ${ref} (${software.replace(/<[^>]+>/g, '')}) não foi aprovado desta vez. Detalhes no seu e-mail; fale connosco para esclarecer.`
+                  void sendWhats(telPedido, resumo)
+                }
               }
               logAuditoria(currentAdmin(req), 'pedido_estado', 'pedido', id, Object.keys(updates).length === 1 && updates.status ? { de: prevStatus, para: novoStatus } : { estado_anterior: prevStatus, estado_novo: novoStatus, campos: Object.keys(updates) })
               return json(res, 200, { ok: true, pedido: data, emailCliente: emailCliente ? (emailCliente.enviado ? 'enviado' : emailCliente.detalhe) : 'nenhum' })
@@ -1933,6 +2247,140 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             }
 
             // LICENÇAS PALANCASOFT
+            // ─── PORTAL DO CLIENTE — gestão contas (super_admin/gestor/developer) ───
+            const portalAdmin = () => {
+              const nivel = currentAdmin(req)?.level
+              return nivel === 'super_admin' || nivel === 'gestor' || nivel === 'developer'
+            }
+            if (path === '/api/admin/portal/clientes' && req.method === 'GET') {
+              if (!portalAdmin()) return json(res, 403, { ok: false, error: 'Sem permissão.' })
+              const { data, error } = await supabase.from('clientes_portal')
+                .select('id, created_at, updated_at, nome_empresa, nif, nome_responsavel, telefone_whatsapp, email, estado, aprovado_em, observacoes_admin')
+                .order('created_at', { ascending: false })
+                .limit(200)
+              if (error) {
+                if (String(error.message).includes('clientes_portal')) return json(res, 503, { ok: false, error: 'Corra o supabase-portal-cliente.sql no Supabase para activar o portal.' })
+                return json(res, 500, { ok: false, error: error.message })
+              }
+              // contagens por NIF (pedidos, chamados, licenças) para as fichas no painel
+              const nifs = (data || []).map(c => (c as { nif: string }).nif).filter(Boolean)
+              const contar = async (tabela: string, coluna: string) => {
+                if (!nifs.length) return {} as Record<string, number>
+                try {
+                  const { data: nifRows } = await supabase.from(tabela).select(coluna).limit(1000)
+                  const contagem: Record<string, number> = {}
+                  for (const r of ((nifRows || []) as unknown as Record<string, unknown>[]) ) {
+                    const n = String(r[coluna] || '').trim()
+                    if (n) contagem[n] = (contagem[n] || 0) + 1
+                  }
+                  return contagem
+                } catch { return {} as Record<string, number> }
+              }
+              const [pedidosPorNif, chamadosPorNif, licencasPorNif] = await Promise.all([
+                contar('pedidos_licencas', 'nif'), contar('chamados_suporte', 'nif'), contar('licencas_palancasoft', 'nif'),
+              ])
+              return json(res, 200, {
+                ok: true, clientes: data,
+                contagens: Object.fromEntries((data || []).map(c => {
+                  const n = (c as { nif: string }).nif
+                  return [(c as { id: string }).id, { pedidos: pedidosPorNif[n] || 0, chamados: chamadosPorNif[n] || 0, licencas: licencasPorNif[n] || 0 }]
+                })),
+              })
+            }
+
+            if (path === '/api/admin/portal/clientes' && req.method === 'POST') {
+              const admin = currentAdmin(req)
+              if (!portalAdmin()) return json(res, 403, { ok: false, error: 'Sem permissão.' })
+              const payload = await readBody(req) as Record<string, string>
+              const nomeEmpresa = String(payload.nome_empresa || '').trim()
+              const nif = String(payload.nif || '').replace(/\s+/g, '').trim()
+              const responsavel = String(payload.nome_responsavel || '').trim()
+              const telefone = String(payload.telefone_whatsapp || '').trim()
+              const email = String(payload.email || '').trim().toLowerCase()
+              const password = String(payload.password || '')
+              if (nomeEmpresa.length < 2 || nomeEmpresa.length > 150) return json(res, 400, { ok: false, error: 'Indique o nome da empresa.' })
+              if (!/^[A-Za-z0-9+@\-]{9,20}$/.test(nif)) return json(res, 400, { ok: false, error: 'NIF inválido.' })
+              if (!/[\d+\s()-]{9,20}/.test(telefone)) return json(res, 400, { ok: false, error: 'Telefone/WhatsApp inválido.' })
+              if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return json(res, 400, { ok: false, error: 'E-mail inválido.' })
+              if (password.length < 8) return json(res, 400, { ok: false, error: 'Password de pelo menos 8 caracteres.' })
+              const { data: duplicado } = await supabase.from('clientes_portal').select('id').or(`email.eq.${email},nif.eq.${nif}`)
+              if (duplicado && duplicado.length) return json(res, 409, { ok: false, error: 'Já existe conta/pedido de conta com este e-mail ou NIF.' })
+              const senhaFinal = password || gerarPasswordLegivel()
+              const passwordHash = await bcrypt.hash(senhaFinal, 12)
+              const { data: nova, error } = await supabase.from('clientes_portal').insert({
+                nome_empresa: nomeEmpresa, nif, nome_responsavel: responsavel || null,
+                telefone_whatsapp: telefone.slice(0, 20), email, password_hash: passwordHash,
+                estado: 'Activo', aprovado_em: new Date().toISOString(),
+              }).select('id').single()
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(admin, 'portal_cliente_criado', 'portal', nova?.id, { empresa: nomeEmpresa })
+              return json(res, 201, { ok: true, id: nova?.id, password_gerada: password ? null : senhaFinal, message: 'Conta criada e activa. Enviamos as credenciais por e-mail e WhatsApp.' })
+            }
+
+            if (path.match(/^\/api\/admin\/portal\/clientes\/[a-f0-9-]+$/) && req.method === 'PATCH') {
+              const admin = currentAdmin(req)
+              if (!portalAdmin()) return json(res, 403, { ok: false, error: 'Sem permissão.' })
+              const id = path.split('/').pop() as string
+              const payload = await readBody(req) as { estado?: string; reset_password?: boolean; observacoes_admin?: string }
+              const { data: conta } = await supabase.from('clientes_portal')
+                .select('id, nome_empresa, nif, email, telefone_whatsapp, estado')
+                .eq('id', id).single() as unknown as { data: { id: string; nome_empresa: string; nif: string; email: string; telefone_whatsapp: string; estado: ClienteEstado } | null }
+              if (!conta) return json(res, 404, { ok: false, error: 'Conta não encontrada.' })
+              const updates: Record<string, unknown> = { updated_at: new Date().toISOString() }
+              let novaSenha: string | null = null
+              if (payload.estado !== undefined) {
+                if (!['Activo', 'Rejeitado', 'Suspenso'].includes(payload.estado)) return json(res, 400, { ok: false, error: 'Estado inválido.' })
+                updates.estado = payload.estado
+                if (payload.estado === 'Activo' && conta.estado !== 'Activo') updates.aprovado_em = new Date().toISOString()
+              }
+              if (payload.reset_password) {
+                novaSenha = gerarPasswordLegivel()
+                updates.password_hash = await bcrypt.hash(novaSenha, 12)
+              }
+              if (payload.observacoes_admin !== undefined) updates.observacoes_admin = String(payload.observacoes_admin).slice(0, 2000)
+              if (Object.keys(updates).length <= 1) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
+              const { error } = await supabase.from('clientes_portal').update(updates).eq('id', id)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              // notificações conforme a mudança
+              if (updates.estado === 'Activo' && conta.estado !== 'Activo' && !payload.reset_password) {
+                notifyCliente(
+                  conta.email, conta.telefone_whatsapp,
+                  'Conta aprovada — portal do cliente CFTEC',
+                  `<p>Olá <b>${escHtml(conta.nome_empresa)}</b>,</p><p>A conta da sua empresa no <b>portal do cliente CFTEC</b> foi <b style="color:#16a34a">aprovada</b>. ✅</p><p><b>Entre já:</b><br />cftec.co/cliente<br />Utilizador: o seu e-mail<br />Password: a que criou no registo</p><p>No portal acompanha pedidos de licença, licenças activas (chaves) e chamados de suporte — e abre novos chamados em segundos.</p>`,
+                  `CFTEC: ${conta.nome_empresa}, sua conta do portal foi APROVADA ✓ Entre em cftec.co/cliente com o seu e-mail e a password que criou.`,
+                )
+              }
+              if (updates.estado === 'Rejeitado' && conta.estado === 'Activo') {
+                notifyCliente(
+                  conta.email, conta.telefone_whatsapp,
+                  'Aviso sobre a sua conta — portal CFTEC',
+                  `<p>Olá ${escHtml(conta.nome_empresa)}, o acesso da sua empresa ao portal CFTEC foi desactivado. Contacte a equipa CFTEC para esclarecer esta decisão.</p>`,
+                  `CFTEC: o acesso da ${conta.nome_empresa} ao portal foi desactivado. Contacte-nos para esclarecer.`,
+                )
+              }
+              if (novaSenha && (updates.estado === 'Activo' || (!('estado' in updates) && conta.estado === 'Activo'))) {
+                notifyCliente(
+                  conta.email, conta.telefone_whatsapp,
+                  'Nova password de acesso — portal CFTEC',
+                  `<p>Olá <b>${escHtml(conta.nome_empresa)}</b>,</p><p>A sua password do portal foi redefinida. <b>Nova password:</b> <code style="user-select:all;font-size:16px">${novaSenha}</code></p><p>Entre em cftec.co/cliente (e-mail: ${escHtml(conta.email)}) e troque-a nas definições do portal quando quiser.</p>`,
+                  `CFTEC: nova password do portal para ${conta.nome_empresa}: ${novaSenha}\nEnter em cftec.co/cliente. Recomendamos troca-la em seguida.`,
+                )
+              }
+              logAuditoria(admin, 'portal_cliente_estado', 'portal', id, { estado: updates.estado || conta.estado, reset_password: !!novaSenha })
+              return json(res, 200, { ok: true, password_gerada: novaSenha })
+            }
+
+            if (path.match(/^\/api\/admin\/portal\/clientes\/[a-f0-9-]+$/) && req.method === 'DELETE') {
+              const admin = currentAdmin(req)
+              if (!portalAdmin()) return json(res, 403, { ok: false, error: 'Sem permissão.' })
+              const id = path.split('/').pop() as string
+              const { data: conta } = await supabase.from('clientes_portal').select('nome_empresa').eq('id', id).maybeSingle() as unknown as { data: { nome_empresa: string } | null }
+              const { error } = await supabase.from('clientes_portal').delete().eq('id', id)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(admin, 'portal_cliente_apagado', 'portal', id, { empresa: conta?.nome_empresa })
+              return json(res, 200, { ok: true })
+            }
+
             if (path === '/api/admin/licenses' && req.method === 'GET') {
               const { data, error } = await supabase
                 .from('licencas_palancasoft')
@@ -2452,8 +2900,23 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 if (payload.prioridade && ['Baixa', 'Média', 'Crítica'].includes(payload.prioridade)) update.prioridade = payload.prioridade
                 if (typeof payload.resolucao === 'string') update.resolucao = payload.resolucao.trim().slice(0, 1200) || null
                 if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
+                // estado prévio — o aviso ao cliente só dispara quando o estado muda de verdade
+                const { data: antesCh } = await supabase.from('chamados_suporte').select('estado').eq('id', id).limit(1)
+                const estadoAnterior = (antesCh && antesCh[0]?.estado) || null
                 const { data, error } = await supabase.from('chamados_suporte').update(update).eq('id', id).select('*').single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
+                // Notificação ao cliente (WhatsApp) quando o estado muda de verdade
+                const novoEstado = String((data as { estado?: string }).estado || '')
+                const telefoneCh = String((data as { telefone?: string }).telefone || '')
+                if (estadoAnterior && novoEstado !== estadoAnterior && telefoneCh && ['Em Resolução', 'Resolvido'].includes(novoEstado)) {
+                  const empresaCh = String((data as { cliente?: string }).cliente || '').replace(/<[^>]+>/g, '')
+                  const softwareCh = String((data as { software?: string }).software || '').replace(/<[^>]+>/g, '')
+                  const resolucaoTxt = String(((data as { resolucao?: string }).resolucao || '')).trim().replace(/<[^>]+>/g, '').slice(0, 300)
+                  const texto = novoEstado === 'Resolvido'
+                    ? `CFTEC: ${empresaCh} — o seu chamado de suporte (${softwareCh}) foi RESOLVIDO ✓. Acompanhe a resolução no portal: cftec.co/cliente${resolucaoTxt ? `\nResolução: ${resolucaoTxt}` : ''}`
+                    : `CFTEC: ${empresaCh} — o seu chamado (${softwareCh}) entrou EM RESOLUÇÃO. A equipa técnica está no assunto. Acompanhe em cftec.co/cliente.`
+                  void sendWhats(telefoneCh, texto)
+                }
                 logAuditoria(currentAdmin(req), 'chamado_actualizado', 'chamado', id, { campos: Object.keys(update) })
                 return json(res, 200, { ok: true, chamado: data })
               }

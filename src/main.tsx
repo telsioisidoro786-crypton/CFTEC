@@ -10,6 +10,7 @@ import './index.css'
 // e quem entra no site não descarrega todo o painel.
 const App = lazy(() => import('./App'))
 const AdminDashboard = lazy(() => import('./AdminDashboard'))
+const ClientePortal = lazy(() => import('./ClientePortal'))
 
 function Antecamara() {
   return (
@@ -27,7 +28,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <Toaster />
     <Suspense fallback={<Antecamara />}>
-      {window.location.pathname.startsWith('/admin') ? <AdminDashboard /> : <App />}
+      {window.location.pathname.startsWith('/admin') ? <AdminDashboard /> : window.location.pathname.startsWith('/cliente') ? <ClientePortal /> : <App />}
     </Suspense>
   </StrictMode>,
 )
