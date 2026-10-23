@@ -35,11 +35,17 @@ do $$ begin
   end if;
 end $$;
 
+-- oportunidades automáticas (renovação) não têm e-mail — a coluna passa a aceitar nulo
+alter table public.contacts alter column email drop not null;
+
 create index if not exists idx_contacts_pipeline
   on public.contacts (pipeline_stage, pipeline_at desc);
 
+-- índice único SIMPLES (NULLS são distintos por defeito no Postgres, mesmo efeito que o filtro parcial
+-- — e o ON CONFLICT/PostgREST não aceita índices parciais)
+drop index if exists idx_contacts_chave_auto;
 create unique index if not exists idx_contacts_chave_auto
-  on public.contacts (chave_auto) where chave_auto is not null;
+  on public.contacts (chave_auto);
 
 -- 2) RECIBOS / FATURA DEFINITIVA (FT)
 --    O nº FT nasce quando o pagamento é confirmado no painel e fica fixo

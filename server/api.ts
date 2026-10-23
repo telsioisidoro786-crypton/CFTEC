@@ -2226,31 +2226,38 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
                 .order('data_expiracao', { ascending: true })
                 .limit(50)
               const criadas: { id: string; cliente: string; dias: number; chave: string }[] = []
+              const falhas: string[] = []
               for (const lic of aExpirar || []) {
                 const expDate = new Date(`${String(lic.data_expiracao)}T00:00:00Z`)
                 const dias = Math.max(0, Math.round((expDate.getTime() - Date.parse(hoje)) / 86_400_000))
                 const dPt = expDate.toLocaleDateString('pt-PT', { timeZone: 'UTC' })
+                const chave = `auto-ren-${lic.id}`
+                // dedupe por chave: 1 oportunidade por licença (ON CONFLICT não serve com índice parcial)
+                const { data: jaExiste } = await supabase.from('contacts').select('id').eq('chave_auto', chave).maybeSingle()
+                if (jaExiste) continue
+                // monta só os campos com valor — contacts.email é NOT NULL (a licença não traz e-mail)
+                const novoReg: Record<string, unknown> = {
+                  name: `${lic.cliente_nome} — Renovação/Upgrade`,
+                  service_interest: 'Renovação PalancaSoft',
+                  message: `Licença ${lic.chave_licenca} expira a ${dPt} (faltam ${dias} dia(s)). Sugerir renovação ou upgrade de plano (mais utilizadores / novos módulos).`,
+                  status: 'unread',
+                  pipeline_stage: 'novo',
+                  moeda: 'AOA',
+                  proximo_passo: `Ligar ao cliente antes de ${dPt} para fechar renovação/upgrade.`,
+                  origem_auto: 'licenca_expira',
+                  chave_auto: chave,
+                }
                 const { data: novaC, error: errC } = await supabase
                   .from('contacts')
-                  .upsert({
-                    name: `${lic.cliente_nome} — Renovação/Upgrade`,
-                    service_interest: 'Renovação PalancaSoft',
-                    message: `Licença ${lic.chave_licenca} expira a ${dPt} (faltam ${dias} dia(s)). Sugerir renovação ou upgrade de plano (mais utilizadores / novos módulos).`,
-                    status: 'unread',
-                    pipeline_stage: 'novo',
-                    moeda: 'AOA',
-                    proximo_passo: `Ligar ao cliente antes de ${dPt} para fechar renovação/upgrade.`,
-                    origem_auto: 'licenca_expira',
-                    chave_auto: `auto-ren-${lic.id}`,
-                  }, { onConflict: 'chave_auto', ignoreDuplicates: true })
+                  .insert(novoReg)
                   .select('id')
                   .maybeSingle()
-                if (errC) continue // sem bloquear o funil por um contacto problemático
+                if (errC) { falhas.push(`${lic.chave_licenca}: ${errC.message}`); continue } // sem bloquear o funil por um contacto problemático
                 if (novaC) criadas.push({ id: novaC.id, cliente: lic.cliente_nome, dias, chave: lic.chave_licenca })
               }
               if (criadas.length)
                 fireAdminAlert(`📈 CRM: ${criadas.length} oportunidade(s) de renovação criada(s) no funil — licenças a expirar em ≤15 dias.`)
-              return json(res, 200, { ok: true, licencas_a_expirar: (aExpirar || []).length, criadas })
+              return json(res, 200, { ok: true, licencas_a_expirar: (aExpirar || []).length, criadas, falhas })
             }
 
             if (path.match(/^\/api\/admin\/contacts\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
@@ -2398,7 +2405,7 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               } else {
                 let seq = 1
                 const { data: curSeq } = await supabase.from('settings').select('value').eq('key', 'proforma_seq').maybeSingle()
-                if (curSeq?.value && !isNaN(parseInt(curSeq.value))) seq = parseInt(curSeq.value)
+                if (curSeq?.value && !isNaN(parseInt(curSeq.value)) && parseInt(curSeq.value) > 0) seq = parseInt(curSeq.value)
                 numero = `PF-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`
                 await supabase.from('settings').upsert({ key: 'proforma_seq', value: String(seq + 1), description: 'Contador de faturas proforma emitidas no painel' }, { onConflict: 'key' })
                 await supabase.from('pedidos_licencas').update({ pf_numero: numero }).eq('id', order.id)
