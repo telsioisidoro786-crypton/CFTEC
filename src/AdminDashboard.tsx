@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import { Avatar, AvatarFallback } from './components/ui/avatar'
@@ -617,6 +617,11 @@ export default function AdminDashboard() {
   const [downloadMetrics, setDownloadMetrics] = useState<{ total30: number; porDia: Record<string, number>; topo: { id: string; name: string; count: number }[] } | null>(null)
   const [portalSettings, setPortalSettings] = useState<Record<string, string>>({})
   const [savingPortal, setSavingPortal] = useState(false)
+  // Monitorização de erros (logs_erros)
+  type LogErroRow = { id: string; criado_em: string; origem: 'client' | 'server'; nivel: string; mensagem: string; detalhe: string | null; pagina: string | null; user_agent: string | null; resolvido: boolean }
+  const [logErros, setLogErros] = useState<LogErroRow[]>([])
+  const [logErrosVer, setLogErrosVer] = useState<'activos' | 'resolvidos'>('activos')
+  const [logErrosAResolvidos, setLogErrosAResolvidos] = useState(false)
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [showUserForm, setShowUserForm] = useState(false)
   const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'gestor' })
@@ -1383,6 +1388,28 @@ export default function AdminDashboard() {
   }
 
   // Notificações WhatsApp (CallMeBot) — botão de teste das chaves gravadas
+  // Monitorização — erros do client + server (tabela logs_erros)
+  const carregarLogErros = useCallback(async (ver: 'activos' | 'resolvidos') => {
+    try {
+      const r = await fetch(`/api/admin/log-erros?estado=${ver === 'resolvidos' ? 'resolvidos' : 'activos'}`, { credentials: 'include' })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) setLogErros(b.erros || [])
+      else notify('Não foi possível ler o log de erros: ' + (b.error || r.status))
+    } catch { /* silencioso: painel continua */ }
+  }, [])
+  const resolverLogErros = async () => {
+    const ids = logErros.map(x => x.id)
+    if (!ids.length) return
+    setLogErrosAResolvidos(true)
+    try {
+      const r = await fetch('/api/admin/log-erros/resolver', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) { notify(`✅ ${b.resolvidos} erro(s) marcado(s) como resolvido(s)`); await carregarLogErros('activos') }
+      else notify('Falhou: ' + (b.error || r.status))
+    } catch { notify('Falha de rede') }
+    setLogErrosAResolvidos(false)
+  }
+
   const testarWhatsapp = async () => {
     notify('A enviar mensagem de teste…')
     try {
@@ -3242,6 +3269,30 @@ export default function AdminDashboard() {
                 <Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar chaves</>}</Button>
               </div>
             </form>
+          </Card>}
+          {['super_admin', 'developer'].includes(adminUser?.level || 'super_admin') && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">MONITORIZAÇÃO · ERROS</span><h2>Diário de erros (browser + server)</h2></div></div>
+            <p>Cada erro JS do site/painel/portal e cada falha do servidor cai na tabela <code>logs_erros</code> — sem Sentry, sem serviço externo. Fecha o(s) erro(s) depois de tratado(s).</p>
+            <div className="settings-actions" style={{ marginBottom: 12 }}>
+              <Button type="button" size="sm" variant={logErrosVer === 'activos' ? 'default' : 'outline'} onClick={() => { setLogErrosVer('activos'); void carregarLogErros('activos') }}>Activos</Button>
+              <Button type="button" size="sm" variant={logErrosVer === 'resolvidos' ? 'default' : 'outline'} onClick={() => { setLogErrosVer('resolvidos'); void carregarLogErros('resolvidos') }}>Resolvidos</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => void carregarLogErros(logErrosVer)}>Atualizar</Button>
+              {logErrosVer === 'activos' && logErros.length > 0 && <Button type="button" size="sm" disabled={logErrosAResolvidos} onClick={() => void resolverLogErros()}>{logErrosAResolvidos ? 'A resolver…' : <>Marcar todos resolvidos</>}</Button>}
+            </div>
+            {logErros.length === 0 ? <small className="settings-hint">{logErrosVer === 'activos' ? 'Sem erros activos — estão em silêncio (ou o SQL do logs_erros ainda não correu; silêncio até confirmação).' : 'Nada aqui ainda.'}</small>
+            : <div style={{ display: 'grid', gap: 10, maxHeight: 420, overflow: 'auto' }}>
+              {logErros.map(x => (
+                <div key={x.id} style={{ padding: '10px 12px', borderRadius: 10, border: '1px solid rgba(148,163,184,.25)', background: 'rgba(148,163,184,.06)', font: '500 12px/1.45 ui-sans-serif, system-ui' }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
+                    <span style={{ padding: '1px 7px', borderRadius: 99, fontSize: 10, fontWeight: 700, background: x.origem === 'client' ? 'rgba(56,189,248,.15)' : 'rgba(251,146,60,.15)' }}>{x.origem}</span>
+                    <b style={{ wordBreak: 'break-word' }}>{x.mensagem}</b>
+                    <small style={{ color: 'rgb(148,163,184)', marginLeft: 'auto' }}>{new Date(x.criado_em).toLocaleString('pt-PT')}</small>
+                  </div>
+                  {x.pagina && <div style={{ color: 'rgb(148,163,184)', fontSize: 11, marginTop: 4, wordBreak: 'break-all' }}>{x.pagina}</div>}
+                  {x.detalhe && <pre style={{ margin: '6px 0 0', padding: 8, borderRadius: 8, background: 'rgba(0,0,0,.25)', fontSize: 11, lineHeight: 1.4, overflow: 'auto', maxHeight: 110, whiteSpace: 'pre-wrap' }}>{x.detalhe}</pre>}
+                  {x.user_agent && <div style={{ color: 'rgb(148,163,184)', fontSize: 10, marginTop: 4 }}>{x.user_agent.slice(0, 140)}</div>}
+                </div>
+              ))}
+            </div>}
           </Card>}
           <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONTA</span><h2>Perfil do administrador</h2></div></div><p>Actualize o nome exibido no painel. O e-mail de acesso é fixo.</p><div className="settings-profile"><Avatar className="admin-avatar-large"><AvatarFallback>{(profileName.trim()[0] || adminUser?.name?.[0] || 'A').toUpperCase()}</AvatarFallback></Avatar><form className="settings-form" onSubmit={handleProfileSave}><label className="settings-field">Nome de exibição<input value={profileName} onChange={(e) => setProfileName(e.target.value)} required maxLength={120} /></label><label className="settings-field">E-mail de acesso<input value={adminUser?.email || ''} disabled /><small className="settings-hint">Não é alterável nesta versão.</small></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingProfile}>{savingProfile ? 'A guardar…' : <><Check size={14} /> Guardar perfil</>}</Button></div></form></div></Card><Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA</span><h2>Mudar password</h2></div></div><p>A password actual é verificada (bcrypt) antes de qualquer alteração. Mínimo 8 caracteres.</p><form className="settings-form" onSubmit={handlePasswordChange}><label className="settings-field">Password actual<input type="password" value={pwCurrent} onChange={(e) => setPwCurrent(e.target.value)} required autoComplete="current-password" /></label><div className="settings-row"><label className="settings-field">Nova password<input type="password" value={pwNew} onChange={(e) => setPwNew(e.target.value)} required minLength={8} autoComplete="new-password" /></label><label className="settings-field">Confirmar nova<input type="password" value={pwConfirm} onChange={(e) => setPwConfirm(e.target.value)} required minLength={8} autoComplete="new-password" /></label></div>{pwNew && pwConfirm && pwNew !== pwConfirm && <p className="settings-warn">As passwords não coincidem.</p>}{pwNew && pwNew.length < 8 && <p className="settings-warn">A nova password precisa de pelo menos 8 caracteres.</p>}<div className="settings-actions"><Button type="submit" size="sm" disabled={savingPassword || (pwNew.length > 0 && pwNew !== pwConfirm)}>{savingPassword ? 'A alterar…' : <><Check size={14} /> Alterar password</>}</Button></div></form><div className="security-list"><div className="security-item"><ShieldCheck size={18} /><div><span>Autenticação de administrador</span><small>Protegida por JWT + cookie HttpOnly</small></div><span className="security-badge security-badge--ok">Activa</span></div><div className="security-item"><Database size={18} /><div><span>Base de dados gerida</span><small>Conexão activa e monitorizada</small></div><span className="security-badge security-badge--ok">Ligada</span></div></div></Card>{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PORTAL PÚBLICO</span><h2>Configuração do site</h2></div></div><p>Directório telefónico, WhatsApp comercial e o banner de avisos exibido no topo do site.</p><form className="settings-form" onSubmit={handlePortalSave}><div className="settings-row"><label className="settings-field">Telefone do directório<input value={portalSettings['telefone_directorio'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, telefone_directorio: e.target.value }))} placeholder="+244 900 000 000" maxLength={40} /></label><label className="settings-field">WhatsApp comercial (só dígitos)<input value={portalSettings['whatsapp_comercial'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, whatsapp_comercial: e.target.value }))} placeholder="244900000000" maxLength={25} /></label></div><label className="settings-field">Mensagem do banner<input value={portalSettings['banner_mensagem'] || ''} onChange={(e) => setPortalSettings(f => ({ ...f, banner_mensagem: e.target.value }))} placeholder="Ex.: Nova versão do PalancaSoft disponível!" maxLength={140} /></label><label className="settings-field">Banner no site<select value={portalSettings['banner_activo'] || 'false'} onChange={(e) => setPortalSettings(f => ({ ...f, banner_activo: e.target.value }))}><option value="false">Desactivado</option><option value="true">Activado</option></select></label><div className="settings-actions"><Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar configuração</>}</Button></div></form></Card>}{(adminUser?.level || 'super_admin') === 'super_admin' && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">GESTÃO DE ACESSOS</span><h2>Utilizadores do painel</h2></div><Button size="sm" onClick={() => setShowUserForm(true)}><Plus size={15} /> Novo utilizador</Button></div><p>Níveis: <strong>Super Admin</strong> (tudo), <strong>Gestor Comercial</strong> (contactos, licenças, parceiros, catálogo) e <strong>Técnico de Suporte</strong> (contactos, catálogo e mídias).</p><div className="user-admin-list">{users.map((user) => { const isSelf = adminUser?.email?.toLowerCase() === user.email.toLowerCase(); const protegido = user.role === 'developer' && !ehDev; return <div key={user.id} className={`user-admin-row ${protegido ? 'user-admin-row--dev' : ''}`}><div className="user-main"><strong>{user.name}{isSelf && <small> (você)</small>}{protegido && <small> · conta Developer 🔒</small>}</strong><span>{user.email}</span></div><select className="user-role-select" value={user.role} disabled={isSelf || protegido} title={protegido ? 'A conta Developer (Master Admin) só é gerida por outra conta Developer' : undefined} onChange={(e) => updateUser(user, { role: e.target.value })}>{ROLES.map(r => <option key={r} value={r}>{labelRole(r)}</option>)}</select><span className={`active-pill ${user.is_active && user.role !== 'developer' ? '' : 'inactive'}`}>{user.role === 'developer' ? '🔒 Master' : user.is_active ? 'Activo' : 'Desactivado'}</span><div className="service-admin-actions">{!isSelf && !protegido && <button className="icon-btn" title={user.is_active ? 'Desactivar' : 'Activar'} onClick={() => updateUser(user, { is_active: !user.is_active })}><Power size={16} /></button>}{!protegido && <button className="icon-btn" title="Redefinir password" onClick={() => { setPwResetUser(user); setPwResetForm({ pw: '', pw2: '' }) }}><KeyRound size={16} /></button>}{!isSelf && !protegido && <button className="icon-btn danger" title="Eliminar" onClick={() => setDeletingUserId(user.id)}><Trash2 size={16} /></button>}</div></div> })}</div></Card>}
           <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · 2º PASSO</span><h2>Autenticação em dois passos (2FA)</h2></div></div><p>Com o 2FA activo, depois da password o painel pede um código de 6 dígitos de um app autenticador (Google Authenticator, Authy, …). Cada conta activa o seu — aqui.</p>

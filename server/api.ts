@@ -6,13 +6,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import dotenv from 'dotenv'
 import webpush from 'web-push'
 
-// Prevent process crashes from unhandled rejections
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason)
-})
-process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error)
-})
+// Crashes do processo (uncaughtException / unhandledRejection) estão registados
+// em baixo, junto do logErro — vão ao console E à tabela logs_erros.
 
 // Load environment variables for server middleware
 // override=true: edições ao .env têm efeito imediato mesmo em restarts no mesmo processo
@@ -945,7 +940,42 @@ type ClienteRow = {
 // Developer (Master Admin) tem acesso pleno igual ao super_admin — mas só ele gere a licença
 const nivelPleno = (nivel?: string | null) => nivel === 'super_admin' || nivel === 'developer'
 
-// ─── AUDITORIA (audit_log) ─── Cada mutação relevante deixa rasto: quem, quando, o quê.
+// ─── MONITORIZAÇÃO DE ERROS (logs_erros) ─── client + server numa tabela só.
+// fire-and-forget igual à auditoria: um erro a registar nunca atrasa/quebra nada.
+const logErro = (registro: {
+  origem: 'client' | 'server'
+  nivel?: 'erro' | 'aviso'
+  mensagem: string
+  detalhe?: string | null
+  pagina?: string | null
+  user_agent?: string | null
+  contexto?: unknown
+}) => {
+  if (!supabase) return
+  void supabase.from('logs_erros').insert({
+    origem: registro.origem,
+    nivel: registro.nivel || 'erro',
+    mensagem: (registro.mensagem || 'erro desconhecido').slice(0, 500),
+    detalhe: registro.detalhe ? registro.detalhe.slice(0, 4000) : null,
+    pagina: registro.pagina || null,
+    user_agent: registro.user_agent || null,
+    contexto: registro.contexto == null ? null : JSON.stringify(registro.contexto).slice(0, 2000),
+  }).then(({ error }) => { if (error) console.error('[LOG-ERRO]', error.message) }, () => {})
+}
+
+// Crashes do processo (node) também ficam registados, não só no console.
+const crashOriginal = (error: unknown) => console.error('Uncaught Exception:', error)
+process.on('uncaughtException', (error) => {
+  crashOriginal(error)
+  logErro({ origem: 'server', mensagem: 'uncaughtException', detalhe: error instanceof Error ? `${error.message}\n${error.stack}` : String(error) })
+})
+const rejOriginal = (reason: unknown, promise: Promise<unknown>) => console.error('Unhandled Rejection at:', promise, 'reason:', reason)
+process.on('unhandledRejection', (reason, promise) => {
+  rejOriginal(reason, promise)
+  logErro({ origem: 'server', nivel: 'aviso', mensagem: 'unhandledRejection', detalhe: reason instanceof Error ? `${reason.message}\n${reason.stack}` : String(reason) })
+})
+
+
 // fire-and-forget — a auditoria nunca atrasa nem quebra a resposta do pedido.
 const logAuditoria = (actor: { email?: string; level?: string } | null | undefined, acao: string, entidade: string, entidadeId?: string | null, detalhe?: Record<string, unknown>) => {
   if (!supabase) return
@@ -1479,6 +1509,15 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
             const softwareNames = softwareRes.data?.map(s => s.name) || []
             const options = ['Pedido geral', ...serviceTitles, ...softwareNames]
             return json(res, 200, { ok: true, options })
+          }
+
+          // REPORT DE ERROS DO BROWSER (público, fire-and-forget — o formato é
+          // o mais simples possível para nunca rebentar com o próprio reporter)
+          if (path === '/api/log-erro' && req.method === 'POST') {
+            const corpo = await readBody(req) as { mensagem?: string; detalhe?: string; pagina?: string; contexto?: unknown }
+            const user_agent = (req.headers['user-agent'] as string) || null
+            logErro({ origem: 'client', mensagem: String(corpo.mensagem || 'erro desconhecido').slice(0, 500), detalhe: corpo.detalhe ? String(corpo.detalhe).slice(0, 4000) : null, pagina: corpo.pagina ? String(corpo.pagina).slice(0, 300) : null, user_agent, contexto: corpo.contexto })
+            return json(res, 204, { ok: true })
           }
 
           // PUBLIC CONTACT (no auth required)
@@ -2902,6 +2941,25 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
             }
 
             // TESTE de notificação WhatsApp (CallMeBot) — valida as chaves a partir do painel
+            // MONITORIZAÇÃO — últimos erros (client + server) para o painel
+            if (path === '/api/admin/log-erros' && req.method === 'GET') {
+              if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+              const resolvidos = new URL(req.url || '/', 'http://x').searchParams.get('estado') === 'resolvidos'
+              const { data, error } = await supabase.from('logs_erros').select('*').eq('resolvido', resolvidos).order('criado_em', { ascending: false }).limit(50)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              return json(res, 200, { ok: true, erros: data || [] })
+            }
+            if (path === '/api/admin/log-erros/resolver' && req.method === 'POST') {
+              const { ids } = await readBody(req) as { ids?: string[] }
+              const lista = (ids || []).filter(x => typeof x === 'string' && /^[a-f0-9-]{36}$/i.test(x)).slice(0, 100)
+              if (!lista.length) return json(res, 400, { ok: false, error: 'Nenhum id válido.' })
+              const adminAtual = currentAdmin(req)
+              const por = adminAtual?.email || 'admin'
+              const { error } = await supabase.from('logs_erros').update({ resolvido: true, resolvido_por: por, resolvido_em: new Date().toISOString() }).in('id', lista)
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(adminAtual, 'erros_resolvidos', 'logs_erros', null, { ids: lista })
+              return json(res, 200, { ok: true, resolvidos: lista.length })
+            }
             if (path === '/api/admin/settings/whatsapp-teste' && req.method === 'POST') {
               const adminTeste = currentAdmin(req)
               if (!adminTeste || !nivelPleno(adminTeste.level || '')) return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou Developer testam as notificações.' })
