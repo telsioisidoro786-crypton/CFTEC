@@ -1308,3 +1308,82 @@ html[data-theme='dark'] .contact-status--em_analise,html[data-theme='dark'] .con
 html[data-theme='dark'] .contact-status--rejeitado{background:rgba(248,113,113,.14);color:#fca5a5}
 html[data-theme='dark'] .contact-status--proposta{background:rgba(167,139,250,.15);color:#c4b5fd}
 html[data-theme='dark'] .csat-mini{background:rgba(250,204,21,.13);color:#fde047}
+
+/* ============================================================
+   PONTO 5 — FATURAÇÃO E CRM LEVE
+   conj. 1 · Funil comercial kanban de contactos (pipe-*)
+   conj. 2 · Modais: editar oportunidade + confirmar liquidação
+   ============================================================ */
+.pipe-board{display:grid;grid-template-columns:repeat(5,minmax(190px,1fr));gap:12px;align-items:start;overflow-x:auto;padding-bottom:6px}
+.pipe-col{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:12px;min-height:340px;display:flex;flex-direction:column;gap:8px;transition:background .2s ease,border-color .2s ease}
+.pipe-col:hover{background:#f1f5f9}
+.pipe-col.pipe-col--drag{border-style:dashed}
+.pipe--novo{border-top:3px solid #3b82f6}
+.pipe--negociacao{border-top:3px solid #f59e0b}
+.pipe--proposta{border-top:3px solid #8b5cf6}
+.pipe--ganho{border-top:3px solid #16a34a}
+.pipe--perdido{border-top:3px solid #ef4444}
+.pipe-col-head{display:flex;align-items:center;justify-content:space-between}
+.pipe-col-head b{font-size:.66rem;letter-spacing:.02em;text-transform:uppercase;color:#475569}
+.pipe-col-head i{display:grid;place-items:center;min-width:22px;height:22px;padding:0 6px;border-radius:20px;background:#fff;border:1px solid #e2e8f0;font:700 .62rem 'Space Grotesk',sans-serif;color:#64748b;font-style:normal}
+.pipe-col-vals{display:flex;gap:6px;flex-wrap:wrap}
+.pipe-col-vals span{font:700 .6rem 'Space Grotesk',sans-serif;background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:2px 8px;color:#0f766e}
+.pipe-col-hint{display:block;text-align:center;padding:26px 8px;color:#94a3b8;font-size:.62rem;border:1px dashed #e2e8f0;border-radius:11px}
+.pipe-card{background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:10px 11px;cursor:grab;display:flex;flex-direction:column;gap:5px;box-shadow:0 1px 2px rgba(15,23,42,.05);transition:box-shadow .2s ease,transform .2s ease,border-color .2s ease}
+.pipe-card:hover{transform:translateY(-2px);box-shadow:0 10px 22px rgba(15,23,42,.12);border-color:#cbd5e1}
+.pipe-card:active{cursor:grabbing}
+.pipe-card--drag{opacity:.45;transform:rotate(2deg) scale(.98);cursor:grabbing}
+.pipe-card-top{display:flex;align-items:center;gap:8px}
+.pipe-card-top strong{font-size:.78rem;color:#0f172a;line-height:1.25;flex:1;min-width:0}
+.pipe-auto{color:#7c3aed;flex:none}
+.pipe-card small{font-size:.62rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipe-card-valor{font-size:.72rem;color:#475569;display:flex;align-items:baseline;gap:3px;flex-wrap:wrap}
+.pipe-card-valor b{font:700 .74rem 'Space Grotesk',sans-serif;color:#0f766e}
+.pipe-card-valor em{color:#94a3b8;font-size:.62rem;font-style:normal}
+.pipe-card-next{font-size:.62rem;color:#92400e;background:#fef3c7;border-radius:7px;padding:3px 7px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.pipe-card-foot{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:2px}
+.pipe-resp{font-size:.6rem;color:#334155;background:#f1f5f9;border-radius:8px;padding:2px 7px;max-width:62%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pipe-card-foot .contact-status{font-size:.56rem;padding:2px 6px}
+/* modal — editar oportunidade */
+.pipe-modal-info{display:flex;gap:10px;align-items:center;padding:10px 12px;border:1px solid #e2e8f0;border-radius:10px;background:#f8fafc;margin-bottom:14px}
+.pipe-modal-info .contact-initials{width:36px;height:36px;font-size:.78rem}
+.pipe-modal-info strong{font-size:.85rem;color:#0f172a}
+.pipe-modal-info small{display:table;color:#64748b;font-size:.66rem}
+/* modal — confirmar liquidação */
+.pag-modal-resumo{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px}
+.pag-modal-resumo>div{border:1px solid #e2e8f0;border-radius:10px;padding:8px 10px;background:#f8fafc}
+.pag-modal-resumo small{display:block;font-size:.58rem;color:#64748b;text-transform:uppercase;letter-spacing:.05em}
+.pag-modal-resumo strong{font-size:.76rem;color:#0f172a;word-break:break-all}
+input[type=file]{font-size:.68rem;color:#475569;max-width:100%}
+html[data-theme='dark'] input[type=file]{color:#94a3b8}
+
+/* ---------- DARK MODE (tema escuro) ---------- */
+html[data-theme='dark'] .pipe-col{background:#0b1424;border-color:#28354a}
+html[data-theme='dark'] .pipe-col:hover{background:#101a2e}
+html[data-theme='dark'] .pipe-col-head b{color:#94a3b8}
+html[data-theme='dark'] .pipe-col-head i{background:#111c31;border-color:#28354a;color:#cbd5e1}
+html[data-theme='dark'] .pipe-col-vals span{background:#111c31;border-color:#28354a;color:#5eead4}
+html[data-theme='dark'] .pipe-col-hint{color:#64748b;border-color:#28354a}
+html[data-theme='dark'] .pipe-card{background:#101a2e;border-color:#28354a;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+html[data-theme='dark'] .pipe-card:hover{border-color:#3b4c68;box-shadow:0 10px 22px rgba(0,0,0,.55)}
+html[data-theme='dark'] .pipe-card-top strong{color:#e2e8f0}
+html[data-theme='dark'] .pipe-card small{color:#94a3b8}
+html[data-theme='dark'] .pipe-card-valor{color:#cbd5e1}
+html[data-theme='dark'] .pipe-card-valor b{color:#5eead4}
+html[data-theme='dark'] .pipe-card-valor em{color:#64748b}
+html[data-theme='dark'] .pipe-card-next{background:rgba(245,158,11,.13);color:#fbbf24}
+html[data-theme='dark'] .pipe-resp{background:#17233a;color:#cbd5e1}
+html[data-theme='dark'] .pipe-modal-info{background:#0e1828;border-color:#28354a}
+html[data-theme='dark'] .pipe-modal-info strong{color:#e2e8f0}
+html[data-theme='dark'] .pipe-modal-info small{color:#94a3b8}
+html[data-theme='dark'] .pag-modal-resumo>div{background:#0e1828;border-color:#28354a}
+html[data-theme='dark'] .pag-modal-resumo small{color:#94a3b8}
+html[data-theme='dark'] .pag-modal-resumo strong{color:#e2e8f0}
+/* apêndice: kanban de PEDIDOS também deve escurecer (furo do scan anterior) */
+html[data-theme='dark'] .kanban-col{background:#0b1424;border-color:#28354a}
+html[data-theme='dark'] .kanban-col:hover{background:#101a2e}
+html[data-theme='dark'] .kanban-col-head b{color:#94a3b8}
+html[data-theme='dark'] .kanban-col-head i{background:#111c31;border-color:#28354a;color:#cbd5e1}
+html[data-theme='dark'] .kanban-col-hint{color:#64748b}
+html[data-theme='dark'] .kanban-card{background:#101a2e;border-color:#28354a;box-shadow:0 1px 2px rgba(0,0,0,.45)}
+html[data-theme='dark'] .kanban-card:hover{box-shadow:0 8px 20px rgba(0,0,0,.55)}

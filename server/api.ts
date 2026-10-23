@@ -148,6 +148,15 @@ async function sendEmailRaw(to: string, subject: string, html: string): Promise<
   }
 }
 
+/* ================= PROFORMA / FT — helpers partilhados ================= */
+/** Preço de catálogo do software pedido (procura fuzzy por nome do catálogo). */
+function precoCatalogo(catalogo: { name: string; price: number }[] | null, nome: string): number | null {
+  const nomeLower = String(nome || '').toLowerCase().trim()
+  if (!nomeLower) return null
+  const match = (catalogo || []).find(s => s.price && (s.name.toLowerCase() === nomeLower || s.name.toLowerCase().includes(nomeLower) || nomeLower.includes(s.name.toLowerCase().split(' ')[0])))
+  return match?.price ?? null
+}
+
 // ================= PROFORMA PDF (sem dependências — PDF 1.4 manual) =================
 const escPdf = (t: string) => t.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
 
@@ -1656,6 +1665,63 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               lista.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
               return json(res, 200, { ok: true, pedidos: lista })
             }
+
+            // PROFORMA PDF (portal do cliente) — só documentos da própria conta
+            if (path.match(/^\/api\/portal\/pedidos\/([a-f0-9-]+)\/proforma\.pdf$/) && req.method === 'GET') {
+              const pid = path.split('/')[4]
+              const { data: orderPf } = await supabase.from('pedidos_licencas').select('*').eq('id', pid).maybeSingle()
+              const donoPf = orderPf && (orderPf.nif === conta.nif || String(orderPf.email || '').toLowerCase() === String(conta.email).toLowerCase())
+              if (!orderPf || !donoPf)
+                return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
+              const numeroPf: string = (orderPf as { pf_numero?: string | null }).pf_numero || `PF-${new Date(String(orderPf.created_at)).getFullYear()}-WEB`
+              const { data: catalogoPf } = await supabase.from('softwares').select('name, price')
+              const { data: ibanRowPf } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
+              const pdfPf = buildProformaPdf({
+                numero: numeroPf,
+                pedido: String(orderPf.id).slice(0, 8).toUpperCase(),
+                data: new Date(String(orderPf.created_at)).toLocaleDateString('pt-PT'),
+                empresa: orderPf.nome_empresa, nif: orderPf.nif, responsavel: orderPf.nome_responsavel,
+                email: orderPf.email || '—', provincia: orderPf.provincia || '—',
+                software: orderPf.software_nome, forma: orderPf.forma_pagamento || 'Transferência / IBAN',
+                preco: precoCatalogo(catalogoPf, orderPf.software_nome),
+                iban: ibanRowPf?.value || '( IBAN na factura da CFTEC )',
+              })
+              res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="proforma-${numeroPf.replace('/', '-')}.pdf"` })
+              return res.end(pdfPf)
+            }
+
+            // FATURA DEFINITIVA PDF (portal) — exige estado Pago + recibo emitido no painel
+            if (path.match(/^\/api\/portal\/pedidos\/([a-f0-9-]+)\/ft\.pdf$/) && req.method === 'GET') {
+              const pid = path.split('/')[4]
+              const { data: orderFt } = await supabase.from('pedidos_licencas').select('*').eq('id', pid).maybeSingle()
+              const donoFt = orderFt && (orderFt.nif === conta.nif || String(orderFt.email || '').toLowerCase() === String(conta.email).toLowerCase())
+              if (!orderFt || !donoFt)
+                return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
+              if (orderFt.status !== 'Pago')
+                return json(res, 409, { ok: false, error: 'A Fatura Definitiva só fica disponível depois da liquidação.' })
+              const { data: reciboP } = await supabase
+                .from('recibos_faturacao')
+                .select('numero, iban, valor')
+                .eq('pedido_id', pid)
+                .order('criado_em', { ascending: false })
+                .limit(1)
+                .maybeSingle()
+              if (!reciboP)
+                return json(res, 404, { ok: false, error: 'A Fatura Definitiva ainda não foi emitida.' })
+              const pdfFt = buildFaturaPdf({
+                numero: String(reciboP.numero),
+                pedido: String(orderFt.id).slice(0, 8).toUpperCase(),
+                data: new Date().toLocaleDateString('pt-PT'),
+                empresa: orderFt.nome_empresa, nif: orderFt.nif, responsavel: orderFt.nome_responsavel,
+                email: orderFt.email || '—', provincia: orderFt.provincia || '—',
+                software: orderFt.software_nome, forma: orderFt.forma_pagamento || 'Transferência / IBAN',
+                preco: reciboP.valor ?? precoCatalogo(
+                  (await supabase.from('softwares').select('name, price')).data, orderFt.software_nome),
+                iban: String(reciboP.iban || '( IBAN da liquidação )'),
+              })
+              res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fatura-${String(reciboP.numero).replace('/', '-')}.pdf"` })
+              return res.end(pdfFt)
+            }
             if (path === '/api/portal/licencas' && req.method === 'GET') {
               const { data, error } = await supabase.from('licencas_palancasoft').select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, created_at').eq('nif', conta.nif).order('created_at', { ascending: false })
               if (error) return json(res, 500, { ok: false, error: error.message })
@@ -2085,30 +2151,106 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
             }
             
             if (path === '/api/admin/contacts' && req.method === 'GET') {
-              const { data } = await supabase
+              // Ponto 5: campos do funil; se a migração ainda não correu, degrada para a leitura clássica
+              const { data: dataPipe, error: errPipe } = await supabase
+                .from('contacts')
+                .select('id, name, email, phone, service_interest, message, status, created_at, pipeline_stage, valor_estimado, moeda, proximo_passo, responsavel, origem_auto')
+                .order('created_at', { ascending: false })
+                .limit(200)
+              if (!errPipe) return json(res, 200, dataPipe || [])
+              const { data: dataClassic } = await supabase
                 .from('contacts')
                 .select('id, name, email, phone, service_interest, message, status, created_at')
                 .order('created_at', { ascending: false })
                 .limit(30)
-              return json(res, 200, data || [])
+              return json(res, 200, dataClassic || [])
             }
 
             if (path.match(/^\/api\/admin\/contacts\/([a-f0-9-]+)$/) && req.method === 'PATCH') {
               const id = path.split('/').pop()
-              const payload = await readBody(req) as { status?: string }
+              const payload = await readBody(req) as Partial<{ status: string; pipeline_stage: string; valor_estimado: number; moeda: string; proximo_passo: string; responsavel: string }>
               const allowed = ['unread', 'read', 'archived', 'em_contacto', 'proposta', 'fechado']
-              if (!payload.status || !allowed.includes(payload.status))
-                return json(res, 400, { ok: false, error: `Estado inválido. Use: ${allowed.join(', ')}.` })
+              const stages = ['novo', 'negociacao', 'proposta', 'ganho', 'perdido']
+              const updates: Record<string, unknown> = {}
+              if (payload.status !== undefined) {
+                if (!allowed.includes(payload.status))
+                  return json(res, 400, { ok: false, error: `Estado inválido. Use: ${allowed.join(', ')}.` })
+                updates.status = payload.status
+              }
+              // Funil comercial (Ponto 5) — pipeline_stage inc. timestamp no arrastar
+              if (payload.pipeline_stage !== undefined) {
+                if (!stages.includes(payload.pipeline_stage))
+                  return json(res, 400, { ok: false, error: `Fase de funil inválida. Use: ${stages.join(', ')}.` })
+                updates.pipeline_stage = payload.pipeline_stage
+                updates.pipeline_at = new Date().toISOString()
+              }
+              if (payload.valor_estimado !== undefined) {
+                const v = Number(payload.valor_estimado)
+                if (isNaN(v) || v < 0 || v > 9_999_999_999) return json(res, 400, { ok: false, error: 'Valor estimado inválido.' })
+                updates.valor_estimado = v
+              }
+              if (payload.moeda !== undefined) {
+                if (!['AOA', 'USD'].includes(payload.moeda)) return json(res, 400, { ok: false, error: 'Moeda inválida. Use AOA ou USD.' })
+                updates.moeda = payload.moeda
+              }
+              if (payload.proximo_passo !== undefined) updates.proximo_passo = String(payload.proximo_passo).slice(0, 300) || null
+              if (payload.responsavel !== undefined) updates.responsavel = String(payload.responsavel).slice(0, 120) || null
+              if (!Object.keys(updates).length)
+                return json(res, 400, { ok: false, error: 'Nenhum campo para actualizar.' })
 
               const { data, error } = await supabase
                 .from('contacts')
-                .update({ status: payload.status })
+                .update(updates)
                 .eq('id', id)
-                .select('id, status')
+                .select('id, status, pipeline_stage, valor_estimado, moeda, proximo_passo, responsavel')
                 .single()
               if (error) return json(res, 500, { ok: false, error: error.message })
-              logAuditoria(currentAdmin(req), 'contacto_estado', 'contacto', id, { status: payload.status })
+              logAuditoria(currentAdmin(req), 'contacto_actualizado', 'contacto', id, { campos: Object.keys(updates) })
               return json(res, 200, { ok: true, contact: data })
+            }
+
+            // CROSS-SELL AUTOMÁTICO (Ponto 5): licenças activas a expirar em ≤15 dias
+            // → cria (idempotente) uma oportunidade de renovação/upgrade no funil comercial.
+            if (path === '/api/admin/upgrades-sugeridos' && req.method === 'GET') {
+              const nivelXs = currentAdmin(req)?.level
+              if (!nivelXs || !['super_admin', 'gestor', 'developer'].includes(nivelXs))
+                return json(res, 403, { ok: false, error: 'Sem permissão para o funil comercial.' })
+              const hoje = new Date().toISOString().slice(0, 10)
+              const ate15 = new Date(Date.now() + 15 * 86_400_000).toISOString().slice(0, 10)
+              const { data: aExpirar } = await supabase
+                .from('licencas_palancasoft')
+                .select('id, cliente_nome, nif, chave_licenca, data_expiracao, status')
+                .eq('status', 'activa')
+                .gte('data_expiracao', hoje)
+                .lte('data_expiracao', ate15)
+                .order('data_expiracao', { ascending: true })
+                .limit(50)
+              const criadas: { id: string; cliente: string; dias: number; chave: string }[] = []
+              for (const lic of aExpirar || []) {
+                const expDate = new Date(`${String(lic.data_expiracao)}T00:00:00Z`)
+                const dias = Math.max(0, Math.round((expDate.getTime() - Date.parse(hoje)) / 86_400_000))
+                const dPt = expDate.toLocaleDateString('pt-PT', { timeZone: 'UTC' })
+                const { data: novaC, error: errC } = await supabase
+                  .from('contacts')
+                  .upsert({
+                    name: `${lic.cliente_nome} — Renovação/Upgrade`,
+                    service_interest: 'Renovação PalancaSoft',
+                    message: `Licença ${lic.chave_licenca} expira a ${dPt} (faltam ${dias} dia(s)). Sugerir renovação ou upgrade de plano (mais utilizadores / novos módulos).`,
+                    status: 'unread',
+                    pipeline_stage: 'novo',
+                    moeda: 'AOA',
+                    proximo_passo: `Ligar ao cliente antes de ${dPt} para fechar renovação/upgrade.`,
+                    origem_auto: 'licenca_expira',
+                    chave_auto: `auto-ren-${lic.id}`,
+                  }, { onConflict: 'chave_auto', ignoreDuplicates: true })
+                  .select('id')
+                  .maybeSingle()
+                if (errC) continue // sem bloquear o funil por um contacto problemático
+                if (novaC) criadas.push({ id: novaC.id, cliente: lic.cliente_nome, dias, chave: lic.chave_licenca })
+              }
+              if (criadas.length)
+                fireAdminAlert(`📈 CRM: ${criadas.length} oportunidade(s) de renovação criada(s) no funil — licenças a expirar em ≤15 dias.`)
+              return json(res, 200, { ok: true, licencas_a_expirar: (aExpirar || []).length, criadas })
             }
 
             if (path.match(/^\/api\/admin\/contacts\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
@@ -2248,17 +2390,22 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
                 return json(res, 403, { ok: false, error: 'Sem permissão para emitir proformas.' })
               const { data: order } = await supabase.from('pedidos_licencas').select('*').eq('id', proformaMatch[1]).maybeSingle()
               if (!order) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
-              // nº sequencial de proforma (settings.proforma_seq) — auditoria sem duplicações
-              let seq = 1
-              const { data: curSeq } = await supabase.from('settings').select('value').eq('key', 'proforma_seq').maybeSingle()
-              if (curSeq?.value && !isNaN(parseInt(curSeq.value))) seq = parseInt(curSeq.value)
-              const numero = `PF-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`
-              await supabase.from('settings').upsert({ key: 'proforma_seq', value: String(seq + 1), description: 'Contador de faturas proforma emitidas no painel' }, { onConflict: 'key' })
+              // nº de proforma FIXO por pedido: 1ª emissão grava pf_numero; reimpressões reusam (Ponto 5)
+              let numero: string
+              const pfGravado = (order as { pf_numero?: string | null }).pf_numero
+              if (pfGravado) {
+                numero = pfGravado
+              } else {
+                let seq = 1
+                const { data: curSeq } = await supabase.from('settings').select('value').eq('key', 'proforma_seq').maybeSingle()
+                if (curSeq?.value && !isNaN(parseInt(curSeq.value))) seq = parseInt(curSeq.value)
+                numero = `PF-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`
+                await supabase.from('settings').upsert({ key: 'proforma_seq', value: String(seq + 1), description: 'Contador de faturas proforma emitidas no painel' }, { onConflict: 'key' })
+                await supabase.from('pedidos_licencas').update({ pf_numero: numero }).eq('id', order.id)
+              }
               // preço de catálogo do software pedido (nome semelhante)
               const { data: catalogo } = await supabase.from('softwares').select('name, price')
-              const nomeLower = String(order.software_nome || '').toLowerCase().trim()
-              const match = (catalogo || []).find(s => s.price && (s.name.toLowerCase() === nomeLower || s.name.toLowerCase().includes(nomeLower) || nomeLower.includes(s.name.toLowerCase().split(' ')[0])))
-              const preco = match?.price ?? null
+              const preco = precoCatalogo(catalogo, order.software_nome)
               const { data: ibanRow } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
               const pdf = buildProformaPdf({
                 numero,
@@ -2273,6 +2420,86 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               return res.end(pdf)
             }
 
+            // CONFIRMAR LIQUIDAÇÃO (Ponto 5): proforma → Paga, com comprovativo + IBAN + nº FT automático
+            const pagarMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/pagar$/)
+            if (pagarMatch && req.method === 'POST') {
+              const nivelPg = currentAdmin(req)?.level
+              if (nivelPg && !nivelPleno(nivelPg) && nivelPg !== 'gestor')
+                return json(res, 403, { ok: false, error: 'Sem permissão para confirmar pagamentos.' })
+              const idPg = pagarMatch[1]
+              const bodyPg = await readBody(req) as { iban?: string; comprovativo_nome?: string; comprovativo_b64?: string; notas?: string }
+              const { data: orderPg } = await supabase.from('pedidos_licencas').select('*').eq('id', idPg).maybeSingle()
+              if (!orderPg) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
+              // já liquidado? um pedido tem uma (e só uma) Fatura Definitiva
+              const { data: reciboExistPg } = await supabase.from('recibos_faturacao').select('numero').eq('pedido_id', idPg).maybeSingle() as unknown as { data: { numero: string } | null }
+              if (reciboExistPg)
+                return json(res, 409, { ok: false, error: `Este pedido já foi liquidado — Fatura Definitiva ${reciboExistPg.numero} emitida.` })
+              // comprovativo: base64 opcional, máx. ~2 MB (evita linhas gigantes na DB)
+              const b64Pg = String(bodyPg.comprovativo_b64 || '').trim()
+              if (b64Pg && b64Pg.length > 2_800_000)
+                return json(res, 413, { ok: false, error: 'Comprovativo demasiado grande (máximo ~2 MB).' })
+              // nº FT sequencial (settings.ft_seq) com tentativa segura contra duplicados
+              const anoFt = new Date().getFullYear()
+              const { data: curSeqPg } = await supabase.from('settings').select('value').eq('key', 'ft_seq').maybeSingle()
+              let seqPg = 1
+              if (curSeqPg?.value && !isNaN(parseInt(curSeqPg.value))) seqPg = parseInt(curSeqPg.value)
+              const { data: catalogoPg } = await supabase.from('softwares').select('name, price')
+              const precoPg = precoCatalogo(catalogoPg, orderPg.software_nome)
+              const { data: ibanDefPg } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
+              const ibanPg = String(bodyPg.iban || '').trim() || ibanDefPg?.value || null
+              let numeroPg = ''
+              let reciboPg: Record<string, unknown> | null = null
+              let usadosPg = 0
+              for (let tent = 0; tent < 8 && !reciboPg; tent++) {
+                usadosPg = tent + 1
+                numeroPg = `FT-${anoFt}/${String(seqPg + tent).padStart(3, '0')}`
+                const { data: rec, error: errRec } = await supabase
+                  .from('recibos_faturacao')
+                  .insert({
+                    pedido_id: idPg,
+                    numero: numeroPg,
+                    iban: ibanPg,
+                    cliente_empresa: orderPg.nome_empresa,
+                    cliente_nif: orderPg.nif,
+                    software: orderPg.software_nome,
+                    valor: precoPg,
+                    moeda: 'AOA',
+                    comprovativo_nome: String(bodyPg.comprovativo_nome || '').slice(0, 200) || null,
+                    comprovativo_b64: b64Pg || null,
+                    notas: String(bodyPg.notas || '').slice(0, 600) || null,
+                    emitido_por: currentAdmin(req)?.email || null,
+                  })
+                  .select('*')
+                  .maybeSingle()
+                if (errRec) {
+                  if (String(errRec.message).toLowerCase().includes('duplicate')) continue
+                  return json(res, 500, { ok: false, error: errRec.message })
+                }
+                reciboPg = (rec || null) as Record<string, unknown> | null
+              }
+              if (!reciboPg)
+                return json(res, 500, { ok: false, error: 'Não foi possível gerar o número de recibo (colisão de sequência).' })
+              await supabase.from('settings').upsert({ key: 'ft_seq', value: String(seqPg + usadosPg), description: 'Contador de Faturas Definitivas FT do CRM (Ponto 5)' }, { onConflict: 'key' })
+              const { error: errPago } = await supabase.from('pedidos_licencas').update({ status: 'Pago' }).eq('id', idPg)
+              if (errPago) return json(res, 500, { ok: false, error: errPago.message })
+              // e-mail ao cliente: pagamento confirmado + nº FT + valor
+              const mailPg = String((orderPg as { email?: string }).email || '').trim()
+              let emailPgOk: boolean | null = null
+              if (mailPg) {
+                const valorTxt = precoPg !== null ? `${precoPg.toLocaleString('pt-AO', { minimumFractionDigits: 2 })} AOA` : 'sob consulta'
+                const htmlPg = `<div style="font-family:Arial,sans-serif;color:#0f172a"><h2 style="color:#0e7490;margin:0 0 12px">Pagamento confirmado ✓</h2>
+                  <p>Olá ${escHtml(orderPg.nome_empresa || 'cliente')},</p>
+                  <p>Confirmámos a liquidação do pedido <strong>#${String(orderPg.id).slice(0, 8).toUpperCase()}</strong>${orderPg.software_nome ? ` (${escHtml(orderPg.software_nome)})` : ''} no valor de <strong>${valorTxt}</strong>.</p>
+                  <p>A sua <strong>Fatura Definitiva ${numeroPg}</strong> já está disponível no portal do cliente e no painel.</p>
+                  <p style="color:#64748b;font-size:12px;margin-top:18px">CFTEC — Software de Gestão PalancaSoft · cftec.co</p></div>`
+                const sentPg = await sendEmailRaw(mailPg, `Pagamento confirmado — ${numeroPg} · CFTEC`, htmlPg)
+                emailPgOk = sentPg.enviado
+              }
+              fireAdminAlert(`💰 ${orderPg.nome_empresa || 'Cliente'} liquidou ${orderPg.software_nome || 'pedido'} — ${numeroPg} registada.`)
+              logAuditoria(currentAdmin(req), 'pedido_pago', 'pedidos_licencas', idPg, { ft: numeroPg, comprovativo: !!b64Pg })
+              return json(res, 200, { ok: true, recibo: reciboPg, email_enviado: emailPgOk })
+            }
+
             // FATURA INTERNA PDF — só para pedidos com pagamento confirmado (status Pago)
             const faturaMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/fatura/)
             if (faturaMatch && req.method === 'GET') {
@@ -2283,15 +2510,22 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               if (!order) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
               if (order.status !== 'Pago')
                 return json(res, 400, { ok: false, error: 'A fatura interna só é emitida depois de confirmar o pagamento (estado Pago).' })
-              // nº sequencial de fatura interna (settings.fatura_seq) — auditoria sem duplicações
+              // Recibo gravado na confirmação de pagamento (Ponto 5) — nº FT fixo; reimpressão não gasta sequência
+              const { data: reciboF } = await supabase
+                .from('recibos_faturacao')
+                .select('numero, iban, valor')
+                .eq('pedido_id', order.id)
+                .order('criado_em', { ascending: false })
+                .limit(1)
+                .maybeSingle() as unknown as { data: { numero: string; iban: string | null; valor: number | null } | null }
+              // fallback legado: nº sequencial de fatura interna (settings.fatura_seq)
               let seq = 1
               const { data: curSeqF } = await supabase.from('settings').select('value').eq('key', 'fatura_seq').maybeSingle()
               if (curSeqF?.value && !isNaN(parseInt(curSeqF.value))) seq = parseInt(curSeqF.value)
-              const numeroF = `FT-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`
-              await supabase.from('settings').upsert({ key: 'fatura_seq', value: String(seq + 1), description: 'Contador de faturas internas emitidas no painel' }, { onConflict: 'key' })
+              const numeroF = reciboF?.numero || `FT-${new Date().getFullYear()}-${String(seq).padStart(4, '0')}`
+              if (!reciboF)
+                await supabase.from('settings').upsert({ key: 'fatura_seq', value: String(seq + 1), description: 'Contador de faturas internas emitidas no painel' }, { onConflict: 'key' })
               const { data: catalogoF } = await supabase.from('softwares').select('name, price')
-              const nomeLowerF = String(order.software_nome || '').toLowerCase().trim()
-              const matchF = (catalogoF || []).find(s => s.price && (s.name.toLowerCase() === nomeLowerF || s.name.toLowerCase().includes(nomeLowerF) || nomeLowerF.includes(s.name.toLowerCase().split(' ')[0])))
               const { data: ibanRowF } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
               const pdfF = buildFaturaPdf({
                 numero: numeroF,
@@ -2300,9 +2534,10 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
                 empresa: order.nome_empresa, nif: order.nif, responsavel: order.nome_responsavel,
                 email: order.email || '—', provincia: order.provincia || '—',
                 software: order.software_nome, forma: order.forma_pagamento || 'Transferência / IBAN',
-                preco: matchF?.price ?? null, iban: ibanRowF?.value || '(ver IBAN válido no painel de definições)',
+                preco: reciboF?.valor ?? precoCatalogo(catalogoF, order.software_nome),
+                iban: reciboF?.iban || ibanRowF?.value || '(ver IBAN válido no painel de definições)',
               })
-              res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fatura-interna-${numeroF}.pdf"` })
+              res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="fatura-${numeroF.replace('/', '-')}.pdf"` })
               return res.end(pdfF)
             }
 

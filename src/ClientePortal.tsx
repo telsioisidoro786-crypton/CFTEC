@@ -5,8 +5,8 @@
 // ============================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, BadgeCheck, Building2, CheckCircle2, FileText, KeyRound, LifeBuoy,
-  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Send, ShieldCheck, Star, Timer, UserPlus,
+  Activity, BadgeCheck, Building2, CheckCircle2, Download, FileText, KeyRound, LifeBuoy,
+  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, Send, ShieldCheck, Star, Timer, UserPlus,
 } from 'lucide-react'
 
 type Sessao = { empresa: string; email: string }
@@ -345,6 +345,11 @@ export default function ClientePortal() {
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">#{p.id.slice(0, 8).toUpperCase()} · {fmt(p.created_at)} · {p.forma_pagamento || 'forma de pagamento por definir'}{p.provincia ? ` · ${p.provincia}` : ''}</p>
                   {p.observacoes && <p className="mt-2 text-sm text-slate-300 bg-white/5 border border-white/10 rounded-lg px-3 py-2"><b className="text-slate-400 text-xs">Nota da equipa:</b> {p.observacoes}</p>}
+                </div>
+                <div className="shrink-0 flex flex-col gap-2 min-w-[170px]">
+                  <a href={`/api/portal/pedidos/${p.id}/proforma.pdf`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center justify-center gap-2 text-sm border border-white/15 text-slate-200 rounded-lg px-3.5 py-2 hover:bg-white/5 transition-colors"><Download size={15} /> Proforma PDF</a>
+                  {p.status === 'Pago' && <a href={`/api/portal/pedidos/${p.id}/ft.pdf`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center justify-center gap-2 text-sm border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 rounded-lg px-3.5 py-2 hover:bg-cyan-400/15 transition-colors"><Receipt size={15} /> Recibo / FT</a>}
+                  <a href={`https://wa.me/${whats}`} target="_blank" rel="noreferrer noopener" className={`text-center text-[11px] ${whats ? 'text-slate-500 hover:text-slate-300' : 'pointer-events-none opacity-50'} transition-colors`}>Dúvidas — falar com o comercial →</a>
                 </div>
               </div>
             ))}</div>

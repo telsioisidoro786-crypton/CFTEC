@@ -142,7 +142,16 @@ type Summary = {
   contactsUnread?: number
   metaMensal?: number
 }
-type Contact = { id: string; name: string; email: string; phone: string | null; service_interest: string; message: string; status: string; created_at: string }
+type Contact = { id: string; name: string; email: string; phone: string | null; service_interest: string; message: string; status: string; created_at: string; pipeline_stage?: string | null; valor_estimado?: number | null; moeda?: string | null; proximo_passo?: string | null; responsavel?: string | null; origem_auto?: string | null }
+type PipeStage = 'novo' | 'negociacao' | 'proposta' | 'ganho' | 'perdido'
+const PIPELINE_STAGES: { id: PipeStage; label: string; cor: string }[] = [
+  { id: 'novo', label: 'Novo', cor: 'pipe--novo' },
+  { id: 'negociacao', label: 'Em Negociação', cor: 'pipe--negociacao' },
+  { id: 'proposta', label: 'Proposta Enviada', cor: 'pipe--proposta' },
+  { id: 'ganho', label: 'Ganho', cor: 'pipe--ganho' },
+  { id: 'perdido', label: 'Perdido', cor: 'pipe--perdido' },
+]
+const pipeLabel = (s: string | null | undefined) => PIPELINE_STAGES.find(p => p.id === s)?.label || 'Novo'
 type Software = { id: string; name: string; version: string; description?: string | null; price?: number | null; category?: string | null; changelog?: string | null; file_url?: string; file_size: string; downloads_count: number; is_active?: boolean; created_at: string }
 type Service = { id: string; title: string; slug: string; short_description: string; full_description: string | null; icon: string; is_active: boolean; created_at: string }
 export type Media = { id: string; filename: string; file_path: string; file_size: number; mime_type: string; alt_text: string | null; uploaded_at: string }
@@ -372,6 +381,16 @@ export default function AdminDashboard() {
   const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null)
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
   const [deletingContactId, setDeletingContactId] = useState<string | null>(null)
+  // Funil comercial (Ponto 5): vista Kanban dos contactos + edição de pipeline
+  const [vistaContactos, setVistaContactos] = useState<'kanban' | 'lista'>('kanban')
+  const [dragContactId, setDragContactId] = useState<string | null>(null)
+  const [pipelineEdit, setPipelineEdit] = useState<Contact | null>(null)
+  const [pipelineForm, setPipelineForm] = useState<{ stage: PipeStage; valor: string; moeda: 'AOA' | 'USD'; proximo: string; responsavel: string }>({ stage: 'novo', valor: '', moeda: 'AOA', proximo: '', responsavel: '' })
+  const [pipelineSaving, setPipelineSaving] = useState(false)
+  // Confirmação de liquidação (Ponto 5): comprovativo + IBAN + nº FT automático
+  const [pagModal, setPagModal] = useState<LicenseOrder | null>(null)
+  const [pagForm, setPagForm] = useState<{ iban: string; notas: string; comp_nome: string; comp_b64: string }>({ iban: '', notas: '', comp_nome: '', comp_b64: '' })
+  const [pagSaving, setPagSaving] = useState(false)
   const [editingSoftware, setEditingSoftware] = useState<Software | null>(null)
   const [deletingSoftwareId, setDeletingSoftwareId] = useState<string | null>(null)
   const [notifOpen, setNotifOpen] = useState(false)
@@ -755,6 +774,26 @@ export default function AdminDashboard() {
         for (const entry of settingsData.settings || []) map[entry.key] = entry.value
         setPortalSettings(map)
       }
+      // CROSS-SELL AUTOMÁTICO (Ponto 5): licenças a expirar ≤15 dias → oportunidades no funil
+      // Só para níveis comerciais; idempotente (chave auto por licença) e silencioso quando não cria nada.
+      const nivelUp = adminUser?.level
+      if (nivelUp === 'super_admin' || nivelUp === 'gestor' || nivelUp === 'developer') {
+        try {
+          const upRes = await fetch('/api/admin/upgrades-sugeridos', { credentials: 'include' })
+          if (upRes.ok) {
+            const upData = await upRes.json() as { criadas?: { id: string; cliente: string; dias: number }[] }
+            if (upData.criadas?.length) {
+              notify(`📈 ${upData.criadas.length} oportunidade(s) de renovação criada(s) no funil (licenças a expirar)`)
+              alertaDispositivo('pedido', '📈 Renovações no funil', `${upData.criadas.length} licença(s) a expirar em ≤15 dias criaram oportunidades.`)
+              const upRes2 = await fetch('/api/admin/contacts', { credentials: 'include' })
+              if (upRes2.ok) {
+                const upContacts = await upRes2.json()
+                if (Array.isArray(upContacts)) setContacts(upContacts)
+              }
+            }
+          }
+        } catch { /* silencioso — o funil funciona igualmente */ }
+      }
     } catch (err) {
       console.error('[ADMIN] Error loading data:', err)
       setSummary(zeroSummary)
@@ -1045,6 +1084,55 @@ export default function AdminDashboard() {
       notify(`Contacto ${status === 'archived' ? 'arquivado' : status === 'read' ? 'marcado como lido' : 'marcado como novo'}`)
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Erro ao actualizar o contacto')
+    }
+  }
+
+  // Funil comercial (Ponto 5) — mover/actualizar campos do pipeline de um contacto
+  const updateContactPipeline = async (contact: Contact, patch: Partial<{ pipeline_stage: PipeStage; valor_estimado: number | null; moeda: string; proximo_passo: string | null; responsavel: string | null }>) => {
+    if (!contact.id) return
+    try {
+      const response = await fetch(`/api/admin/contacts/${contact.id}`, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao actualizar o contacto')
+      setContacts(prev => prev.map(c => c.id === contact.id ? { ...c, ...patch } : c))
+      notify(patch.pipeline_stage ? `Movido para «${pipeLabel(patch.pipeline_stage)}» no funil` : 'Contacto actualizado')
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao actualizar o contacto')
+    }
+  }
+
+  const openPipelineEdit = (contact: Contact) => {
+    setPipelineEdit(contact)
+    setPipelineForm({
+      stage: ((contact.pipeline_stage || 'novo') as PipeStage),
+      valor: contact.valor_estimado != null ? String(contact.valor_estimado) : '',
+      moeda: (contact.moeda || 'AOA') as 'AOA' | 'USD',
+      proximo: contact.proximo_passo || '',
+      responsavel: contact.responsavel || '',
+    })
+  }
+
+  const submitPipelineEdit = async () => {
+    if (!pipelineEdit) return
+    const valorNum = pipelineForm.valor.trim() === '' ? null : Number(pipelineForm.valor.replace(',', '.'))
+    if (valorNum !== null && (isNaN(valorNum) || valorNum < 0 || valorNum > 9_999_999_999)) { notify('Valor estimado inválido'); return }
+    setPipelineSaving(true)
+    try {
+      await updateContactPipeline(pipelineEdit, {
+        pipeline_stage: pipelineForm.stage,
+        valor_estimado: valorNum,
+        moeda: pipelineForm.moeda,
+        proximo_passo: pipelineForm.proximo.trim() || null,
+        responsavel: pipelineForm.responsavel.trim() || null,
+      })
+      setPipelineEdit(null)
+    } finally {
+      setPipelineSaving(false)
     }
   }
 
@@ -1757,6 +1845,44 @@ export default function AdminDashboard() {
       notify(`Pedido ${order.id.slice(0, 8).toUpperCase()} → ${status}${mail === 'enviado' ? ' · e-mail enviado ao cliente' : ''}`)
     } catch (error) {
       notify(error instanceof Error ? error.message : 'Erro ao actualizar o pedido')
+    }
+  }
+
+  // Liquidação (Ponto 5): abre a confirmação com comprovativo + IBAN + nº FT automático
+  const openPagModal = (order: LicenseOrder) => {
+    setPagModal(order)
+    setPagForm({ iban: portalSettings['iban_cftec'] || '', notas: '', comp_nome: '', comp_b64: '' })
+  }
+
+  const onComprovativoFile = (file: File | null) => {
+    if (!file) { setPagForm(p => ({ ...p, comp_nome: '', comp_b64: '' })); return }
+    if (file.size > 2 * 1024 * 1024) { notify('Comprovativo demasiado grande (máximo 2 MB)'); return }
+    const fr = new FileReader()
+    fr.onload = () => setPagForm(p => ({ ...p, comp_nome: file.name, comp_b64: String(fr.result || '').split(',')[1] || '' }))
+    fr.readAsDataURL(file)
+  }
+
+  const confirmarPagamento = async () => {
+    if (!pagModal) return
+    setPagSaving(true)
+    try {
+      const response = await fetch(`/api/admin/license-orders/${pagModal.id}/pagar`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ iban: pagForm.iban, comprovativo_nome: pagForm.comp_nome, comprovativo_b64: pagForm.comp_b64, notas: pagForm.notas }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(body.error || 'Falha ao confirmar o pagamento')
+      setLicenseOrders(prev => prev.map(o => o.id === pagModal.id ? { ...o, status: 'Pago' } : o))
+      const ft = body.recibo?.numero ? ` — Fatura Definitiva ${body.recibo.numero}` : ''
+      const mailTxt = body.email_enviado ? ' · cliente notificado por e-mail' : ''
+      notify(`Pagamento confirmado${ft}${mailTxt}`)
+      setPagModal(null)
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Erro ao confirmar o pagamento')
+    } finally {
+      setPagSaving(false)
     }
   }
 
@@ -2911,7 +3037,28 @@ export default function AdminDashboard() {
           </>
         })()}
 
-        {activeSection === 'contactos' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">PEDIDOS DE CONTACTO</span><h2>Contactos recebidos</h2></div><span className="admin-muted">{contacts.length} contacto(s) · últimos 30</span></div>{visibleContacts.length === 0 ? <div className="admin-empty-state"><UsersRound size={48} /><h3>{contacts.length ? 'Sem correspondências' : 'Sem contactos ainda'}</h3><p>{contacts.length ? `Nenhum contacto corresponde a "${search}".` : 'Quando alguém submeter o formulário do site, o pedido aparece aqui.'}</p></div> : <div className="contact-list">{visibleContacts.map((contact) => <div key={contact.id} className={`contact-item ${selectedContactId === contact.id ? 'contact-item--open' : ''}`}><button type="button" className="contact-item-head" onClick={() => setSelectedContactId(selectedContactId === contact.id ? null : contact.id)} aria-expanded={selectedContactId === contact.id}><span className="contact-initials">{contact.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}</span><span className="contact-main"><strong>{contact.name}</strong><small>{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</small></span><span className="contact-interest">{contact.service_interest}</span><span className={`contact-status contact-status--${contactStatusTone(contact.status)}`} data-tip={contact.status === 'unread' || contact.status === 'new' ? 'Aguarda a primeira resposta da equipa' : contact.status === 'em_contacto' ? 'Em conversa com o cliente' : contact.status === 'proposta' ? 'Proposta enviada — aguarda confirmação' : contact.status === 'fechado' ? 'Negócio concluído' : 'Tratado ou arquivado'}>{contactStatusLabel(contact.status)}</span><time>{formatDate(contact.created_at)}</time><ChevronRight size={16} className="contact-chevron" /></button>{selectedContactId === contact.id && <div className="contact-detail"><p>{contact.message || '(Sem mensagem.)'}</p><div className="contact-detail-actions">{contact.status !== 'read' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'read')}><Check size={14} /> Marcar como lido</Button>}{contact.status !== 'unread' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'unread')}><Bell size={14} /> Marcar como novo</Button>}{contact.status !== 'em_contacto' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'em_contacto')}><Headphones size={14} /> Em contacto</Button>}{contact.status !== 'proposta' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'proposta')}><FilePlus2 size={14} /> Proposta enviada</Button>}{contact.status !== 'fechado' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'fechado')}><Check size={14} /> Fechar</Button>}<Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'archived')}><Archive size={14} /> Arquivar</Button><Button size="sm" variant="dark" className="btn-danger" onClick={() => setDeletingContactId(contact.id)}><Trash2 size={14} /> Eliminar</Button></div></div>}</div>)}</div>}</Card>}
+        {activeSection === 'contactos' && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">FUNIL COMERCIAL</span><h2>Contactos & Vendas</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span className="admin-muted">{contacts.length} contacto(s)</span><div className="order-filter-tabs" data-tip="Funil kanban arrastável ou lista clássica">{(['kanban', 'lista'] as const).map(v => <button key={v} className={`order-filter-tab ${vistaContactos === v ? 'is-active' : ''}`} onClick={() => setVistaContactos(v)}>{v === 'kanban' ? 'Funil' : 'Lista'}</button>)}</div></div></div>{vistaContactos === 'kanban' ? (<div className="pipe-board">{PIPELINE_STAGES.map((colunaPipe) => {
+          const daCol = visibleContacts.filter(c => (c.pipeline_stage || 'novo') === colunaPipe.id)
+          const somaMoeda = (moeda: string) => daCol.reduce((t, c) => t + (c.moeda === moeda && c.valor_estimado != null ? Number(c.valor_estimado) : 0), 0)
+          const somaAOA = somaMoeda('AOA')
+          const somaUSD = somaMoeda('USD')
+          return (
+            <div key={colunaPipe.id} className={`pipe-col ${colunaPipe.cor}${dragContactId ? ' pipe-col--drag' : ''}`} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }} onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain') || dragContactId || ''; const alvo = contacts.find(c => c.id === id); setDragContactId(null); if (alvo && (alvo.pipeline_stage || 'novo') !== colunaPipe.id) updateContactPipeline(alvo, { pipeline_stage: colunaPipe.id }) }}>
+              <div className="pipe-col-head"><b>{colunaPipe.label}</b><i>{daCol.length}</i></div>
+              {(somaAOA > 0 || somaUSD > 0) && <div className="pipe-col-vals">{somaAOA > 0 && <span data-tip="Valor estimado nesta fase (AOA)">{somaAOA.toLocaleString('pt-AO')} Kz</span>}{somaUSD > 0 && <span data-tip="Valor estimado nesta fase (USD)">$ {somaUSD.toLocaleString('pt-AO', { maximumFractionDigits: 0 })}</span>}</div>}
+              {daCol.map(contactoPipe => (
+                <div key={contactoPipe.id} className={`pipe-card${dragContactId === contactoPipe.id ? ' pipe-card--drag' : ''}`} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', contactoPipe.id); e.dataTransfer.effectAllowed = 'move'; setDragContactId(contactoPipe.id) }} onDragEnd={() => setDragContactId(null)} onClick={() => openPipelineEdit(contactoPipe)} style={{ cursor: 'pointer' }}>
+                  <div className="pipe-card-top"><span className="contact-initials">{contactoPipe.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}</span><strong>{contactoPipe.name}</strong>{contactoPipe.origem_auto && <Sparkles size={12} className="pipe-auto" data-tip="Oportunidade automática — renovação de licença a expirar" />}</div>
+                  <small>{contactoPipe.email || contactoPipe.service_interest || 'Sem contacto'}</small>
+                  <div className="pipe-card-valor">{contactoPipe.valor_estimado != null ? <><b data-tip="Valor estimado do negócio">{Number(contactoPipe.valor_estimado).toLocaleString('pt-AO')}</b> {contactoPipe.moeda === 'USD' ? 'USD' : 'Kz'}</> : <em data-tip="Defina o valor estimado no card">Valor sob consulta</em>}</div>
+                  {contactoPipe.proximo_passo && <div className="pipe-card-next" data-tip="Próximo passo">{contactoPipe.proximo_passo}</div>}
+                  <div className="pipe-card-foot"><span className="pipe-resp" data-tip="Responsável">{contactoPipe.responsavel || 'Sem responsável'}</span><span className={`contact-status contact-status--${contactStatusTone(contactoPipe.status)}`}>{contactStatusLabel(contactoPipe.status)}</span></div>
+                </div>
+              ))}
+              {daCol.length === 0 && <span className="pipe-col-hint">Arraste contactos para cá</span>}
+            </div>
+          )
+        })}</div>) : visibleContacts.length === 0 ? <div className="admin-empty-state"><UsersRound size={48} /><h3>{contacts.length ? 'Sem correspondências' : 'Sem contactos ainda'}</h3><p>{contacts.length ? `Nenhum contacto corresponde a "${search}".` : 'Quando alguém submeter o formulário do site, o pedido aparece aqui.'}</p></div> : <div className="contact-list">{visibleContacts.map((contact) => <div key={contact.id} className={`contact-item ${selectedContactId === contact.id ? 'contact-item--open' : ''}`}><button type="button" className="contact-item-head" onClick={() => setSelectedContactId(selectedContactId === contact.id ? null : contact.id)} aria-expanded={selectedContactId === contact.id}><span className="contact-initials">{contact.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}</span><span className="contact-main"><strong>{contact.name}</strong><small>{contact.email}{contact.phone ? ` · ${contact.phone}` : ''}</small></span><span className="contact-interest">{contact.service_interest}</span><span className={`contact-status contact-status--${contactStatusTone(contact.status)}`} data-tip={contact.status === 'unread' || contact.status === 'new' ? 'Aguarda a primeira resposta da equipa' : contact.status === 'em_contacto' ? 'Em conversa com o cliente' : contact.status === 'proposta' ? 'Proposta enviada — aguarda confirmação' : contact.status === 'fechado' ? 'Negócio concluído' : 'Tratado ou arquivado'}>{contactStatusLabel(contact.status)}</span><time>{formatDate(contact.created_at)}</time><ChevronRight size={16} className="contact-chevron" /></button>{selectedContactId === contact.id && <div className="contact-detail"><p>{contact.message || '(Sem mensagem.)'}</p><div className="contact-detail-actions">{contact.status !== 'read' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'read')}><Check size={14} /> Marcar como lido</Button>}{contact.status !== 'unread' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'unread')}><Bell size={14} /> Marcar como novo</Button>}{contact.status !== 'em_contacto' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'em_contacto')}><Headphones size={14} /> Em contacto</Button>}{contact.status !== 'proposta' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'proposta')}><FilePlus2 size={14} /> Proposta enviada</Button>}{contact.status !== 'fechado' && <Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'fechado')}><Check size={14} /> Fechar</Button>}<Button size="sm" variant="outline" onClick={() => handleContactStatus(contact, 'archived')}><Archive size={14} /> Arquivar</Button><Button size="sm" variant="dark" className="btn-danger" onClick={() => setDeletingContactId(contact.id)}><Trash2 size={14} /> Eliminar</Button></div></div>}</div>)}</div>}</Card>}
 
         {activeSection === 'pedidos' && !modBloqueado('pedidos') && (() => {
           const filtered = licenseOrders.filter(o => orderFilter === 'Todos' ? true : o.status === orderFilter)
@@ -2928,7 +3075,7 @@ export default function AdminDashboard() {
               {colunasKanban.map((col) => {
                 const deCol = filtered.filter(o => o.status === col.estado)
                 return (
-                  <div key={col.estado} className={`kanban-col ${col.cor}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); const alvo = licenseOrders.find(o => o.id === id); if (alvo && alvo.status !== col.estado) updateOrderStatus(alvo, col.estado) }}>
+                  <div key={col.estado} className={`kanban-col ${col.cor}`} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); const alvo = licenseOrders.find(o => o.id === id); if (alvo && alvo.status !== col.estado) { if (col.estado === 'Pago') openPagModal(alvo); else updateOrderStatus(alvo, col.estado) } }}>
                     <div className="kanban-col-head"><b>{col.estado}</b><i>{deCol.length}</i></div>
                     {deCol.length === 0 && <span className="kanban-col-hint">Vazio — arrasta cartões para cá</span>}
                     {deCol.map((o) => (
@@ -2944,7 +3091,7 @@ export default function AdminDashboard() {
               })}
             </div>
           )
-          return <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CHECKOUT B2B</span><h2>Pedidos de licença</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span className="order-live-note" data-tip="O painel busca novos pedidos automaticamente a cada 20 segundos"><i /> tempo real · 20 s</span><button className="icon-btn" title="Actualizar pedidos" onClick={() => loadLicenseOrders()}><RefreshCw size={15} /></button><div className="order-filter-tabs">{(['Todos', 'Pendente', 'Em Verificação', 'Aprovado', 'Pago', 'Rejeitado'] as const).map(f => <button key={f} className={orderFilter === f ? 'order-filter-tab is-active' : 'order-filter-tab'} onClick={() => setOrderFilter(f)}>{f === 'Todos' ? `Todos (${licenseOrders.length})` : f === 'Pendente' ? `Pendentes (${licenseOrders.filter(o => o.status === 'Pendente').length})` : f === 'Em Verificação' ? `Verificação (${licenseOrders.filter(o => o.status === 'Em Verificação').length})` : f === 'Aprovado' ? `Aprovados (${licenseOrders.filter(o => o.status === 'Aprovado').length})` : f === 'Pago' ? `Pagos (${licenseOrders.filter(o => o.status === 'Pago').length})` : `Rejeitados (${licenseOrders.filter(o => o.status === 'Rejeitado').length})`}</button>)}</div><div className="order-filter-tabs" data-tip="Quadro arrastável ou tabela detalhada">{(['tabela', 'kanban'] as const).map(v => <button key={v} className={`order-filter-tab ${orderView === v ? 'is-active' : ''}`} onClick={() => setOrderView(v)}>{v === 'tabela' ? 'Tabela' : 'Kanban'}</button>)}</div></div></div>{filtered.length === 0 ? <div className="admin-empty-state"><ShoppingCart size={48} /><h3>Sem pedidos {orderFilter !== 'Todos' ? `— ${orderFilter === 'Pendente' ? 'pendentes' : orderFilter === 'Aprovado' ? 'aprovados' : orderFilter === 'Pago' ? 'pagos — fatura interna disponível na linha' : orderFilter === 'Em Verificação' ? 'em verificação' : 'rejeitados'}` : 'nesta vista'}</h3><p>Assim que clientes registarem pedidos pelo checkout do site, aparecem aqui em tempo real.</p></div> : orderView === 'kanban' ? kanban : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Data</th><th>Empresa / NIF</th><th>Software</th><th>Responsável / WhatsApp</th><th>Província</th><th>Pagamento</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td>{new Date(order.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })}<small className="order-time">{new Date(order.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</small></td><td><strong>{order.nome_empresa}</strong><small className="order-sub">{order.nif}</small></td><td>{order.software_nome}</td><td>{order.nome_responsavel}<small className="order-sub">{order.telefone_whatsapp}</small>{order.email && <small className="order-sub">{order.email}</small>}</td><td>{order.provincia}</td><td>{order.forma_pagamento === 'Multicaixa Express' ? 'Multicaixa Express' : 'Transferência / IBAN'}</td><td><span className={`order-status-pill order-status--${order.status.replace(/\s/g, '')}`} data-tip={order.status === 'Pendente' ? 'Aguarda 1.ª verificação da equipa' : order.status === 'Em Verificação' ? 'A equipa está a validar o pedido' : order.status === 'Aprovado' ? 'Cliente notificado por e-mail com o IBAN' : order.status === 'Pago' ? 'Pagamento confirmado — fatura interna disponível' : 'Pedido recusado — cliente recebeu e-mail com motivo'}>{orderLabelStatus(order.status)}</span></td><td className="row-actions"><a className="icon-btn" title="Proforma PDF · 2.ª via" data-tip="Gerar proforma em PDF com nº sequencial" href={'/api/admin/license-orders/' + order.id + '/proforma'} target="_blank" rel="noreferrer noopener"><FileText size={15} /></a>{order.status === 'Pago' ? <a className="icon-btn order-btn--ok" title="Fatura interna PDF" data-tip="Fatura interna nº FT — documento de conferência" href={'/api/admin/license-orders/' + order.id + '/fatura'} target="_blank" rel="noreferrer noopener"><Banknote size={15} /></a> : (order.status === 'Aprovado' ? <button className="icon-btn order-btn--ok" title="Confirmar pagamento" data-tip="Pagamento recebido — destrava a fatura interna" onClick={() => updateOrderStatus(order, 'Pago')}><Banknote size={15} /></button> : (order.status === 'Pendente' || order.status === 'Em Verificação' || order.status === 'Rejeitado') && <button className="icon-btn order-btn--ok" title="Confirmar & Aprovar" onClick={() => updateOrderStatus(order, 'Aprovado')}><Check size={15} /></button>)}{order.status === 'Pendente' && <button className="icon-btn" title="Marcar Em Verificação" onClick={() => updateOrderStatus(order, 'Em Verificação')}><Loader2 size={15} /></button>}{(order.status === 'Pendente' || order.status === 'Em Verificação') && <button className="icon-btn" title="Rejeitar" onClick={() => updateOrderStatus(order, 'Rejeitado')}><X size={15} /></button>}<a className="icon-btn" title="Falar no WhatsApp" href={waLinkAdmin(order.telefone_whatsapp, order)} target="_blank" rel="noreferrer noopener"><MessageCircle size={15} /></a><button className="icon-btn danger" title="Eliminar pedido" onClick={() => setDeletingOrderId(order.id)}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>}</Card>
+          return <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CHECKOUT B2B</span><h2>Pedidos de licença</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}><span className="order-live-note" data-tip="O painel busca novos pedidos automaticamente a cada 20 segundos"><i /> tempo real · 20 s</span><button className="icon-btn" title="Actualizar pedidos" onClick={() => loadLicenseOrders()}><RefreshCw size={15} /></button><div className="order-filter-tabs">{(['Todos', 'Pendente', 'Em Verificação', 'Aprovado', 'Pago', 'Rejeitado'] as const).map(f => <button key={f} className={orderFilter === f ? 'order-filter-tab is-active' : 'order-filter-tab'} onClick={() => setOrderFilter(f)}>{f === 'Todos' ? `Todos (${licenseOrders.length})` : f === 'Pendente' ? `Pendentes (${licenseOrders.filter(o => o.status === 'Pendente').length})` : f === 'Em Verificação' ? `Verificação (${licenseOrders.filter(o => o.status === 'Em Verificação').length})` : f === 'Aprovado' ? `Aprovados (${licenseOrders.filter(o => o.status === 'Aprovado').length})` : f === 'Pago' ? `Pagos (${licenseOrders.filter(o => o.status === 'Pago').length})` : `Rejeitados (${licenseOrders.filter(o => o.status === 'Rejeitado').length})`}</button>)}</div><div className="order-filter-tabs" data-tip="Quadro arrastável ou tabela detalhada">{(['tabela', 'kanban'] as const).map(v => <button key={v} className={`order-filter-tab ${orderView === v ? 'is-active' : ''}`} onClick={() => setOrderView(v)}>{v === 'tabela' ? 'Tabela' : 'Kanban'}</button>)}</div></div></div>{filtered.length === 0 ? <div className="admin-empty-state"><ShoppingCart size={48} /><h3>Sem pedidos {orderFilter !== 'Todos' ? `— ${orderFilter === 'Pendente' ? 'pendentes' : orderFilter === 'Aprovado' ? 'aprovados' : orderFilter === 'Pago' ? 'pagos — fatura interna disponível na linha' : orderFilter === 'Em Verificação' ? 'em verificação' : 'rejeitados'}` : 'nesta vista'}</h3><p>Assim que clientes registarem pedidos pelo checkout do site, aparecem aqui em tempo real.</p></div> : orderView === 'kanban' ? kanban : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Data</th><th>Empresa / NIF</th><th>Software</th><th>Responsável / WhatsApp</th><th>Província</th><th>Pagamento</th><th>Status</th><th /></tr></thead><tbody>{filtered.map((order) => <tr key={order.id}><td>{new Date(order.created_at).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit' })}<small className="order-time">{new Date(order.created_at).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</small></td><td><strong>{order.nome_empresa}</strong><small className="order-sub">{order.nif}</small></td><td>{order.software_nome}</td><td>{order.nome_responsavel}<small className="order-sub">{order.telefone_whatsapp}</small>{order.email && <small className="order-sub">{order.email}</small>}</td><td>{order.provincia}</td><td>{order.forma_pagamento === 'Multicaixa Express' ? 'Multicaixa Express' : 'Transferência / IBAN'}</td><td><span className={`order-status-pill order-status--${order.status.replace(/\s/g, '')}`} data-tip={order.status === 'Pendente' ? 'Aguarda 1.ª verificação da equipa' : order.status === 'Em Verificação' ? 'A equipa está a validar o pedido' : order.status === 'Aprovado' ? 'Cliente notificado por e-mail com o IBAN' : order.status === 'Pago' ? 'Pagamento confirmado — fatura interna disponível' : 'Pedido recusado — cliente recebeu e-mail com motivo'}>{orderLabelStatus(order.status)}</span></td><td className="row-actions"><a className="icon-btn" title="Proforma PDF · 2.ª via" data-tip="Gerar proforma em PDF com nº sequencial" href={'/api/admin/license-orders/' + order.id + '/proforma'} target="_blank" rel="noreferrer noopener"><FileText size={15} /></a>{order.status === 'Pago' ? <a className="icon-btn order-btn--ok" title="Fatura interna PDF" data-tip="Fatura interna nº FT — documento de conferência" href={'/api/admin/license-orders/' + order.id + '/fatura'} target="_blank" rel="noreferrer noopener"><Banknote size={15} /></a> : (order.status === 'Aprovado' ? <button className="icon-btn order-btn--ok" title="Confirmar pagamento" data-tip="Pagamento recebido — destrava o recibo FT (com n.º automático)" onClick={() => openPagModal(order)}><Banknote size={15} /></button> : (order.status === 'Pendente' || order.status === 'Em Verificação' || order.status === 'Rejeitado') && <button className="icon-btn order-btn--ok" title="Confirmar & Aprovar" onClick={() => updateOrderStatus(order, 'Aprovado')}><Check size={15} /></button>)}{order.status === 'Pendente' && <button className="icon-btn" title="Marcar Em Verificação" onClick={() => updateOrderStatus(order, 'Em Verificação')}><Loader2 size={15} /></button>}{(order.status === 'Pendente' || order.status === 'Em Verificação') && <button className="icon-btn" title="Rejeitar" onClick={() => updateOrderStatus(order, 'Rejeitado')}><X size={15} /></button>}<a className="icon-btn" title="Falar no WhatsApp" href={waLinkAdmin(order.telefone_whatsapp, order)} target="_blank" rel="noreferrer noopener"><MessageCircle size={15} /></a><button className="icon-btn danger" title="Eliminar pedido" onClick={() => setDeletingOrderId(order.id)}><Trash2 size={15} /></button></td></tr>)}</tbody></table></div>}</Card>
         })()}
 
         {activeSection === 'relatorios' && !modBloqueado('relatorios') && (() => {
@@ -3166,6 +3313,10 @@ export default function AdminDashboard() {
     {deletingOrderId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingOrderId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar pedido</h2></div><button onClick={() => setDeletingOrderId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este pedido de licença? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingOrderId(null)}>Cancelar</Button><Button variant="dark" onClick={handleOrderDelete}><Trash2 size={15} /> Eliminar pedido</Button></div></div></div>}
 
     {deletingContactId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingContactId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar contacto</h2></div><button onClick={() => setDeletingContactId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este contacto? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingContactId(null)}>Cancelar</Button><Button variant="dark" onClick={handleContactDelete}><Trash2 size={15} /> Eliminar permanentemente</Button></div></div></div>}
+
+    {pipelineEdit && <div className="admin-modal-backdrop" onMouseDown={() => setPipelineEdit(null)}><div className="admin-modal" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">FUNIL COMERCIAL</span><h2>Editar oportunidade</h2></div><button onClick={() => setPipelineEdit(null)}><X size={18} /></button></div><form className="settings-form" onSubmit={(e) => { e.preventDefault(); void submitPipelineEdit() }}><div className="pipe-modal-info"><span className="contact-initials">{pipelineEdit.name.split(' ').map(p => p[0]).slice(0, 2).join('').toUpperCase()}</span><div><strong>{pipelineEdit.name}</strong><small>{pipelineEdit.email}{pipelineEdit.phone ? ` · ${pipelineEdit.phone}` : ''}</small></div></div><div className="settings-row"><label className="settings-field">Fase do funil<select value={pipelineForm.stage} onChange={(e) => setPipelineForm(f => ({ ...f, stage: e.target.value as PipeStage }))}>{PIPELINE_STAGES.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}</select></label><label className="settings-field">Responsável<input value={pipelineForm.responsavel} onChange={(e) => setPipelineForm(f => ({ ...f, responsavel: e.target.value }))} maxLength={120} placeholder="Ex.: Adão" /></label></div><div className="settings-row"><label className="settings-field">Valor estimado<input type="number" min={0} step="0.01" value={pipelineForm.valor} onChange={(e) => setPipelineForm(f => ({ ...f, valor: e.target.value }))} placeholder="Ex.: 450000" /></label><label className="settings-field">Moeda<select value={pipelineForm.moeda} onChange={(e) => setPipelineForm(f => ({ ...f, moeda: e.target.value as 'AOA' | 'USD' }))}><option value="AOA">AOA (Kwanza)</option><option value="USD">USD (Dólar)</option></select></label></div><label className="settings-field">Próximo passo<input value={pipelineForm.proximo} onChange={(e) => setPipelineForm(f => ({ ...f, proximo: e.target.value }))} maxLength={300} placeholder="Ex.: Ligar na terça para fechar a licença" /></label><p className="admin-field-hint">Arraste o card no funil para mudar rapidamente de fase. O valor alimenta os totais por coluna.</p><div className="settings-actions"><Button variant="outline" type="button" onClick={() => setPipelineEdit(null)}>Cancelar</Button><Button variant="dark" type="submit" disabled={pipelineSaving}>{pipelineSaving ? 'A guardar…' : <><Check size={15} /> Guardar</>}</Button></div></form></div></div>}
+
+    {pagModal && <div className="admin-modal-backdrop" onMouseDown={() => setPagModal(null)}><div className="admin-modal" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">LIQUIDAÇÃO — PONTO 5</span><h2>Confirmar pagamento</h2></div><button onClick={() => setPagModal(null)}><X size={18} /></button></div><form className="settings-form" onSubmit={(e) => { e.preventDefault(); void confirmarPagamento() }}><div className="pag-modal-resumo"><div><small>Pedido</small><strong>#{pagModal.id.slice(0, 8).toUpperCase()}</strong></div><div><small>Cliente</small><strong>{pagModal.nome_empresa}</strong></div><div><small>Software</small><strong>{pagModal.software_nome || '—'}</strong></div></div><label className="settings-field">IBAN de destino (CFTEC)<input value={pagForm.iban} onChange={(e) => setPagForm(f => ({ ...f, iban: e.target.value }))} maxLength={40} placeholder="AO06 0000 0000 0000 0000 0000 0" required /></label><label className="settings-field">Comprovativo bancário (anexo, máx. 2 MB)<input type="file" accept="image/*,application/pdf" onChange={(e) => onComprovativoFile(e.target.files?.[0] || null)} />{pagForm.comp_nome && <small className="settings-hint">Anexado: {pagForm.comp_nome}</small>}</label><textarea rows={2} value={pagForm.notas} onChange={(e) => setPagForm(f => ({ ...f, notas: e.target.value }))} maxLength={600} placeholder="Notas internas (opcional): referência Multicaixa, nº de operação…" aria-label="Notas internas" /><p className="admin-field-hint">Ao confirmar, o sistema gera o número <b>FT-{new Date().getFullYear()}/NNN</b> automaticamente, marca o pedido como Pago, envia o recibo em PDF ao cliente e anota o comprovativo. O e-mail ao cliente é enviado se o pedido tiver e-mail.</p><div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setPagModal(null)}>Cancelar</Button><Button variant="dark" type="submit" disabled={pagSaving}>{pagSaving ? 'A confirmar…' : <><Banknote size={15} /> Confirmar liquidação</>}</Button></div></form></div></div>}
 
     {deletingSoftwareId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingSoftwareId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar software</h2></div><button onClick={() => setDeletingSoftwareId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este software e o respectivo instalador do storage? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingSoftwareId(null)}>Cancelar</Button><Button variant="dark" onClick={handleSoftwareDelete}><Trash2 size={15} /> Eliminar permanentemente</Button></div></div></div>}
 
