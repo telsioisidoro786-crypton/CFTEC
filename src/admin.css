@@ -1225,3 +1225,86 @@ html[data-theme='dark'] .admin-tema-btn svg{animation:temaIn .4s ease}
 html[data-theme='dark'] .sk-card,html[data-theme='dark'] .sk-panel{background:#0d1830}
 html[data-theme='dark'] .sk-card::after,html[data-theme='dark'] .sk-panel::after{background:linear-gradient(100deg,transparent 32%,rgba(255,255,255,.07) 50%,transparent 68%)}
 
+
+/* ===== DARK PARTE 2 — linhas, tiles, relatórios, tour (recolhido por scan global) ===== */
+html[data-theme='dark'] .timeline-icon{background:#0f1a2e;box-shadow:0 0 0 3px #0b1322,0 2px 6px rgba(1,5,14,.4)}
+html[data-theme='dark'] .admin-content .icon-btn:hover{background:#16223a;color:#cbd5e1}
+html[data-theme='dark'] .admin-content .icon-btn.danger:hover{background:rgba(239,68,68,.12);color:#f87171}
+html[data-theme='dark'] .media-tile{background:#0d1830;border-color:#1b2842}
+html[data-theme='dark'] .media-tile button:not(.bg-white\/90):not(.bg-red-500\/90){background:transparent;color:#8ba0b9}
+html[data-theme='dark'] .media-tile strong,html[data-theme='dark'] .media-tile span{color:#dbe6f5}
+html[data-theme='dark'] .media-tile .text-gray-400{color:#7a8ea6}
+html[data-theme='dark'] .license-search{background:#0d1830;border-color:#22304e;color:#7a8ea6}
+html[data-theme='dark'] .admin-empty-state{background:#0d1830}
+html[data-theme='dark'] .service-admin-row,html[data-theme='dark'] .user-admin-row,html[data-theme='dark'] .partner-row,html[data-theme='dark'] .upg-row,html[data-theme='dark'] .security-item,html[data-theme='dark'] .settings-row,html[data-theme='dark'] .settings-profile{background:#0d1830;border-color:#1b2842}
+html[data-theme='dark'] .blog-admin-row,html[data-theme='dark'] .destaque-row{background:#0d1830;border-color:#1b2842}
+html[data-theme='dark'] .dl-metrics{background:#0f1a2e;border-color:#1b2842}
+html[data-theme='dark'] .report-kpi{background:#0f1a2e;border-color:#1b2842}
+html[data-theme='dark'] .report-block{background:#0b1322;border-color:#1b2842}
+html[data-theme='dark'] .report-block h3,html[data-theme='dark'] .report-kpi strong{color:#eef4fb}
+html[data-theme='dark'] .settings-banner-checkbox{background:#0d1830;border-color:#1b2842}
+html[data-theme='dark'] .tour{background:#0c1524;box-shadow:0 24px 70px rgba(1,5,14,.65);color:#cdd9ea}
+html[data-theme='dark'] .tour strong,html[data-theme='dark'] .tour h2,html[data-theme='dark'] .tour h3{color:#f3f8ff}
+html[data-theme='dark'] .tour p{color:#8ba0b9}
+html[data-theme='dark'] .tour-choice-card{background:#0f1a2e;border-color:#22304e;color:#e6edf7}
+html[data-theme='dark'] .tour-choice-card:hover{border-color:#0891b2;background:#122238}
+html[data-theme='dark'] .tour-choice-card small{color:#8ba0b9}
+html[data-theme='dark'] .admin-section-hidden,html[data-theme='dark'] .admin-section-panel{background:#0b1322}
+
+/* ===== DARK PARTE 3 — chips de estado translúcidos + health/quick (recolhido por scan pastéis) ===== */
+html[data-theme='dark'] .health-actions .icon-btn{background:#0d1830;border-color:#22304e}
+html[data-theme='dark'] .health-actions .icon-btn:hover{background:#16223a;color:#cbd5e1}
+html[data-theme='dark'] .admin-panel--quick button{background:#0f1a2e;border-color:#1b2842;color:#cdd9ea}
+html[data-theme='dark'] .admin-panel--quick button:hover{background:#13203a;border-color:#0891b2}
+html[data-theme='dark'] .admin-panel--quick button svg{color:#67e8f9}
+html[data-theme='dark'] .admin-panel--quick strong{color:#eef4fb}
+html[data-theme='dark'] .admin-panel--quick small{color:#8ba0b9}
+html[data-theme='dark'] .active-pill{background:rgba(163,230,53,.13);color:#bef264}
+html[data-theme='dark'] .active-pill.inactive{background:rgba(244,63,94,.15);color:#fda4af}
+html[data-theme='dark'] .security-badge--ok{background:rgba(74,222,128,.14);color:#86efac}
+html[data-theme='dark'] .order-status--Pendente{background:rgba(250,204,21,.13);color:#fde047}
+html[data-theme='dark'] .order-status--EmVerificação,html[data-theme='dark'] .order-status--EmResol{background:rgba(96,165,250,.15);color:#93c5fd}
+html[data-theme='dark'] .order-status--Aprovado,html[data-theme='dark'] .order-status--Resolvido{background:rgba(74,222,128,.14);color:#86efac}
+html[data-theme='dark'] .order-status--Pago{background:rgba(52,211,153,.15);color:#6ee7b7}
+html[data-theme='dark'] .order-status--Rejeitado{background:rgba(248,113,113,.14);color:#fca5a5}
+html[data-theme='dark'] .chamado-prio--baixa{background:rgba(74,222,128,.14);color:#86efac}
+html[data-theme='dark'] .chamado-prio--media{background:rgba(250,204,21,.13);color:#fde047}
+html[data-theme='dark'] .chamado-prio--critica{background:rgba(248,113,113,.16);color:#fca5a5}
+html[data-theme='dark'] .chamado-origem{background:rgba(96,165,250,.15);color:#93c5fd}
+html[data-theme='dark'] .upg-chip--pendente{background:rgba(250,204,21,.13);color:#fde047}
+html[data-theme='dark'] .upg-chip--autorizado{background:rgba(74,222,128,.14);color:#86efac}
+html[data-theme='dark'] .upg-chip--recusado{background:rgba(248,113,113,.14);color:#fca5a5}
+html[data-theme='dark'] .sla-pill.sla-ok{background:rgba(74,222,128,.14);color:#86efac}
+html[data-theme='dark'] .sla-pill.sla-alerta{background:rgba(250,204,21,.13);color:#fde047}
+html[data-theme='dark'] .sla-pill.sla-fora{background:rgba(248,113,113,.16);color:#fca5a5}
+html[data-theme='dark'] .sla-pill.sla-escalado{background:rgba(185,28,28,.55);color:#fecaca}
+html[data-theme='dark'] .timeline-badge{background:#12203a;color:#93c5fd}
+
+/* ===== DARK PARTE 4 — pastéis cinza-claro dos spans/barras/ícones (scan final) ===== */
+html[data-theme='dark'] .rank-ver{background:rgba(96,165,250,.15);color:#93c5fd}
+html[data-theme='dark'] .rank-bar{background:#13203a}
+html[data-theme='dark'] .mini-table-bar{background:#13203a}
+html[data-theme='dark'] .meta-bar{background:#13203a}
+html[data-theme='dark'] .admin-service-icon{background:rgba(6,182,212,.12);color:#67e8f9}
+html[data-theme='dark'] .software-symbol{background:rgba(6,182,212,.12);color:#67e8f9}
+html[data-theme='dark'] .version-pill{background:rgba(8,145,178,.16);color:#67e8f9}
+html[data-theme='dark'] .software-tag{background:rgba(96,165,250,.14);color:#93c5fd}
+
+html[data-theme='dark'] .report-top-list>div{background:#0f1a2e}
+html[data-theme='dark'] .report-top-list>div strong{color:#eef4fb}
+html[data-theme='dark'] .report-top-list b{color:#67e8f9}
+
+html[data-theme='dark'] .meta-strip{background:linear-gradient(110deg,rgba(59,130,246,.1),transparent);border-color:rgba(59,130,246,.35)}
+html[data-theme='dark'] .meta-strip b{color:#93c5fd}
+html[data-theme='dark'] .meta-strip b.meta-bateu{color:#86efac}
+html[data-theme='dark'] .meta-strip--off{background:transparent;border-color:#1b2842}
+
+/* ===== DARK PARTE 5 — chips de estado de contacto + csat (scan final) ===== */
+html[data-theme='dark'] .contact-status--unread{background:rgba(96,165,250,.15);color:#93c5fd}
+html[data-theme='dark'] .contact-status--read,html[data-theme='dark'] .contact-status--fechado{background:#16223a;color:#a9bccf}
+html[data-theme='dark'] .contact-status--archived,html[data-theme='dark'] .contact-status--pendente{background:rgba(250,204,21,.13);color:#fde047}
+html[data-theme='dark'] .contact-status--aprovado{background:rgba(74,222,128,.14);color:#86efac}
+html[data-theme='dark'] .contact-status--em_analise,html[data-theme='dark'] .contact-status--em_contacto{background:rgba(14,165,233,.15);color:#7dd3fc}
+html[data-theme='dark'] .contact-status--rejeitado{background:rgba(248,113,113,.14);color:#fca5a5}
+html[data-theme='dark'] .contact-status--proposta{background:rgba(167,139,250,.15);color:#c4b5fd}
+html[data-theme='dark'] .csat-mini{background:rgba(250,204,21,.13);color:#fde047}
