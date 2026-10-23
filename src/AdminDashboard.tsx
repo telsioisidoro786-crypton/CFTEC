@@ -1397,6 +1397,9 @@ export default function AdminDashboard() {
       else notify('Não foi possível ler o log de erros: ' + (b.error || r.status))
     } catch { /* silencioso: painel continua */ }
   }, [])
+  // auto-carga assim que abrir as Definições (e a cada troca de aba activos/resolvidos)
+  useEffect(() => { void carregarLogErros(logErrosVer) }, [carregarLogErros, logErrosVer])
+
   const resolverLogErros = async () => {
     const ids = logErros.map(x => x.id)
     if (!ids.length) return
