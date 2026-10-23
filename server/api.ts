@@ -425,21 +425,64 @@ async function callmebotAdmin(texto: string): Promise<WhatsResult> {
   let apiKey = (process.env.CALLMEBOT_API_KEY || '').trim()
   if (supabase && (!telefone || !apiKey)) {
     try {
-      const { data } = await supabase.from('settings').select('key, value').in('key', ['callmebot_phone', 'callmebot_key'])
+      const { data } = await supabase.from('settings').select('key, value').in('key', ['callmebot_phone', 'callmebot_key', 'telegram_alert_user'])
       const g = (k: string) => (data || []).find((s: { key: string; value: string }) => s.key === k)?.value || ''
       telefone = telefone || g('callmebot_phone') || ''
       apiKey = apiKey || g('callmebot_key') || ''
     } catch { /* segue com o que tiver */ }
   }
-  if (!telefone || !apiKey) return { enviado: false, detalhe: 'sem chaves CallMeBot configuradas' }
-  const destino = telE164(telefone)
-  if (!destino) return { enviado: false, detalhe: 'telefone CallMeBot inválido' }
+  // TELEGRAM (fallback instantâneo): o registo WhatsApp do CallMeBot costuma estar cheio;
+  // a variante Telegram dispensa API key — basta o destinatário mandar '/start' a @CallMeBot_txtbot.
+  let telegramUser = (process.env.TELEGRAM_ALERT_USER || '').trim()
+  if (supabase && !telegramUser) {
+    try {
+      const { data } = await supabase.from('settings').select('value').eq('key', 'telegram_alert_user').maybeSingle()
+      telegramUser = (data as { value?: string } | null)?.value || ''
+    } catch { /* segue */ }
+  }
+  if (telegramUser) {
+    const tgClean = telegramUser.replace(/^@/, '').trim()
+    if (/^[A-Za-z0-9_]{4,64}$/.test(tgClean)) telegramUser = tgClean
+    else telegramUser = ''
+  }
+  if (telefone && apiKey) {
+    const destino = telE164(telefone)
+    if (destino) {
+      const wa = await callmebotEnviar(destino, apiKey, texto)
+      if (wa.enviado) return wa
+      // WhatsApp configurado mas falhou → tentamos o Telegram se existir
+      if (telegramUser) {
+        const tg = await callmebotTelegram(telegramUser, texto)
+        return tg.enviado ? tg : { enviado: false, detalhe: `WhatsApp: ${wa.detalhe} · Telegram: ${tg.detalhe}` }
+      }
+      return wa
+    }
+  }
+  if (telegramUser) return callmebotTelegram(telegramUser, texto)
+  return { enviado: false, detalhe: 'sem chaves CallMeBot nem utilizador Telegram configurados' }
+}
+
+async function callmebotEnviar(destino: string, apiKey: string, texto: string): Promise<WhatsResult> {
   try {
     const url = `https://api.callmebot.com/whatsapp.php?phone=${encodeURIComponent(destino)}&text=${encodeURIComponent(texto).replace(/%20/g, '+')}&apikey=${encodeURIComponent(apiKey)}`
     const response = await fetch(url)
     const body = await response.text()
     if (!response.ok || /error/i.test(body.slice(0, 200))) return { enviado: false, detalhe: `CallMeBot HTTP ${response.status}: ${body.slice(0, 120)}` }
     return { enviado: true, detalhe: 'CallMeBot aceite' }
+  } catch (e) {
+    return { enviado: false, detalhe: e instanceof Error ? e.message : 'exception' }
+  }
+}
+
+async function callmebotTelegram(user: string, texto: string): Promise<WhatsResult> {
+  const alvo = user.startsWith('@') ? user : '@' + user
+  try {
+    const url = `https://api.callmebot.com/text.php?user=${encodeURIComponent(alvo)}&text=${encodeURIComponent(texto).replace(/%20/g, '+')}`
+    const response = await fetch(url)
+    const body = await response.text()
+    if (!response.ok || /error/i.test(body.slice(0, 240)))
+      return { enviado: false, detalhe: `Telegram HTTP ${response.status}: ${body.slice(0, 160)}` }
+    return { enviado: true, detalhe: ` enviada (Telegram ${alvo})` }
   } catch (e) {
     return { enviado: false, detalhe: e instanceof Error ? e.message : 'exception' }
   }

@@ -1364,7 +1364,7 @@ export default function AdminDashboard() {
     event.preventDefault()
     setSavingPortal(true)
     try {
-      const entries = ['telefone_directorio', 'whatsapp_comercial', 'email_contacto', 'iban_cftec', 'linkedin_url', 'x_url', 'banner_mensagem', 'banner_activo', 'notify_email', 'callmebot_phone', 'callmebot_key'].map(k => ({ key: k, value: portalSettings[k] || '' }))
+      const entries = ['telefone_directorio', 'whatsapp_comercial', 'email_contacto', 'iban_cftec', 'linkedin_url', 'x_url', 'banner_mensagem', 'banner_activo', 'notify_email', 'callmebot_phone', 'callmebot_key', 'telegram_alert_user'].map(k => ({ key: k, value: portalSettings[k] || '' }))
       const response = await fetch('/api/admin/settings', {
         method: 'PATCH',
         credentials: 'include',
@@ -1388,7 +1388,7 @@ export default function AdminDashboard() {
     try {
       const response = await fetch('/api/admin/settings/whatsapp-teste', { method: 'POST', credentials: 'include' })
       const body = await response.json().catch(() => ({}))
-      if (body.ok) notify('✅ Mensagem de teste a caminho do WhatsApp — confira no telemóvel! (' + (body.detalhe || 'ok') + ')')
+      if (body.ok) notify('✅ Mensagem de teste a caminho (WhatsApp/Telegram) — confere no telemóvel! (' + (body.detalhe || 'ok') + ')')
       else notify('❌ Falhou: ' + (body.detalhe || body.error || 'erro desconhecido'))
     } catch { notify('Falha de rede no teste') }
   }
@@ -3229,13 +3229,14 @@ export default function AdminDashboard() {
           <label className="settings-field settings-field--full">Mensagem do banner<input value={portalSettings.banner_mensagem || ''} onChange={(e) => setPortalSettings(p => ({ ...p, banner_mensagem: e.target.value }))} placeholder="Ex.: Novo PalancaSoft ERP 2026 já disponível — fale connosco!" maxLength={160} disabled={portalSettings.banner_activo !== 'true'} /></label>
           <label className="settings-field settings-field--full">E-mail de notificações<small>Aviso automático a este destino com cada contacto novo e pedido de licença (Resend). Vazio = desactivado.</small><input type="email" value={portalSettings.notify_email || ''} onChange={(e) => setPortalSettings(p => ({ ...p, notify_email: e.target.value }))} placeholder="ex.: vigilante@cftec.co" maxLength={160} /></label>
           </div><div className="settings-actions"><Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar e aplicar ao site</>}</Button></div></form></Card>}
-          {['super_admin', 'developer'].includes(adminUser?.level || 'super_admin') && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">NOTIFICAÇÕES · WHATSAPP GRÁTIS</span><h2>Avisos no seu WhatsApp pessoal</h2></div></div>
-            <p>Alertas instantâneos (gratuitos, via CallMeBot) para o seu número sempre que: <b>empresa se registar no portal</b>, <b>chegar um chamado</b> (site ou portal) ou <b>um pedido de licença</b> for submetido. O e-mail formal segue em paralelo via Resend.</p>
+          {['super_admin', 'developer'].includes(adminUser?.level || 'super_admin') && <Card className="admin-panel settings-card"><div className="admin-panel-head"><div><span className="admin-panel-kicker">NOTIFICAÇÕES · WHATSAPP / TELEGRAM GRÁTIS</span><h2>Avisos no teu telemóvel</h2></div></div>
+            <p>Alertas instantâneos (gratuitos, via CallMeBot) sempre que: <b>empresa se registar no portal</b>, <b>chegar um chamado</b>, <b>um pedido de licença</b>, <b>liquidação confirmada</b> ou <b>renovação criar oportunidades</b> no funil. O e-mail formal segue em paralelo via Resend.</p>
             <form className="settings-form" onSubmit={handlePortalSave}>
               <div className="settings-row">
-                <label className="settings-field">Telefone do destinatário<small>Com indicativo do país. Ex.: +244 957834748</small><input value={portalSettings.callmebot_phone || ''} onChange={(e) => setPortalSettings(p => ({ ...p, callmebot_phone: e.target.value }))} placeholder="+244 9xx xxx xxx" maxLength={25} /></label>
-                <label className="settings-field">API key do CallMeBot<small>Como obter: callmebot.com → Free API → WhatsApp. Quando o bot tiver vagas, adiciona o número do bot aos contactos do WhatsApp do destinatário e manda «I allow callmebot to send me messages» — o bot responde com a key. (Sem vagas hoje? Guarda este campo para depois — o sistema fica activo assim que colar a chave.)</small><input value={portalSettings.callmebot_key || ''} onChange={(e) => setPortalSettings(p => ({ ...p, callmebot_key: e.target.value }))} placeholder="ex.: 392174" maxLength={30} /></label>
+                <label className="settings-field">Telefone do destinatário (WhatsApp)<small>Com indicativo do país. Ex.: +244 957834748</small><input value={portalSettings.callmebot_phone || ''} onChange={(e) => setPortalSettings(p => ({ ...p, callmebot_phone: e.target.value }))} placeholder="+244 9xx xxx xxx" maxLength={25} /></label>
+                <label className="settings-field">API key do CallMeBot (WhatsApp)<small>Como obter: callmebot.com → Free API → WhatsApp. Quando o bot tiver vagas, adiciona o número do bot aos contactos do WhatsApp do destinatário e manda «I allow callmebot to send me messages» — o bot responde com a key. (Sem vagas hoje? Usa o Telegram em baixo — activa logo.)</small><input value={portalSettings.callmebot_key || ''} onChange={(e) => setPortalSettings(p => ({ ...p, callmebot_key: e.target.value }))} placeholder="ex.: 392174" maxLength={30} /></label>
               </div>
+              <label className="settings-field">Utilizador Telegram para alertas (recomendado — activo já)<small>1. Abre o Telegram e manda «/start» ao bot @CallMeBot_txtbot (uma única vez, é a autorização). 2. Escreve aqui o teu @utilizador (ex.: @telsio). Se o WhatsApp estiver configurado, os dois recebem; se só o Telegram estiver, ele sozinho entrega os alertas.</small><input value={portalSettings.telegram_alert_user || ''} onChange={(e) => setPortalSettings(p => ({ ...p, telegram_alert_user: e.target.value }))} placeholder="@teu_utilizador" maxLength={64} /></label>
               <div className="settings-actions">
                 <Button type="button" variant="outline" size="sm" onClick={() => void testarWhatsapp()}>Testar agora</Button>
                 <Button type="submit" size="sm" disabled={savingPortal}>{savingPortal ? 'A guardar…' : <><Check size={14} /> Guardar chaves</>}</Button>
