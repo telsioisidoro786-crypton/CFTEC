@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sitemap do site público CFTEC · cftec.co -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://cftec.co/</loc>
+    <lastmod>2026-10-24</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://cftec.co/#servicos</loc>
+  </url>
+  <url>
+    <loc>https://cftec.co/#softwares</loc>
+  </url>
+  <url>
+    <loc>https://cftec.co/#blog</loc>
+  </url>
+  <url>
+    <loc>https://cftec.co/#suporte</loc>
+  </url>
+  <url>
+    <loc>https://cftec.co/#contacto</loc>
+  </url>
+</urlset>

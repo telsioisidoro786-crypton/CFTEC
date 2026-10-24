@@ -40,6 +40,12 @@ async function principal() {
   const portal = await pedir('/cliente')
   verificar('GET /cliente (portal) → 200', portal.status === 200, `res=${portal.status}`)
 
+  // 2b. SEO — robots.txt + sitemap servidos como ficheiros estáticos
+  const robots = await pedir('/robots.txt')
+  verificar('GET /robots.txt → 200 + sitemap declarado', robots.status === 200 && /sitemap\.xml/.test(await robots.text()), `res=${robots.status}`)
+  const sitemap = await pedir('/sitemap.xml')
+  verificar('GET /sitemap.xml → 200 com cftec.co', sitemap.status === 200 && /cftec\.co/.test(await sitemap.text()), `res=${sitemap.status}`)
+
   // 2. Públicos de leitura (5000 = sem supabase → aceitável como aviso, não falha dura?)
   const opts = await pedir('/api/contact-options')
   verificar('GET /api/contact-options → 200', opts.status === 200, `res=${opts.status} [${opts.status === 503 ? 'supabase off — ignora' : ''}]`)
