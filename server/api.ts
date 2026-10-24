@@ -623,7 +623,7 @@ async function revokeAllSessionsForUser(sub: string) {
 // admin_users sai SEM password_hash nem segredos 2FA (nunca exportar credenciais).
 // Devolve {..., _contagens} — o manual mantém o resto, limpa _contagens.
 // ============================================================
-const TABELAS_BACKUP = ['pedidos_licencas', 'licencas_palancasoft', 'chamados_suporte', 'wiki_tecnica', 'admin_users', 'settings', 'parceiros_candidaturas', 'contacts', 'blog_posts', 'novidades_destaques', 'media', 'softwares', 'services', 'audit_log'] as const
+const TABELAS_BACKUP = ['pedidos_licencas', 'licencas_palancasoft', 'recibos_faturacao', 'pedidos_upgrade', 'chamados_suporte', 'chamados_mensagens', 'wiki_tecnica', 'clientes_portal', 'admin_users', 'settings', 'parceiros_candidaturas', 'contacts', 'blog_posts', 'novidades_destaques', 'media', 'softwares', 'services', 'download_events', 'logs_erros', 'audit_log'] as const
 async function backupDump(por: string): Promise<Record<string, unknown> & { _contagens: [string, number][] } | null> {
   if (!supabase) return null
   const dados: Record<string, unknown[]> = {}
@@ -1240,7 +1240,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
                 if (!pessoal)
                   return json(res, 403, { ok: false, error: 'Modo somente leitura: a consulta está livre, mas criar/alterar/apagar está bloqueado até regularizar o contrato com a Nexora Systems.' })
               }
-              const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/?/.test(path)
+              const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path === '/api/admin/analytics' || /^\/api\/admin\/(licenses|partners|license-orders)\/?/.test(path)
               if (isComercial && !lic.moduloComercial)
                 return json(res, 403, { ok: false, error: lic.mensagem })
               const isTecnico = path === '/api/admin/chamados' || /^\/api\/admin\/chamados\//.test(path) || path === '/api/admin/wiki' || /^\/api\/admin\/wiki\//.test(path)
@@ -3346,7 +3346,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const nivelNow = currentAdmin(req)?.level
               if (nivelNow !== 'developer') {
                 const lic = await licencaAtual()
-                const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\//.test(path)
+                const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path === '/api/admin/analytics' || /^\/api\/admin\/(licenses|partners|license-orders)\//.test(path)
                 if (isComercial && !lic.moduloComercial)
                   return json(res, 403, { ok: false, error: lic.mensagem })
                 const isTecnico = path === '/api/admin/chamados' || /^\/api\/admin\/chamados\//.test(path) || path === '/api/admin/wiki' || /^\/api\/admin\/wiki\//.test(path)
