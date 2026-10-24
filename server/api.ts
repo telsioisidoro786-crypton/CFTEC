@@ -991,11 +991,12 @@ const logAuditoria = (actor: { email?: string; level?: string } | null | undefin
 
 // Chaves de licenciamento — geridas EXCLUSIVAMENTE pelo developer
 // (nunca aparecem no painel de Definições do super_admin, que não as altera nem vê)
-const CHAVES_LICENCA = ['licenca_ativa', 'modulo_comercial', 'modulo_tecnico', 'modulo_novidades', 'licenca_expira_em', 'msg_licenca', 'dias_aviso_previo', 'max_usuarios', 'max_storage_mb', 'modo_somente_leitura']
+const CHAVES_LICENCA = ['licenca_ativa', 'modulo_comercial', 'modulo_tecnico', 'modulo_novidades', 'modulo_faturacao', 'modulo_relatorios', 'licenca_expira_em', 'msg_licenca', 'dias_aviso_previo', 'max_usuarios', 'max_storage_mb', 'modo_somente_leitura']
 const MSG_SEM_MODULO = 'Módulo não contratado — contacte o Developer da plataforma (Nexora Systems).'
 
 type EstadoLicenca = {
   licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean
+  moduloFaturacao: boolean; moduloRelatorios: boolean
   expiraEm: string; mensagem: string
   diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean
   // computados no servidor (fonte única de verdade para todas as guardas):
@@ -1036,7 +1037,7 @@ function cookieBypassValido(req: IncomingMessage): boolean {
 
 async function licencaAtual(): Promise<EstadoLicenca> {
   const base: EstadoLicenca = {
-    licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: MSG_SEM_MODULO,
+    licencaAtiva: true, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, moduloFaturacao: true, moduloRelatorios: true, expiraEm: '', mensagem: MSG_SEM_MODULO,
     diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false,
     expirada: false, licencaEfetiva: true, estado: 'activa', diasParaVencer: null,
   }
@@ -1069,6 +1070,8 @@ async function licencaAtual(): Promise<EstadoLicenca> {
     moduloComercial: g('modulo_comercial') !== 'false',
     moduloTecnico: g('modulo_tecnico') !== 'false',
     moduloNovidades: g('modulo_novidades') !== 'false',
+    moduloFaturacao: g('modulo_faturacao') !== 'false',
+    moduloRelatorios: g('modulo_relatorios') !== 'false',
     expiraEm,
     mensagem: g('msg_licenca') || base.mensagem,
     diasAviso,
@@ -1240,8 +1243,10 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
                 if (!pessoal)
                   return json(res, 403, { ok: false, error: 'Modo somente leitura: a consulta está livre, mas criar/alterar/apagar está bloqueado até regularizar o contrato com a Nexora Systems.' })
               }
-              const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path === '/api/admin/analytics' || /^\/api\/admin\/(licenses|partners|license-orders)\/?/.test(path)
+              const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\/?/.test(path)
               if (isComercial && !lic.moduloComercial)
+                return json(res, 403, { ok: false, error: lic.mensagem })
+              if (path === '/api/admin/analytics' && !lic.moduloRelatorios)
                 return json(res, 403, { ok: false, error: lic.mensagem })
               const isTecnico = path === '/api/admin/chamados' || /^\/api\/admin\/chamados\//.test(path) || path === '/api/admin/wiki' || /^\/api\/admin\/wiki\//.test(path)
               if (isTecnico && !lic.moduloTecnico)
@@ -1875,7 +1880,17 @@ ${emailLinha('E-mail', escHtml(email))}</table>
             // RENOVAÇÃO 1-CLIQUE: cria um pedido real (tipo 'renovacao') que cae no
             // funil do admin com o preço automático do catálogo — mesmo pipeline
             // de liquidação/FT da Parte 5. Proforma disponível de imediato.
+            // PARTE 7.5: os POSTs (renovação, +utilizadores, comprovativo) ficam sob
+            // o Módulo de Faturação do contrato; GETs de histórico e PDFs continuam
+            // livres (leitura).
+            const fatGuard = async (): Promise<boolean> => {
+              const l = await licencaAtual()
+              if (l.moduloFaturacao) return false
+              json(res, 403, { ok: false, error: l.mensagem })
+              return true
+            }
             if (path === '/api/portal/pedidos/renovar' && req.method === 'POST') {
+              if (await fatGuard()) return
               const payloadRen = await readBody(req) as { licenca_id?: string }
               const licIdRen = String(payloadRen.licenca_id || '').trim()
               if (!/^[a-f0-9-]{36}$/i.test(licIdRen)) return json(res, 400, { ok: false, error: 'Licença inválida.' })
@@ -1916,6 +1931,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
 
             // MAIS UTILIZADORES: solicitação com nº extra — orçamento fica com o comercial
             if (path === '/api/portal/pedidos/usuarios' && req.method === 'POST') {
+              if (await fatGuard()) return
               const payloadUsu = await readBody(req) as { utilizadores_extra?: number | string; nota?: string }
               const extrasUsu = Math.round(Number(payloadUsu.utilizadores_extra || 0))
               if (!extrasUsu || extrasUsu < 1 || extrasUsu > 500)
@@ -1954,6 +1970,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
             // COMPROVATIVO ANEXADO PELO CLIENTE (renovação ou utilizadores) —
             // o admin já o recebe no popup "Confirmar liquidação" da Parte 5
             if (path.match(/^\/api\/portal\/pedidos\/([a-f0-9-]+)\/comprovativo$/) && req.method === 'POST') {
+              if (await fatGuard()) return
               const pidComp = path.split('/')[4]
               const payloadComp = await readBody(req) as { comprovativo_nome?: string; comprovativo_b64?: string }
               const b64Comp = String(payloadComp.comprovativo_b64 || '').trim()
@@ -3175,13 +3192,15 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const vez = currentAdmin(req)
               if (!vez) return json(res, 401, { ok: false })
               if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Só o Developer (Master Admin) gere a licença da plataforma.' })
-              const payload = await readBody(req) as Partial<{ licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; expiraEm: string; mensagem: string; diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean }>
+              const payload = await readBody(req) as Partial<{ licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean; moduloFaturacao: boolean; moduloRelatorios: boolean; expiraEm: string; mensagem: string; diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean }>
               const boolOf = (v?: boolean) => (typeof v === 'boolean' ? (v ? 'true' : 'false') : null)
               const descr: Record<string, string> = {
                 licenca_ativa: 'Licença da plataforma — false suspende o painel para todos excepto developers',
                 modulo_comercial: 'Módulo Comercial: pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil',
                 modulo_tecnico: 'Módulo Técnico: chamados de suporte e wiki técnica',
                 modulo_novidades: 'Módulo Novidades: blog/CMS e destaques (site + painel)',
+                modulo_faturacao: 'Módulo de Faturação: auto-serviço no portal do cliente — renovação 1-clique, comprovativos, FT/recibos e utilizadores extra',
+                modulo_relatorios: 'Módulo de Relatórios avançados & Metas — secção Relatórios do painel (vendas, SLA, analytics)',
                 licenca_expira_em: 'Data de validade da licença de manutenção (YYYY-MM-DD; vazio = sem prazo)',
                 msg_licenca: 'Mensagem exibida quando um módulo/licença está bloqueado',
                 dias_aviso_previo: 'Dias de aviso prévio antes do vencimento (banner amarelo)',
@@ -3194,6 +3213,8 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const mc = boolOf(payload.moduloComercial); if (mc) atual.push({ key: 'modulo_comercial', value: mc, description: descr.modulo_comercial })
               const mt = boolOf(payload.moduloTecnico); if (mt) atual.push({ key: 'modulo_tecnico', value: mt, description: descr.modulo_tecnico })
               const mn = boolOf(payload.moduloNovidades); if (mn) atual.push({ key: 'modulo_novidades', value: mn, description: descr.modulo_novidades })
+              const mf = boolOf(payload.moduloFaturacao); if (mf) atual.push({ key: 'modulo_faturacao', value: mf, description: descr.modulo_faturacao })
+              const mr = boolOf(payload.moduloRelatorios); if (mr) atual.push({ key: 'modulo_relatorios', value: mr, description: descr.modulo_relatorios })
               if (payload.expiraEm !== undefined) atual.push({ key: 'licenca_expira_em', value: String(payload.expiraEm).slice(0, 10), description: descr.licenca_expira_em })
               if (payload.mensagem !== undefined) atual.push({ key: 'msg_licenca', value: String(payload.mensagem).slice(0, 300), description: descr.msg_licenca })
               if (payload.diasAviso !== undefined) atual.push({ key: 'dias_aviso_previo', value: String(Math.max(0, Math.min(30, Math.round(Number(payload.diasAviso) || 0)))), description: descr.dias_aviso_previo })
@@ -3205,7 +3226,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 if (error) return json(res, 500, { ok: false, error: error.message })
               }
               const resultado = await licencaAtual()
-              logAuditoria(vez, 'licenca_alterada', 'plataforma', null, { alteracoes: atual.map((a) => `${a.key}=${a.value}`), resultado: { licencaAtiva: resultado.licencaAtiva, comercial: resultado.moduloComercial, tecnico: resultado.moduloTecnico, novidades: resultado.moduloNovidades, expiraEm: resultado.expiraEm, diasAviso: resultado.diasAviso, maxUsuarios: resultado.maxUsuarios, maxStorageMb: resultado.maxStorageMb, somenteLeitura: resultado.somenteLeitura } })
+              logAuditoria(vez, 'licenca_alterada', 'plataforma', null, { alteracoes: atual.map((a) => `${a.key}=${a.value}`), resultado: { licencaAtiva: resultado.licencaAtiva, comercial: resultado.moduloComercial, tecnico: resultado.moduloTecnico, novidades: resultado.moduloNovidades, faturacao: resultado.moduloFaturacao, relatorios: resultado.moduloRelatorios, expiraEm: resultado.expiraEm, diasAviso: resultado.diasAviso, maxUsuarios: resultado.maxUsuarios, maxStorageMb: resultado.maxStorageMb, somenteLeitura: resultado.somenteLeitura } })
               return json(res, 200, { ok: true, ...resultado })
             }
 
@@ -3303,6 +3324,8 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   const escolha = String(atual.itens || '')
                   const temSuporte = /M[oó]dulo de Suporte T[eé]cnico/i.test(escolha)
                   const temNovidades = /Novidades/i.test(escolha)
+                  const temFaturacao = /Fatura[çc][ãa]o/i.test(escolha)
+                  const temRelatorios = /Relat[oó]rios/i.test(escolha)
                   const mais5Usuarios = /\+\s*5\s*utilizadores/i.test(escolha)
                   const mais25Gb = /\+\s*25\s*GB/i.test(escolha)
                   const licAgora = await licencaAtual()
@@ -3318,9 +3341,11 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                     { key: 'modulo_comercial', value: 'true', description: 'Módulo Comercial: pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil' },
                     { key: 'modulo_tecnico', value: temSuporte ? 'true' : 'false', description: 'Módulo Técnico: chamados de suporte e wiki técnica — reflete a escolha do cliente' },
                     { key: 'modulo_novidades', value: temNovidades ? 'true' : 'false', description: 'Módulo Novidades: blog/CMS e destaques — reflete a escolha do cliente' },
+                    { key: 'modulo_faturacao', value: temFaturacao ? 'true' : 'false', description: 'Módulo de Faturação: auto-serviço no portal do cliente — reflete a escolha' },
+                    { key: 'modulo_relatorios', value: temRelatorios ? 'true' : 'false', description: 'Módulo de Relatórios avançados & Metas — reflete a escolha' },
                     { key: 'licenca_expira_em', value: novaValidade, description: 'Validade prorrogada +30 dias pela autorização do pedido de upgrade' },
                   ]
-                  autoAplicado.push('Licença activa', 'Modo somente leitura desligado', 'Módulo Comercial ligado', temSuporte ? 'Módulo de Suporte Técnico ligado' : 'Módulo de Suporte Técnico desligado', temNovidades ? 'Módulo Novidades ligado' : 'Módulo Novidades desligado', `Validade até ${novaValidade}`)
+                  autoAplicado.push('Licença activa', 'Modo somente leitura desligado', 'Módulo Comercial ligado', temSuporte ? 'Módulo de Suporte Técnico ligado' : 'Módulo de Suporte Técnico desligado', temNovidades ? 'Módulo Novidades ligado' : 'Módulo Novidades desligado', temFaturacao ? 'Módulo de Faturação ligado' : 'Módulo de Faturação desligado', temRelatorios ? 'Módulo de Relatórios ligado' : 'Módulo de Relatórios desligado', `Validade até ${novaValidade}`)
                   if (mais5Usuarios && licAgora.maxUsuarios > 0) {
                     autoLista.push({ key: 'max_usuarios', value: String(Math.min(999, licAgora.maxUsuarios + 5)), description: 'Quota de utilizadores +5 pela autorização do pedido de upgrade' })
                     autoAplicado.push(`Quota de utilizadores → ${Math.min(999, licAgora.maxUsuarios + 5)}`)
@@ -3346,8 +3371,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const nivelNow = currentAdmin(req)?.level
               if (nivelNow !== 'developer') {
                 const lic = await licencaAtual()
-                const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || path === '/api/admin/analytics' || /^\/api\/admin\/(licenses|partners|license-orders)\//.test(path)
+                const isComercial = path === '/api/admin/licenses' || path === '/api/admin/partners' || path === '/api/admin/license-orders' || /^\/api\/admin\/(licenses|partners|license-orders)\//.test(path)
                 if (isComercial && !lic.moduloComercial)
+                  return json(res, 403, { ok: false, error: lic.mensagem })
+                if (path === '/api/admin/analytics' && !lic.moduloRelatorios)
                   return json(res, 403, { ok: false, error: lic.mensagem })
                 const isTecnico = path === '/api/admin/chamados' || /^\/api\/admin\/chamados\//.test(path) || path === '/api/admin/wiki' || /^\/api\/admin\/wiki\//.test(path)
                 if (isTecnico && !lic.moduloTecnico)
@@ -3732,9 +3759,29 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               for (const l of lic) toque(l.nif, null, l.cliente_nome, l.created_at || '')
               for (const d of dls) { toque(d.portal_nif, d.portal_email, null, d.created_at); const k = (d.portal_nif || '').trim() || `email:${(d.portal_email || '').trim().toLowerCase()}`; const e = campos.get(k); if (e) e.downloads++ }
               for (const c of cham) { toque(c.nif, null, c.cliente, c.created_at); const k = (c.nif || '').trim(); const e = campos.get(k); if (e) e.chamados++ }
+              // PARTE 7.5 · monitorização por empresa: licenças + validade + valor anual recebido
+              const estadoPorNif = new Map<string, { activas: number; expira: string | null }>()
+              for (const l of activas) {
+                const k = (l.nif || '').trim(); if (!k) continue
+                const a = estadoPorNif.get(k) || { activas: 0, expira: null as string | null }
+                a.activas++
+                if (!a.expira || ((l.data_expiracao as string) && (l.data_expiracao as string) < a.expira)) a.expira = l.data_expiracao
+                estadoPorNif.set(k, a)
+              }
+              // rec vem ordenado por criado_em desc → o primeiro valor>0 do NIF é o mais recente
+              const anualPorNif = new Map<string, number>()
+              for (const r of rec) {
+                const k = (r.cliente_nif || '').trim(); const v = Number(r.valor)
+                if (!k || !(v > 0) || anualPorNif.has(k)) continue
+                anualPorNif.set(k, v)
+              }
               const empresas = Array.from(campos.values())
                 .sort((a, b) => (b.downloads + b.chamados * 3) - (a.downloads + a.chamados * 3) || String(b.ultimo || '').localeCompare(String(a.ultimo || '')))
-                .slice(0, 12)
+                .slice(0, 20)
+                .map(e => {
+                  const st = estadoPorNif.get((e.nif || '').trim())
+                  return { ...e, activas: st?.activas || 0, expira: st?.expira || null, anualKz: anualPorNif.get((e.nif || '').trim()) || null }
+                })
               return json(res, 200, { ok: true, mrrKz, arrKz: mrrKz * 12, receita12, meses12, licencas: { activas: activas.length, expirando30d, churn30d: churnLicencas, churnRate }, empresas })
             }
 

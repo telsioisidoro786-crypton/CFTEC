@@ -229,6 +229,7 @@ const zeroSummary: Summary = { softwares: 0, media: 0, services: 0, contacts: 0 
 
 type SysLic = {
   licencaAtiva: boolean; moduloComercial: boolean; moduloTecnico: boolean; moduloNovidades: boolean
+  moduloFaturacao: boolean; moduloRelatorios: boolean
   expiraEm: string; mensagem: string
   diasAviso: number; maxUsuarios: number; maxStorageMb: number; somenteLeitura: boolean
   expirada: boolean; licencaEfetiva: boolean
@@ -658,7 +659,7 @@ export default function AdminDashboard() {
   // pedidos de pagamento/manutenção (super vê os seus; developer autoriza/recusa)
   const [upgradePedidos, setUpgradePedidos] = useState<Array<{ id: string; empresa: string; email: string; itens: string; total: string; estado: 'pendente' | 'autorizado' | 'recusado'; nota_dev: string | null; created_at: string; resolvido_em: string | null; resolvido_por: string | null }>>([])
   // licenciamento da plataforma — flags geridas pelo developer (Master Admin)
-  const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, licencaEfetiva: true, expirada: false, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, expiraEm: '', mensagem: '', diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false, diasParaVencer: null })
+  const [sysLic, setSysLic] = useState<SysLic>({ licencaAtiva: true, licencaEfetiva: true, expirada: false, moduloComercial: true, moduloTecnico: true, moduloNovidades: true, moduloFaturacao: true, moduloRelatorios: true, expiraEm: '', mensagem: '', diasAviso: 5, maxUsuarios: 0, maxStorageMb: 0, somenteLeitura: false, diasParaVencer: null })
   // vista kanban do pipeline comercial (arrastar cartões muda o estado do pedido)
   const [orderView, setOrderView] = useState<'tabela' | 'kanban'>('tabela')
   const [deletingOrderId, setDeletingOrderId] = useState<string | null>(null)
@@ -1598,7 +1599,7 @@ export default function AdminDashboard() {
   }
 
   // Parte 7.3 — analytics de negócio: MRR/ARR, churn e engajamento por empresa
-  type RepoEmpresa = { nif: string; nome: string; downloads: number; chamados: number; ultimo: string | null }
+  type RepoEmpresa = { nif: string; nome: string; downloads: number; chamados: number; ultimo: string | null; activas: number; expira: string | null; anualKz: number | null }
   const [analytics, setAnalytics] = useState<{ ok?: boolean; mrrKz: number; arrKz: number; receita12: number; meses12: { mes: string; label: string; total: number; ft: number }[]; licencas: { activas: number; expirando30d: number; churn30d: number; churnRate: number }; empresas: RepoEmpresa[] } | null>(null)
   const loadAnalytics = async () => {
     try {
@@ -1613,7 +1614,7 @@ export default function AdminDashboard() {
   }, [activeSection])
 
   useEffect(() => {
-    if (activeSection === 'relatorios') void loadAnalytics()
+    if (activeSection === 'relatorios' || activeSection === 'developer') void loadAnalytics()
   }, [activeSection])
 
   // conversa ao vivo: enquanto o modal está aberto, re-busca as mensagens (a resposta
@@ -2818,8 +2819,8 @@ export default function AdminDashboard() {
   const role = adminUser?.level || 'super_admin'
   // licenciamento: developer vê tudo sempre; outros níveis dependem dos flags do developer
   const ehDev = role === 'developer'
-  const MOD_POR_SEC: Partial<Record<AdminSection, 'moduloComercial' | 'moduloTecnico' | 'moduloNovidades'>> = {
-    pedidos: 'moduloComercial', relatorios: 'moduloComercial', parceiros: 'moduloComercial',
+  const MOD_POR_SEC: Partial<Record<AdminSection, 'moduloComercial' | 'moduloTecnico' | 'moduloNovidades' | 'moduloFaturacao' | 'moduloRelatorios'>> = {
+    pedidos: 'moduloComercial', relatorios: 'moduloRelatorios', parceiros: 'moduloComercial',
     chamados: 'moduloTecnico', wiki: 'moduloTecnico',
     blog: 'moduloNovidades', destaques: 'moduloNovidades',
   }
@@ -3212,6 +3213,8 @@ export default function AdminDashboard() {
             <div className={`dev-toggle-row ${!sysLic.moduloComercial ? 'dev-toggle-row--off' : ''}`}><div><strong>Módulo Comercial</strong><small>Pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil (+ checkout público)</small></div><button type="button" className={`dev-switch ${sysLic.moduloComercial ? 'is-on' : ''}`} aria-label="Módulo Comercial" onClick={() => guardarLicenca({ moduloComercial: !sysLic.moduloComercial })} /></div>
             <div className={`dev-toggle-row ${!sysLic.moduloTecnico ? 'dev-toggle-row--off' : ''}`}><div><strong>Módulo de Suporte Técnico</strong><small>Chamados de suporte + wiki técnica (+ formulário público de suporte)</small></div><button type="button" className={`dev-switch ${sysLic.moduloTecnico ? 'is-on' : ''}`} aria-label="Módulo Técnico" onClick={() => guardarLicenca({ moduloTecnico: !sysLic.moduloTecnico })} /></div>
             <div className={`dev-toggle-row ${!sysLic.moduloNovidades ? 'dev-toggle-row--off' : ''}`}><div><strong>Módulo de Novidades</strong><small>Blog/CMS e destaques do site (slider da página inicial)</small></div><button type="button" className={`dev-switch ${sysLic.moduloNovidades ? 'is-on' : ''}`} aria-label="Módulo de Novidades" onClick={() => guardarLicenca({ moduloNovidades: !sysLic.moduloNovidades })} /></div>
+            <div className={`dev-toggle-row ${!sysLic.moduloFaturacao ? 'dev-toggle-row--off' : ''}`}><div><strong>Módulo de Faturação (Auto-serviço no Portal)</strong><small>O cliente renova a licença 1-clique, anexa comprovativos, vê proformas/FT em PDF e pede utilizadores extra no portal — sentinela: os GETs de histórico continuam livres</small></div><button type="button" className={`dev-switch ${sysLic.moduloFaturacao ? 'is-on' : ''}`} aria-label="Módulo de Faturação" onClick={() => guardarLicenca({ moduloFaturacao: !sysLic.moduloFaturacao })} /></div>
+            <div className={`dev-toggle-row ${!sysLic.moduloRelatorios ? 'dev-toggle-row--off' : ''}`}><div><strong>Módulo de Relatórios avançados & Metas</strong><small>Secção Relatórios: vendas/conversão + SLA/CSAT + analytics de subscrições (MRR/ARR, churn, engajamento) — é o add-on «Relatórios avançados & metas» dos planos</small></div><button type="button" className={`dev-switch ${sysLic.moduloRelatorios ? 'is-on' : ''}`} aria-label="Módulo de Relatórios" onClick={() => guardarLicenca({ moduloRelatorios: !sysLic.moduloRelatorios })} /></div>
           </div>
           <form className="settings-form dev-lic-form" onSubmit={(e) => { e.preventDefault(); guardarLicenca({ expiraEm: sysLic.expiraEm, mensagem: sysLic.mensagem }) }}>
             <div className="settings-row">
@@ -3260,6 +3263,18 @@ export default function AdminDashboard() {
             ))}</div>}
           </Card>}
           <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['recibos_faturacao', 'recibos / faturas (FT)'], ['pedidos_upgrade', 'pedidos de upgrade (contrato)'], ['chamados_suporte', 'chamados'], ['chamados_mensagens', 'conversas dos chamados'], ['wiki_tecnica', 'wiki técnica + FAQ'], ['clientes_portal', 'contas do portal do cliente'], ['download_events', 'eventos de downloads'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['logs_erros', 'diário de erros'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button></div></Card>
+          {analytics && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">DESEMPENHO · PORTAL DOS CLIENTES</span><h2>Monitorização & análise dos clientes</h2></div><button className="icon-btn" title="Actualizar números" onClick={() => void loadAnalytics()}><RefreshCw size={15} /></button></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Como cada empresa usa realmente o portal nos <b>últimos 30 dias</b>: downloads do catálogo oficial e chamados de suporte (peso ×3), cruzados com as licenças e o valor anual já recebido. Servem para decidir renovações, cortesias e quem merece atenção comercial.</p>
+            <div className="sla-grid" style={{ marginBottom: 16 }}>
+              <div className="sla-kpi"><small>Empresas com actividade</small><strong>{analytics.empresas.length}</strong><span>nas consultas dos últimos 30 dias</span></div>
+              <div className="sla-kpi"><small>Downloads no portal</small><strong>{analytics.empresas.reduce((s, e) => s + e.downloads, 0)}</strong><span>últimos 30 dias</span></div>
+              <div className="sla-kpi"><small>Chamados abertos</small><strong>{analytics.empresas.reduce((s, e) => s + e.chamados, 0)}</strong><span>últimos 30 dias</span></div>
+              <div className="sla-kpi"><small>Subscrição anual activa</small><strong>{(analytics.arrKz).toLocaleString('pt-PT')} Kz</strong><span>{analytics.licencas.activas} licença(s) activa(s)</span></div>
+            </div>
+            {analytics.empresas.length === 0 ? <div className="admin-empty-state"><Users size={40} /><h3>Sem sinais de actividade</h3><p>Quando os clientes entrarem no portal (downloads, chamados, renovações), os sinais aparecem aqui.</p></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Empresa</th><th>NIF</th><th>Lic.</th><th>Validade</th><th>Valor anual</th><th>⬇️ 30d</th><th>📞 30d</th><th>Último sinal</th></tr></thead><tbody>{analytics.empresas.map(e => {
+              const diasVal = e.expira ? Math.ceil((new Date(`${e.expira}T00:00:00Z`).getTime() - Date.now()) / 86400000) : null
+              return <tr key={e.nif + '|' + e.nome}><td><strong>{e.nome}</strong></td><td>{e.nif}</td><td>{e.activas || '—'}</td><td>{!e.expira ? '—' : <span className="tl-badge tl-badge-servico" data-tip={diasVal !== null && diasVal < 0 ? 'Licença VENCIDA' : diasVal !== null && diasVal <= 30 ? 'Vence em breve — fale com o cliente' : 'Licença activa'}>{new Date(`${e.expira}T00:00:00Z`).toLocaleDateString('pt-PT')}{diasVal !== null && diasVal < 0 ? ' ⚠️' : diasVal !== null && diasVal <= 30 ? ' ⏰' : ''}</span>}</td><td>{e.anualKz ? `${e.anualKz.toLocaleString('pt-PT')} Kz` : '—'}</td><td>{e.downloads}</td><td>{e.chamados}</td><td>{e.ultimo ? new Date(e.ultimo).toLocaleDateString('pt-PT') : '—'}</td></tr>
+            })}</tbody></table></div>}
+          </Card>}
         </>}
 
         {activeSection === 'auditoria' && (() => {

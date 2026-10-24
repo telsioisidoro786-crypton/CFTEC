@@ -16,6 +16,7 @@ import {
   DatabaseIcon,
   LifeBuoyIcon,
   LockIcon,
+  ReceiptTextIcon,
   RepeatIcon,
   SparklesIcon,
 } from "lucide-react"
@@ -52,6 +53,13 @@ export type FeatureToggle = {
 }
 
 const defaultFeatures: FeatureToggle[] = [
+  {
+    id: "faturacao",
+    label: "Módulo de Faturação — auto-serviço no portal",
+    icon: <ReceiptTextIcon className="size-4" />,
+    price: 10000,
+    enabled: false,
+  },
   {
     id: "suporte",
     label: "Módulo de Suporte Técnico",
