@@ -61,6 +61,8 @@ async function principal() {
     ['/api/portal/downloads', 'downloads do portal'],
     ['/api/portal/pedidos', 'pedidos do portal'],
     ['/api/portal/licencas', 'licenças do portal'],
+    // Parte 7.2 — FAQ do portal
+    ['/api/portal/faq', 'FAQ do portal'],
   ]
   for (const [rota, nome] of casos) {
     const r = await pedir(rota)

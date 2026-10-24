@@ -5,8 +5,8 @@
 // ============================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, BadgeCheck, Building2, CheckCircle2, Download, FileText, KeyRound, LifeBuoy,
-  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, RefreshCw, Send, ShieldCheck, Star, Timer, Upload, UserPlus, Users,
+  Activity, BadgeCheck, Building2, CheckCircle2, Download, FileText, HelpCircle, KeyRound, LifeBuoy,
+  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, RefreshCw, Search, Send, ShieldCheck, Star, ThumbsUp, Timer, Upload, UserPlus, Users,
 } from 'lucide-react'
 
 type Sessao = { empresa: string; email: string }
@@ -14,6 +14,7 @@ type Pedido = { id: string; created_at: string; software_nome: string; status: s
 type Licenca = { id: string; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }
 type RenovacaoInfo = { software: string | null; preco: number | null; preco_bi: string }
 type SoftwareDL = { id: string; name: string; version: string | null; description: string | null; category: string | null; file_size: number | null; downloads_count: number | null }
+type FaqArtigo = { id: string; titulo: string; software: string | null; problema: string; solucao: string; tags: string | null; updated_at: string; ajudou: number | null }
 type Chamado = { id: string; created_at: string; updated_at: string; software: string | null; problema: string; resolucao: string | null; estado: string; prioridade: string; origem: string | null; sla_horas?: number | null; prazo_sla?: string | null; resolvido_em?: string | null; escalonado?: boolean | null; csat?: number | null }
 type Mensagem = { id: string; created_at: string; autor: 'cliente' | 'tecnico' | 'sistema'; autor_nome: string | null; corpo: string }
 
@@ -51,7 +52,7 @@ export default function ClientePortal() {
   const [sessao, setSessao] = useState<Sessao | null>(null)
   const [aviso, setAviso] = useState('')
   const [modoAlt, setModoAlt] = useState<'login' | 'registo'>('login')
-  const [tab, setTab] = useState<'resumo' | 'pedidos' | 'licencas' | 'downloads' | 'chamados'>('resumo')
+  const [tab, setTab] = useState<'resumo' | 'pedidos' | 'licencas' | 'downloads' | 'ajuda' | 'chamados'>('resumo')
   const [registoOk, setRegistoOk] = useState(false)
   const [whats, setWhats] = useState('244933609090') // reforçado pela settings abaixo
 
@@ -82,6 +83,13 @@ export default function ClientePortal() {
   const [softDLLoaded, setSoftDLLoaded] = useState(false)
   const [baixando, setBaixando] = useState<string | null>(null)
 
+  // Parte 7.2 — FAQ/auto-deflection: artigos da wiki marcados «visível ao cliente»
+  const [faq, setFaq] = useState<FaqArtigo[]>([])
+  const [faqLoaded, setFaqLoaded] = useState(false)
+  const [faqBusca, setFaqBusca] = useState('')
+  const [faqAberto, setFaqAberto] = useState<string | null>(null)
+  const [faqRespondeu, setFaqRespondeu] = useState<Record<string, boolean>>({})
+
   // catálogo de downloads: carrega à primeira vez que a tab abre (não gasta fetch por sempre)
   useEffect(() => {
     if (tab !== 'downloads' || softDLLoaded || vista !== 'dentro') return
@@ -90,6 +98,15 @@ export default function ClientePortal() {
       .catch(() => {})
       .finally(() => setSoftDLLoaded(true))
   }, [tab, softDLLoaded, vista])
+
+  // FAQ: carrega à primeira vez que a aba «Ajuda» abre
+  useEffect(() => {
+    if (tab !== 'ajuda' || faqLoaded || vista !== 'dentro') return
+    apiJson<{ ok: boolean; artigos?: FaqArtigo[] }>('/api/portal/faq')
+      .then(({ body }) => { setFaq(body.artigos || []) })
+      .catch(() => {})
+      .finally(() => setFaqLoaded(true))
+  }, [tab, faqLoaded, vista])
 
   // sessão existente (cookie) — levanta dados de imediato
   useEffect(() => {
@@ -259,6 +276,29 @@ export default function ClientePortal() {
     } else setAviso('Download indisponível de momento — contacte a equipa.')
   }
 
+  // ─── Parte 7.2 · FAQ — feedback + caminho para o chamado com contexto ───
+  const marcarResolvido = async (artigo: FaqArtigo) => {
+    if (faqRespondeu[artigo.id]) return
+    setFaqRespondeu(r => ({ ...r, [artigo.id]: true }))
+    const { status, body } = await apiJson<{ ok?: boolean; ajudou?: number }>(`/api/portal/faq/${artigo.id}/resolveu`, { method: 'POST' })
+    if (status === 200) {
+      setFaq(l => l.map(a => a.id === artigo.id ? { ...a, ajudou: body.ajudou ?? (a.ajudou || 0) + 1 } : a))
+      setAviso('👍 Obrigado! Registamos que este artigo resolveu o seu problema.')
+      window.setTimeout(() => setAviso(''), 5000)
+    } else {
+      setFaqRespondeu(r => { const c = { ...r }; delete c[artigo.id]; return c })
+      setAviso(body.error || 'Não foi possível registar o feedback.')
+    }
+  }
+
+  const abrirChamadoDeArtigo = (artigo: FaqArtigo) => {
+    setFChamado({
+      software: artigo.software && artigo.software !== 'Geral' ? artigo.software : '',
+      descricao_problema: `Consultei o artigo da Ajuda «${artigo.titulo}» e não resolveu. O que ocorre: `,
+    })
+    setTab('chamados')
+  }
+
   const trocarSenha = async (e: React.FormEvent) => {
     e.preventDefault(); setOcupado(true); setAviso('')
     const { status, body } = await apiJson('/api/portal/password', { method: 'POST', body: JSON.stringify(fSenha) })
@@ -367,7 +407,7 @@ export default function ClientePortal() {
         {aviso && <div className="mb-6 text-sm bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 rounded-xl px-4 py-3 flex items-center gap-2"><CheckCircle2 size={16} /> {aviso}</div>}
 
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10 w-max mb-6 overflow-x-auto max-w-full">
-          {([['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['licencas', 'Licenças'], ['downloads', 'Downloads'], ['chamados', 'Chamados']] as const).map(([id, label]) => (
+          {([['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['licencas', 'Licenças'], ['downloads', 'Downloads'], ['ajuda', 'Ajuda'], ['chamados', 'Chamados']] as const).map(([id, label]) => (
             <button key={id} onClick={() => { setTab(id); setAviso('') }} className={`px-4 py-2 text-sm rounded-lg whitespace-nowrap transition-all ${tab === id ? 'bg-cyan-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{label}</button>
           ))}
         </div>
@@ -491,6 +531,68 @@ export default function ClientePortal() {
                   </button>
                 </div>
               ))}</div>
+        )}
+
+        {tab === 'ajuda' && (
+          <div className="space-y-4">
+            <div className="bg-white/[.03] border border-white/10 rounded-2xl p-5">
+              <div className="flex items-center gap-2 flex-wrap justify-between">
+                <span className="inline-flex items-center gap-2 text-xs font-semibold text-cyan-400 bg-cyan-400/10 border border-cyan-400/20 rounded-full px-3 py-1"><HelpCircle size={14} /> Ajuda de primeiro socorro</span>
+                <div className="relative">
+                  <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+                  <input value={faqBusca} onChange={e => setFaqBusca(e.target.value)} placeholder="Pesquisar problema, software ou tag…" className="w-64 bg-white/5 border border-white/10 rounded-lg pl-8 pr-3 py-2 text-sm outline-none placeholder:text-slate-600 focus:border-cyan-400/60" />
+                </div>
+              </div>
+              <p className="mt-3 text-sm text-slate-400">Soluções que a equipa técnica já publicou para os problemas mais comuns. Se um artigo não resolver, abre o chamado com tudo o que já tentou — desta forma o técnico chega mais rápido à causa.</p>
+            </div>
+            {!faqLoaded ? (
+              <Empty ic={<HelpCircle size={44} />} t="A carregar artigos…" d="Só um instante." />
+            ) : faq.length === 0 ? (
+              <Empty ic={<HelpCircle size={44} />} t="Ainda sem artigos publicados" d="A equipa está a preparar a base de respostas — neste momento, os chamados chegam por WhatsApp e na aba Chamados." />
+            ) : (() => {
+              const q = faqBusca.trim().toLowerCase()
+              const visiveis = q ? faq.filter(a => `${a.titulo} ${a.software || ''} ${a.problema} ${a.solucao} ${a.tags || ''}`.toLowerCase().includes(q)) : faq
+              if (visiveis.length === 0) return <Empty ic={<Search size={44} />} t={`Nada para "${faqBusca}"`} d="Tente outro termo — ou abra o chamado e descreva com as suas palavras." />
+              return (
+                <div className="space-y-3">
+                  {visiveis.map(a => (
+                    <div key={a.id} className="bg-white/[.03] border border-white/10 rounded-2xl overflow-hidden">
+                      <button onClick={() => setFaqAberto(faqAberto === a.id ? null : a.id)} className="w-full text-left p-5 flex items-start gap-3 hover:bg-white/[.04] transition-colors">
+                        <HelpCircle size={17} className="mt-0.5 text-cyan-400 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <strong className="text-[15px]">{a.titulo}</strong>
+                          <p className="mt-1 text-sm text-slate-400 line-clamp-1">{a.problema}</p>
+                        </div>
+                        <div className="shrink-0 flex items-center gap-2">
+                          {a.software && <span className="text-[11px] text-slate-300 border border-white/10 px-2 py-0.5 rounded-full">{a.software}</span>}
+                          {(a.ajudou || 0) > 0 && <span className="text-[11px] text-emerald-300 bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 rounded-full">👍 {a.ajudou}</span>}
+                        </div>
+                      </button>
+                      {faqAberto === a.id && (
+                        <div className="px-5 pb-5 border-t border-white/10 pt-4">
+                          <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">Sintoma</p>
+                          <p className="mt-1.5 text-sm text-slate-300 whitespace-pre-wrap">{a.problema}</p>
+                          <p className="mt-4 text-xs font-bold text-slate-500 uppercase tracking-wide">Como resolver</p>
+                          <p className="mt-1.5 text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">{a.solucao}</p>
+                          {a.tags && (
+                            <div className="mt-3 flex gap-1.5 flex-wrap">{a.tags.split(',').map(t => t.trim()).filter(Boolean).map(t => <span key={t} className="text-[11px] text-cyan-300/90 bg-cyan-400/10 border border-cyan-400/15 px-2 py-0.5 rounded-full">#{t}</span>)}</div>
+                          )}
+                          <div className="mt-4 flex gap-2 flex-wrap items-center">
+                            <button onClick={() => void marcarResolvido(a)} disabled={faqRespondeu[a.id]} className="inline-flex items-center gap-1.5 text-xs bg-emerald-500/10 border border-emerald-400/30 text-emerald-300 rounded-lg px-3 py-2 font-semibold hover:bg-emerald-500/20 transition-colors disabled:opacity-60">
+                              <ThumbsUp size={13} /> {faqRespondeu[a.id] ? 'Registado — ' + (a.ajudou || 0) : 'Sim, resolveu'}
+                            </button>
+                            <button onClick={() => abrirChamadoDeArtigo(a)} className="inline-flex items-center gap-1.5 text-xs text-slate-300 border border-white/15 rounded-lg px-3 py-2 hover:bg-white/5 transition-colors">
+                              <LifeBuoy size={13} /> Ainda não resolveu — abrir chamado
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+          </div>
         )}
 
         {tab === 'chamados' && (

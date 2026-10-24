@@ -1731,7 +1731,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
 
           // DADOS DO PORTAL — cada rota devolve somente o que pertence ao próprio cliente
           const clienteSessao = currentCliente(req)
-          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados') || path.startsWith('/api/portal/downloads') || path.startsWith('/api/portal/software/')) {
+          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados') || path.startsWith('/api/portal/downloads') || path.startsWith('/api/portal/software/') || path.startsWith('/api/portal/faq')) {
             if (!clienteSessao) return json(res, 401, { ok: false, error: 'Entre no portal (ou faça o registo).' })
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, nif, email, estado').eq('id', clienteSessao.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; nif: string; email: string; estado: ClienteEstado } | null }
@@ -1987,6 +1987,32 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               // evento com contexto da empresa — é o que alimenta o engajamento por cliente (Parte 7.3)
               void supabase.from('download_events').insert({ software_id: idSw, portal_nif: conta.nif || null, portal_email: conta.email || null })
               return json(res, 200, { ok: true, download_url: swSw.file_url })
+            }
+
+            // ─── PARTE 7.2 · FAQ / AUTO-DEFLECTION ─────────────────────────────
+            // Artigos da wiki técnica que o técnico marcou como «visível ao
+            // cliente» — primeiro o cliente tenta resolver, depois abre chamado.
+            if (path === '/api/portal/faq' && req.method === 'GET') {
+              const { data: faq, error: errFaq } = await supabase
+                .from('wiki_tecnica')
+                .select('id, titulo, software, problema, solucao, tags, updated_at, ajudou')
+                .eq('visivel_cliente', true)
+                .order('updated_at', { ascending: false })
+                .limit(100)
+              if (errFaq) return json(res, 500, { ok: false, error: errFaq.message })
+              return json(res, 200, { ok: true, artigos: faq || [] })
+            }
+
+            // feedback de deflection: «sim, resolveu» conta a favor do artigo
+            if (path.match(/^\/api\/portal\/faq\/([a-f0-9-]+)\/resolveu$/) && req.method === 'POST') {
+              const idFaq = path.split('/')[4]
+              const { data: artFaq } = await supabase.from('wiki_tecnica').select('id, titulo, visivel_cliente, ajudou').eq('id', idFaq).maybeSingle()
+              if (!artFaq || !artFaq.visivel_cliente) return json(res, 404, { ok: false, error: 'Artigo não disponível.' })
+              const novoCount = (artFaq.ajudou || 0) + 1
+              const { error: errTicket } = await supabase.from('wiki_tecnica').update({ ajudou: novoCount }).eq('id', idFaq)
+              if (errTicket) return json(res, 500, { ok: false, error: errTicket.message })
+              logAuditoria({ email: conta.email, level: 'portal' }, 'portal_faq_ajudou', 'wiki', idFaq, { titulo: artFaq.titulo })
+              return json(res, 200, { ok: true, ajudou: novoCount })
             }
           }
 
@@ -3720,13 +3746,15 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (!['super_admin', 'tecnico', 'developer'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para a wiki técnica.' })
               const id = path.split('/').pop()
               if (req.method === 'PATCH') {
-                const payload = await readBody(req) as { titulo?: string; software?: string; problema?: string; solucao?: string; tags?: string }
-                const update: Record<string, string> = {}
+                const payload = await readBody(req) as { titulo?: string; software?: string; problema?: string; solucao?: string; tags?: string; visivel_cliente?: boolean }
+                const update: Record<string, string | boolean> = {}
                 if (payload.titulo !== undefined) { const t = payload.titulo.trim(); if (!t || t.length > 160) return json(res, 400, { ok: false, error: 'Título inválido.' }); update.titulo = t }
                 if (payload.software !== undefined) update.software = payload.software.trim().slice(0, 120) || null
                 if (payload.problema !== undefined) { const p = payload.problema.trim(); if (!p || p.length > 1500) return json(res, 400, { ok: false, error: 'Problema inválido (máx. 1500).' }); update.problema = p }
                 if (payload.solucao !== undefined) { const s = payload.solucao.trim(); if (!s || s.length > 8000) return json(res, 400, { ok: false, error: 'Solução inválida (máx. 8000).' }); update.solucao = s }
                 if (payload.tags !== undefined) update.tags = payload.tags.trim().slice(0, 200) || null
+                // Parte 7.2 — o técnico publica/retira o artigo da FAQ do portal do cliente
+                if (payload.visivel_cliente !== undefined) update.visivel_cliente = !!payload.visivel_cliente
                 if (!Object.keys(update).length) return json(res, 400, { ok: false, error: 'Nada para actualizar.' })
                 const { data, error } = await supabase.from('wiki_tecnica').update(update).eq('id', id).select('*').single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
