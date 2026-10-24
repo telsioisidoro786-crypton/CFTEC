@@ -1597,8 +1597,23 @@ export default function AdminDashboard() {
     } catch { /* secção mostra estado vazio */ }
   }
 
+  // Parte 7.3 — analytics de negócio: MRR/ARR, churn e engajamento por empresa
+  type RepoEmpresa = { nif: string; nome: string; downloads: number; chamados: number; ultimo: string | null }
+  const [analytics, setAnalytics] = useState<{ ok?: boolean; mrrKz: number; arrKz: number; receita12: number; meses12: { mes: string; label: string; total: number; ft: number }[]; licencas: { activas: number; expirando30d: number; churn30d: number; churnRate: number }; empresas: RepoEmpresa[] } | null>(null)
+  const loadAnalytics = async () => {
+    try {
+      const response = await fetch('/api/admin/analytics', { credentials: 'include' })
+      const data = await response.json()
+      if (response.ok && data.ok) setAnalytics(data)
+    } catch { /* secção mostra estado vazio */ }
+  }
+
   useEffect(() => {
     if (activeSection === 'relatorios') void loadStatsSla()
+  }, [activeSection])
+
+  useEffect(() => {
+    if (activeSection === 'relatorios') void loadAnalytics()
   }, [activeSection])
 
   // conversa ao vivo: enquanto o modal está aberto, re-busca as mensagens (a resposta
@@ -3174,6 +3189,19 @@ export default function AdminDashboard() {
             </div>
             <div className="sla-kpi sla-kpi--wide"><small>Top software nos chamados</small>{statsSla.porSoftware.length === 0 ? <span>—</span> : <ul className="sla-topo">{statsSla.porSoftware.map(p => <li key={p.nome}><strong>{p.nome}</strong><span>{p.total}×</span></li>)}</ul>}</div>
             <div className="sla-kpi sla-kpi--wide"><small>Top clientes nos chamados</small>{statsSla.porCliente.length === 0 ? <span>—</span> : <ul className="sla-topo">{statsSla.porCliente.map(p => <li key={p.nome}><strong>{p.nome}</strong><span>{p.total}×</span></li>)}</ul>}</div>
+          </div>}</Card>}
+
+        {activeSection === 'relatorios' && !modBloqueado('relatorios') && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">NEGÓCIO — MRR · CHURN · ENGAJAMENTO</span><h2>Análise de subscrições</h2></div><button className="icon-btn" title="Actualizar números" onClick={() => void loadAnalytics()}><RefreshCw size={15} /></button></div><p style={{ margin: '0 0 18px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>MRR/ARR estimados das licenças activas (valor anual recebido ÷ 12). <b>Churn</b> = licenças expiradas nos últimos 30 dias sem renovação. <b>Engajamento</b> = downloads oficiais + chamados no portal dos últimos 30 dias (dados reais da 7.1/7.2).</p>
+          {!analytics ? <div className="admin-empty-state"><BarChart3 size={40} /><h3>A carregar análise de subscrições…</h3><p>Se nada aparecer, o seu nível de acesso pode não ter permissão (super admin/gestor).</p></div> : <div className="sla-grid">
+            <div className="sla-kpi" data-tip="Receita recorrente mensal estimada: licenças activas com valor recebido no ano ÷ 12"><small>MRR (estimado)</small><strong>{analytics.mrrKz.toLocaleString('pt-PT')} Kz<small style={{ fontWeight: 400 }}> /mês</small></strong><span>{analytics.licencas.activas} licenças activas</span></div>
+            <div className="sla-kpi" data-tip="MRR × 12 — anualização da receita recorrente"><small>ARR (estimado)</small><strong>{(analytics.mrrKz * 12).toLocaleString('pt-PT')} Kz</strong><span>por ano</span></div>
+            <div className="sla-kpi report-kpi--kz" data-tip="Total facturado nos últimos 12 meses (recibos internos emitidos na liquidação)"><small>Receita facturada · 12 meses</small><strong>{analytics.receita12.toLocaleString('pt-PT')} Kz</strong><span>{analytics.meses12.reduce((s, m) => s + m.ft, 0)} FT emitidas</span></div>
+            <div className={`sla-kpi ${analytics.licencas.churnRate >= 10 ? 'sla-kpi-alert' : ''}`} data-tip="Licenças que expiraram nos últimos 30 dias sem pedido de renovação pago"><small>Churn · 30 dias</small><strong>{analytics.licencas.churnRate}%</strong><span>{analytics.licencas.churn30d} licença(s) sem renovar · {analytics.licencas.expirando30d} a expirar em 30d</span></div>
+            <div className="sla-kpi sla-kpi--wide">
+              <small>Receita facturada por mês (12 meses)</small>
+              <div className="sla-barras">{analytics.meses12.map(m => { const max = Math.max(1, ...analytics.meses12.map(x => x.total)); return <div key={m.mes} className="sla-barra" title={`${m.mes}: ${m.total.toLocaleString('pt-PT')} Kz · ${m.ft} FT`}><div className="sla-barra-fill"><i style={{ height: `${Math.round((m.total / max) * 100)}%` }} /></div><span>{m.label}</span></div> })}</div>
+            </div>
+            <div className="sla-kpi sla-kpi--wide"><small>Engajamento por empresa · últimos 30 dias (downloads + chamados ×3)</small>{analytics.empresas.length === 0 ? <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>Sem sinais ainda — os downloads do portal e os chamados alimentam este quadro.</span> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Empresa</th><th>NIF</th><th>⬇️</th><th>📞</th><th>Último sinal</th></tr></thead><tbody>{analytics.empresas.map(e => <tr key={e.nif + '|' + e.nome}><td><strong>{e.nome}</strong></td><td>{e.nif}</td><td>{e.downloads}</td><td>{e.chamados}</td><td>{e.ultimo ? new Date(e.ultimo).toLocaleDateString('pt-PT') : '—'}</td></tr>)}</tbody></table></div>}</div>
           </div>}</Card>}
 
         {activeSection === 'developer' && <>

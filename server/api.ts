@@ -3580,6 +3580,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 logAuditoria(currentAdmin(req), 'chamado_apagado', 'chamado', id)
                 return json(res, 200, { ok: true })
               }
+            }
 
             // CONVERSA DO CHAMADO (admin) — histórico + resposta do técnico
             if (path.match(/^\/api\/admin\/chamados\/[a-f0-9-]+\/mensagens$/) && (req.method === 'GET' || req.method === 'POST')) {
@@ -3670,6 +3671,71 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 porMes: meses,
               })
             }
+
+            // ─── PARTE 7.3 · ANALYTICS DE NEGÓCIO ──────────────────────────────
+            // MRR/ARR (receita recorrente estimada das licenças activas),
+            // churn 30d (licenças expiradas sem renovação), receita facturada
+            // dos últimos 12 meses (recibos) e engajamento por empresa
+            // (downloads rastreados + chamados do portal, ligação 7.1/7.2).
+            if (path === '/api/admin/analytics' && req.method === 'GET') {
+              if (!['super_admin', 'gestor', 'developer'].includes(currentAdmin(req)?.level || '')) return json(res, 403, { ok: false, error: 'Sem permissão para os relatórios.' })
+              const hojeISO = new Date().toISOString().slice(0, 10)
+              const d30 = new Date(Date.now() - 30 * 86400000).toISOString()
+              const [recibosA, licencasA, downloadsA, chamadosA, catalogoA] = await Promise.all([
+                supabase.from('recibos_faturacao').select('valor, software, cliente_nif, criado_em, numero').order('criado_em', { ascending: false }).limit(1000),
+                supabase.from('licencas_palancasoft').select('nif, cliente_nome, status, data_expiracao, created_at').order('created_at', { ascending: false }).limit(1000),
+                supabase.from('download_events').select('portal_nif, portal_email, created_at').gte('created_at', d30).limit(2000),
+                supabase.from('chamados_suporte').select('nif, cliente, created_at').gte('created_at', d30).limit(1000),
+                supabase.from('softwares').select('name, price'),
+              ])
+              const rec = ((recibosA.data || []) as unknown as { valor: number | null; software: string | null; cliente_nif: string | null; criado_em: string | null; numero: string | null }[])
+              const lic = ((licencasA.data || []) as unknown as { nif: string | null; cliente_nome: string | null; status: string; data_expiracao: string | null; created_at: string }[])
+              const dls = ((downloadsA.data || []) as unknown as { portal_nif: string | null; portal_email: string | null; created_at: string }[])
+              const cham = ((chamadosA.data || []) as unknown as { nif: string | null; cliente: string | null; created_at: string }[])
+              const cat = ((catalogoA.data || []) as unknown as { name: string; price: number | null }[])
+              const precoDe = (nome: string): number | null => { const alvo = String(nome || '').toLowerCase().trim(); const ache = cat.find(s => s.price && (s.name.toLowerCase() === alvo || s.name.toLowerCase().includes(alvo) || alvo.includes(s.name.toLowerCase().split(' ')[0]))); return ache?.price ?? null }
+              // preço anual por NIF: valor do recibo mais recente do empresa; fallback catálogo via chamado+software
+              const licencaAnual = (l: typeof lic[number]): number | null => {
+                const doNif = rec.filter(r => r.cliente_nif && r.cliente_nif === l.nif && r.software && r.valor != null)
+                const anual = doNif.find(r => precoDe(r.software as string) !== null) || doNif[0]
+                if (anual) { const v = Number(anual.valor); if (v > 0) return v }
+                return null
+              }
+              const activas = lic.filter(l => l.status === 'activa' && l.data_expiracao)
+              const mrrKz = Math.round(activas.reduce((soma, l) => { const anual = licencaAnual(l); return soma + (anual && anual > 0 ? anual / 12 : 0) }, 0))
+              // churn 30d: licenças que expiram nos últimos 30 dias sem renovação (pedido/receipto depois)
+              const expirouJanela = lic.filter(l => l.data_expiracao && l.data_expiracao < hojeISO && ((Date.now() - new Date(`${l.data_expiracao}T00:00:00Z`).getTime()) / 86400000) <= 30)
+              const renovadasNif = new Set(rec.map(r => r.cliente_nif))
+              const churnLicencas = expirouJanela.filter(l => !renovadasNif.has(l.nif)).length
+              const churnRate = activas.length ? Math.round((churnLicencas / Math.max(activas.length, churnLicencas)) * 100) : 0
+              // renovação a caminho: activas que expiram nos próximos 30 dias
+              const limite30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10)
+              const expirando30d = activas.filter(l => (l.data_expiracao as string) >= hojeISO && (l.data_expiracao as string) <= limite30).length
+              // receita facturada por mês, últimos 12 meses
+              const meses12: { mes: string; label: string; total: number; ft: number }[] = []
+              for (let i = 11; i >= 0; i--) {
+                const d = new Date(); d.setMonth(d.getMonth() - i, 1)
+                const chave = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+                const doMes = rec.filter(r => (r.criado_em || '').startsWith(chave) && r.valor != null)
+                meses12.push({ mes: chave, label: d.toLocaleDateString('pt-PT', { month: 'short' }), total: doMes.reduce((soma, r) => soma + Number(r.valor || 0), 0), ft: doMes.length })
+              }
+              const receita12 = Math.round(meses12.reduce((soma, m) => soma + m.total, 0))
+              const campos = new Map<string, { nif: string; nome: string; downloads: number; chamados: number; ultimo: string | null }>()
+              const toque = (nif: string | null, email: string | null, nome0: string | null, when: string) => {
+                const chaveNif = (nif || '').trim() || ((email || '').trim().toLowerCase() ? `email:${(email || '').trim().toLowerCase()}` : '')
+                if (!chaveNif) return
+                const e = campos.get(chaveNif) || { nif: nif || '—', nome: nome0 || '—', downloads: 0, chamados: 0, ultimo: null }
+                if (nome0 && (e.nome === '—' || !e.nome)) e.nome = nome0
+                if (!e.ultimo || String(when) > e.ultimo) e.ultimo = String(when)
+                campos.set(chaveNif, e)
+              }
+              for (const l of lic) toque(l.nif, null, l.cliente_nome, l.created_at || '')
+              for (const d of dls) { toque(d.portal_nif, d.portal_email, null, d.created_at); const k = (d.portal_nif || '').trim() || `email:${(d.portal_email || '').trim().toLowerCase()}`; const e = campos.get(k); if (e) e.downloads++ }
+              for (const c of cham) { toque(c.nif, null, c.cliente, c.created_at); const k = (c.nif || '').trim(); const e = campos.get(k); if (e) e.chamados++ }
+              const empresas = Array.from(campos.values())
+                .sort((a, b) => (b.downloads + b.chamados * 3) - (a.downloads + a.chamados * 3) || String(b.ultimo || '').localeCompare(String(a.ultimo || '')))
+                .slice(0, 12)
+              return json(res, 200, { ok: true, mrrKz, arrKz: mrrKz * 12, receita12, meses12, licencas: { activas: activas.length, expirando30d, churn30d: churnLicencas, churnRate }, empresas })
             }
 
             // WEB PUSH — chave pública VAPID para o banner do painel assinar o dispositivo

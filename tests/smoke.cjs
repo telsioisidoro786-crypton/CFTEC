@@ -57,6 +57,7 @@ async function principal() {
     ['/api/admin/licenses', 'licenças admin'],
     ['/api/admin/log-erros', 'logs de erros'],
     ['/api/admin/settings', 'definições'],
+    ['/api/admin/analytics', 'analytics de negócio (7.3)'],
     // Parte 7.1 — auto-serviço do portal
     ['/api/portal/downloads', 'downloads do portal'],
     ['/api/portal/pedidos', 'pedidos do portal'],
