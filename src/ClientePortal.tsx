@@ -480,11 +480,11 @@ export default function ClientePortal() {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <strong className="text-[15px]">{s.name}</strong>
-                      {s.version && <span className="text-[11px] text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2 py-0.5 rounded-full">v{s.version}</span>}
+                      {s.version && <span className="text-[11px] text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2 py-0.5 rounded-full">v{String(s.version).replace(/^v\s*/i, '')}</span>}
                       {s.category && <span className="text-[11px] text-slate-400 border border-white/10 px-2 py-0.5 rounded-full">{s.category}</span>}
                     </div>
                     {s.description && <p className="mt-1.5 text-sm text-slate-400 max-w-2xl">{s.description}</p>}
-                    <p className="mt-1 text-[11px] text-slate-600">{s.file_size ? `${(s.file_size / (1024 * 1024)).toFixed(1)} MB · ` : ''}instalador oficial — nada de ficheiros de terceiros</p>
+                    <p className="mt-1 text-[11px] text-slate-600">{s.file_size ? `${String(s.file_size).trim()}` : ''}{s.file_size ? ' · ' : ''}instalador oficial — nada de ficheiros de terceiros</p>
                   </div>
                   <button onClick={() => void baixarSoftware(s)} disabled={baixando === s.id} className="shrink-0 inline-flex items-center gap-2 bg-cyan-400 text-slate-950 font-bold rounded-lg px-4 py-2.5 text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50">
                     <Download size={15} /> {baixando === s.id ? 'A preparar…' : 'Descarregar'}
