@@ -1731,15 +1731,16 @@ ${emailLinha('E-mail', escHtml(email))}</table>
 
           // DADOS DO PORTAL — cada rota devolve somente o que pertence ao próprio cliente
           const clienteSessao = currentCliente(req)
-          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados')) {
+          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados') || path.startsWith('/api/portal/downloads') || path.startsWith('/api/portal/software/')) {
             if (!clienteSessao) return json(res, 401, { ok: false, error: 'Entre no portal (ou faça o registo).' })
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, nif, email, estado').eq('id', clienteSessao.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; nif: string; email: string; estado: ClienteEstado } | null }
             if (!conta || conta.estado !== 'Activo') { clearPortalCookie(res); return json(res, 401, { ok: false, error: 'Sessão inválida — entre de novo.' }) }
 
             if (path === '/api/portal/pedidos' && req.method === 'GET') {
-              const porNif = await supabase.from('pedidos_licencas').select('id, created_at, software_nome, status, forma_pagamento, provincia, nome_empresa, nome_responsavel, email, observacoes').eq('nif', conta.nif).order('created_at', { ascending: false })
-              const porEmail = await supabase.from('pedidos_licencas').select('id, created_at, software_nome, status, forma_pagamento, provincia, nome_empresa, nome_responsavel, email, observacoes').eq('email', conta.email).order('created_at', { ascending: false })
+              const colunasPed = 'id, created_at, software_nome, status, forma_pagamento, provincia, nome_empresa, nome_responsavel, email, observacoes, tipo, comprovativo_nome, utilizadores_extra'
+              const porNif = await supabase.from('pedidos_licencas').select(colunasPed).eq('nif', conta.nif).order('created_at', { ascending: false })
+              const porEmail = await supabase.from('pedidos_licencas').select(colunasPed).eq('email', conta.email).order('created_at', { ascending: false })
               const juntos = new Map<string,unknown>()
               for (const lote of [porNif.data, porEmail.data] as unknown as Record<string,unknown>[][])
                 for (const p of lote) if (!juntos.has(String(p.id))) juntos.set(String(p.id), p)
@@ -1755,6 +1756,8 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               const donoPf = orderPf && (orderPf.nif === conta.nif || String(orderPf.email || '').toLowerCase() === String(conta.email).toLowerCase())
               if (!orderPf || !donoPf)
                 return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
+              if (orderPf.tipo === 'usuarios')
+                return json(res, 409, { ok: false, error: 'Utilizadores extra são orçados pelo comercial — a proforma chega depois da proposta.' })
               const numeroPf: string = (orderPf as { pf_numero?: string | null }).pf_numero || `PF-${new Date(String(orderPf.created_at)).getFullYear()}-WEB`
               const { data: catalogoPf } = await supabase.from('softwares').select('name, price')
               const { data: ibanRowPf } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
@@ -1807,7 +1810,16 @@ ${emailLinha('E-mail', escHtml(email))}</table>
             if (path === '/api/portal/licencas' && req.method === 'GET') {
               const { data, error } = await supabase.from('licencas_palancasoft').select('id, cliente_nome, nif, chave_licenca, data_ativacao, data_expiracao, status, created_at').eq('nif', conta.nif).order('created_at', { ascending: false })
               if (error) return json(res, 500, { ok: false, error: error.message })
-              return json(res, 200, { ok: true, licencas: data })
+              // resumo de renovação: o software do pedido mais recente da empresa + o preço do catálogo
+              // — é o que preenche a proforma automática da renovação 1-clique (Parte 7.1)
+              const { data: ultimoPedido } = await supabase.from('pedidos_licencas').select('software_nome').eq('nif', conta.nif).or('tipo.neq.usuarios,tipo.is.null').order('created_at', { ascending: false }).limit(1).maybeSingle()
+              const { data: catalogoRen } = await supabase.from('softwares').select('name, price, is_active')
+              const soft = (ultimoPedido || null) as { software_nome?: string } | null
+              const nomeSoft = soft?.software_nome || null
+              const precos = (catalogoRen || []) as { name: string; price?: number | string | null; currency?: string | null }[]
+              const baseRen = nomeSoft ? precos.find(s => String(s.name).trim().toLowerCase() === String(nomeSoft).trim().toLowerCase()) : null
+              const numPreco = baseRen && baseRen.price != null && !isNaN(parseFloat(String(baseRen.price))) ? parseFloat(String(baseRen.price)) : null
+              return json(res, 200, { ok: true, licencas: data, renovacao: { software: nomeSoft, preco: numPreco, preco_bi: numPreco != null ? `${numPreco.toLocaleString('pt-PT')} Kz` : 'Sob consulta' } })
             }
             if (path === '/api/portal/chamados' && req.method === 'GET') {
               const { data, error } = await supabase.from('chamados_suporte').select('id, created_at, updated_at, cliente, nif, software, problema, resolucao, estado, prioridade, origem, prazo_sla, resolvido_em, escalonado, csat, sla_horas').eq('nif', conta.nif).order('created_at', { ascending: false })
@@ -1859,9 +1871,126 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               logAuditoria(null, 'portal_csat', 'chamado', chamadoId, { nota })
               return json(res, 200, { ok: true, message: 'Obrigado pela avaliação! É dela que vêm as melhorias do serviço.' })
             }
+            // ─── PARTE 7.1 · AUTO-SERVIÇO DE FATURAÇÃO ────────────────────────
+            // RENOVAÇÃO 1-CLIQUE: cria um pedido real (tipo 'renovacao') que cae no
+            // funil do admin com o preço automático do catálogo — mesmo pipeline
+            // de liquidação/FT da Parte 5. Proforma disponível de imediato.
+            if (path === '/api/portal/pedidos/renovar' && req.method === 'POST') {
+              const payloadRen = await readBody(req) as { licenca_id?: string }
+              const licIdRen = String(payloadRen.licenca_id || '').trim()
+              if (!/^[a-f0-9-]{36}$/i.test(licIdRen)) return json(res, 400, { ok: false, error: 'Licença inválida.' })
+              // dedupe: só uma renovação em curso por empresa
+              const { data: emCursoRen } = await supabase.from('pedidos_licencas')
+                .select('id, software_nome').eq('nif', conta.nif).eq('tipo', 'renovacao')
+                .in('status', ['Pendente', 'Em Verificação', 'Aprovado']).limit(1)
+                .maybeSingle()
+              if (emCursoRen)
+                return json(res, 409, { ok: false, error: `Já tens uma renovação em curso (pedido ${String(emCursoRen.id).slice(0, 8).toUpperCase()}) — aguarda a liquidação.` })
+              const { data: licRen } = await supabase.from('licencas_palancasoft')
+                .select('id, chave_licenca, data_expiracao, status').eq('id', licIdRen).eq('nif', conta.nif).maybeSingle()
+              if (!licRen) return json(res, 404, { ok: false, error: 'Licença não encontrada na sua conta.' })
+              const { data: contRen } = await supabase.from('clientes_portal').select('nome_empresa, nif, nome_responsavel, telefone_whatsapp, email').eq('id', clienteSessao.sub).maybeSingle() as unknown as { data: { nome_empresa: string; nif: string; nome_responsavel: string | null; telefone_whatsapp: string; email: string } | null }
+              if (!contRen) return json(res, 401, { ok: false, error: 'Sessão inválida — entre de novo.' })
+              // software: o mesmo do último pedido da empresa (fonte do preço do catálogo)
+              const { data: ultimoRen } = await supabase.from('pedidos_licencas').select('software_nome').eq('nif', conta.nif).or('tipo.neq.usuarios,tipo.is.null').order('created_at', { ascending: false }).limit(1).maybeSingle()
+              const softwareRen = String((ultimoRen as { software_nome?: string } | null)?.software_nome || '').trim() || 'PalancaSoft Suite'
+              const expDada = licRen.status === 'activa' ? new Date(`${String(licRen.data_expiracao)}T00:00:00Z`).toLocaleDateString('pt-PT', { timeZone: 'UTC' }) : '—'
+              const { data: novoPed, error: errPed } = await supabase.from('pedidos_licencas').insert({
+                software_nome: softwareRen.slice(0, 120),
+                nome_empresa: contRen.nome_empresa.slice(0, 160),
+                nif: contRen.nif || '',
+                nome_responsavel: (contRen.nome_responsavel || clienteSessao?.name || contRen.nome_empresa).slice(0, 150),
+                telefone_whatsapp: contRen.telefone_whatsapp || '',
+                email: contRen.email || '',
+                provincia: '—',
+                forma_pagamento: 'Transferência Bancária / IBAN',
+                observacoes: `Renovação da licença ${licRen.chave_licenca} (expira ${expDada}) pedida no portal pelo cliente.`,
+                status: 'Pendente',
+                tipo: 'renovacao',
+              }).select('id, created_at, software_nome, status').single()
+              if (errPed) return json(res, 500, { ok: false, error: errPed.message })
+              fireAdminAlert(`🔁 Renovação 1-clique — ${contRen.nome_empresa} pediu ${softwareRen} (${String(novoPed.id).slice(0, 8).toUpperCase()}). Proforma já disponível.`)
+              logAuditoria({ email: contRen.email, level: 'portal' }, 'portal_renovacao', 'pedido', novoPed.id, { licenca: licRen.chave_licenca, software: softwareRen })
+              return json(res, 201, { ok: true, pedido: novoPed })
+            }
+
+            // MAIS UTILIZADORES: solicitação com nº extra — orçamento fica com o comercial
+            if (path === '/api/portal/pedidos/usuarios' && req.method === 'POST') {
+              const payloadUsu = await readBody(req) as { utilizadores_extra?: number | string; nota?: string }
+              const extrasUsu = Math.round(Number(payloadUsu.utilizadores_extra || 0))
+              if (!extrasUsu || extrasUsu < 1 || extrasUsu > 500)
+                return json(res, 400, { ok: false, error: 'Indique o nº de utilizadores extra (1 a 500).' })
+              const notaUsu = String(payloadUsu.nota || '').trim().slice(0, 500)
+              // dedupe: uma solicitação de utilizadores por empresa while pendente
+              const { data: emCursoUsu } = await supabase.from('pedidos_licencas')
+                .select('id').eq('nif', conta.nif).eq('tipo', 'usuarios')
+                .in('status', ['Pendente', 'Em Verificação', 'Aprovado']).limit(1).maybeSingle()
+              if (emCursoUsu)
+                return json(res, 409, { ok: false, error: `Já tens uma solicitação de utilizadores em curso (${String(emCursoUsu.id).slice(0, 8).toUpperCase()}).` })
+              const { data: contUsu } = await supabase.from('clientes_portal').select('nome_empresa, nif, nome_responsavel, telefone_whatsapp, email').eq('id', clienteSessao.sub).maybeSingle() as unknown as { data: { nome_empresa: string; nif: string; nome_responsavel: string | null; telefone_whatsapp: string; email: string } | null }
+              if (!contUsu) return json(res, 401, { ok: false, error: 'Sessão inválida — entre de novo.' })
+              const { data: ultimoUsu } = await supabase.from('pedidos_licencas').select('software_nome').eq('nif', conta.nif).or('tipo.neq.usuarios,tipo.is.null').order('created_at', { ascending: false }).limit(1).maybeSingle()
+              const softwareUsu = String((ultimoUsu as { software_nome?: string } | null)?.software_nome || '').trim() || 'PalancaSoft Suite'
+              const { data: novoUsu, error: errUsu } = await supabase.from('pedidos_licencas').insert({
+                software_nome: softwareUsu.slice(0, 120),
+                nome_empresa: contUsu.nome_empresa.slice(0, 160),
+                nif: contUsu.nif || '',
+                nome_responsavel: (contUsu.nome_responsavel || clienteSessao?.name || contUsu.nome_empresa).slice(0, 150),
+                telefone_whatsapp: contUsu.telefone_whatsapp || '',
+                email: contUsu.email || '',
+                provincia: '—',
+                forma_pagamento: 'Transferência Bancária / IBAN',
+                observacoes: `Solicitação de +${extrasUsu} utilizadores extra no portal.${notaUsu ? ` Nota do cliente: ${notaUsu}` : ''}`,
+                status: 'Pendente',
+                tipo: 'usuarios',
+                utilizadores_extra: extrasUsu,
+              }).select('id, created_at, software_nome, status, utilizadores_extra').single()
+              if (errUsu) return json(res, 500, { ok: false, error: errUsu.message })
+              fireAdminAlert(`👥 Utilizadores extra — ${contUsu.nome_empresa} pediu +${extrasUsu} (${softwareUsu}). Orçar e responder no painel → Pedidos de Licença.`)
+              logAuditoria({ email: contUsu.email, level: 'portal' }, 'portal_usuarios_extra', 'pedido', novoUsu.id, { extras: extrasUsu, software: softwareUsu })
+              return json(res, 201, { ok: true, pedido: novoUsu })
+            }
+
+            // COMPROVATIVO ANEXADO PELO CLIENTE (renovação ou utilizadores) —
+            // o admin já o recebe no popup "Confirmar liquidação" da Parte 5
+            if (path.match(/^\/api\/portal\/pedidos\/([a-f0-9-]+)\/comprovativo$/) && req.method === 'POST') {
+              const pidComp = path.split('/')[4]
+              const payloadComp = await readBody(req) as { comprovativo_nome?: string; comprovativo_b64?: string }
+              const b64Comp = String(payloadComp.comprovativo_b64 || '').trim()
+              const nomeComp = String(payloadComp.comprovativo_nome || 'comprovativo.pdf').slice(0, 200)
+              if (!b64Comp) return json(res, 400, { ok: false, error: 'Falta o ficheiro do comprovativo.' })
+              if (b64Comp.length > 2_800_000) return json(res, 413, { ok: false, error: 'Comprovativo demasiado grande (máximo ~2 MB).' })
+              const { data: pedComp } = await supabase.from('pedidos_licencas').select('id, nif, email, status, tipo, comprovativo_nome, nome_empresa').eq('id', pidComp).maybeSingle()
+              const donoComp = pedComp && (pedComp.nif === conta.nif || String(pedComp.email || '').toLowerCase() === String(conta.email).toLowerCase())
+              if (!pedComp || !donoComp) return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
+              if (pedComp.tipo === 'nova') return json(res, 409, { ok: false, error: 'Este pedido não foi criado no portal — anexe o comprovativo com o comercial.' })
+              if (!['Pendente', 'Em Verificação', 'Aprovado'].includes(pedComp.status))
+                return json(res, 409, { ok: false, error: 'Este pedido já não aceita comprovativo (estado atual: ' + pedComp.status + ').' })
+              const { error: errComp } = await supabase.from('pedidos_licencas').update({ comprovativo_b64: b64Comp, comprovativo_nome: nomeComp }).eq('id', pidComp)
+              if (errComp) return json(res, 500, { ok: false, error: errComp.message })
+              fireAdminAlert(`📎 Comprovativo anexado — ${pedComp.nome_empresa || clienteSessao?.name || 'Cliente'} anexou ${nomeComp} ao pedido ${pidComp.slice(0, 8).toUpperCase()} (${pedComp.tipo === 'renovacao' ? 'renovação' : 'utilizadores'}). Pronto para liquidação.`)
+              logAuditoria({ email: clienteSessao?.email || (pedComp.email as string) || 'portal', level: 'portal' }, 'portal_comprovativo', 'pedido', pidComp, { nome: nomeComp })
+              return json(res, 200, { ok: true, message: 'Comprovativo anexado — a equipa confirma na liquidação.' })
+            }
+
+            // ─── PARTE 7.1 · DOWNLOADS OFICIAIS NO PORTAL (rastreados por empresa) ──
+            if (path === '/api/portal/downloads' && req.method === 'GET') {
+              const { data: sws } = await supabase.from('softwares').select('id, name, version, description, category, file_size, downloads_count').eq('is_active', true).order('downloads_count', { ascending: false })
+              return json(res, 200, { ok: true, softwares: sws || [] })
+            }
+
+            if (path.match(/^\/api\/portal\/software\/([a-f0-9-]+)\/download$/) && req.method === 'POST') {
+              const idSw = path.split('/')[4]
+              const { data: swSw } = await supabase.from('softwares').select('id, name, file_url, downloads_count, is_active').eq('id', idSw).maybeSingle()
+              if (!swSw || !swSw.is_active || !swSw.file_url) return json(res, 404, { ok: false, error: 'Software não disponível.' })
+              await supabase.from('softwares').update({ downloads_count: (swSw.downloads_count || 0) + 1 }).eq('id', idSw)
+              // evento com contexto da empresa — é o que alimenta o engajamento por cliente (Parte 7.3)
+              void supabase.from('download_events').insert({ software_id: idSw, portal_nif: conta.nif || null, portal_email: conta.email || null })
+              return json(res, 200, { ok: true, download_url: swSw.file_url })
+            }
           }
 
-          // NOVO CHAMADO DE SUPORTE (com conta activo) — alimenta o mesmo pipeline do site
+          // NOVO CHAMADO DE SUPORTE (com conta activa) — alimenta o mesmo pipeline do site
           if (path === '/api/portal/chamados' && req.method === 'POST') {
             const cliente = currentCliente(req)
             if (!cliente) return json(res, 401, { ok: false, error: 'Entre no portal (ou faça o registo).' })
@@ -2523,9 +2652,12 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               const { data: reciboExistPg } = await supabase.from('recibos_faturacao').select('numero').eq('pedido_id', idPg).maybeSingle() as unknown as { data: { numero: string } | null }
               if (reciboExistPg)
                 return json(res, 409, { ok: false, error: `Este pedido já foi liquidado — Fatura Definitiva ${reciboExistPg.numero} emitida.` })
-              // comprovativo: base64 opcional, máx. ~2 MB (evita linhas gigantes na DB)
-              const b64Pg = String(bodyPg.comprovativo_b64 || '').trim()
-              if (b64Pg && b64Pg.length > 2_800_000)
+              // comprovativo: base64 opcional, máx. ~2 MB (evita linhas gigantes na DB).
+              // Se o admin não anexar nada, usa o comprovativo que o CLIENTE subiu no portal (Parte 7.1)
+              const b64AdminPg = String(bodyPg.comprovativo_b64 || '').trim()
+              const b64ClientePg = String((orderPg as { comprovativo_b64?: string | null }).comprovativo_b64 || '').trim()
+              const b64Pg = (b64AdminPg || b64ClientePg)
+              if (b64Pg.length > 2_800_000)
                 return json(res, 413, { ok: false, error: 'Comprovativo demasiado grande (máximo ~2 MB).' })
               // nº FT sequencial (settings.ft_seq) com tentativa segura contra duplicados
               const anoFt = new Date().getFullYear()
@@ -2553,7 +2685,7 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
                     software: orderPg.software_nome,
                     valor: precoPg,
                     moeda: 'AOA',
-                    comprovativo_nome: String(bodyPg.comprovativo_nome || '').slice(0, 200) || null,
+                    comprovativo_nome: String(bodyPg.comprovativo_nome || (orderPg as { comprovativo_nome?: string | null }).comprovativo_nome || '').slice(0, 200) || null,
                     comprovativo_b64: b64Pg || null,
                     notas: String(bodyPg.notas || '').slice(0, 600) || null,
                     emitido_por: currentAdmin(req)?.email || null,

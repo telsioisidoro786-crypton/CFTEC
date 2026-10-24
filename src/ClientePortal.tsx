@@ -6,12 +6,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   Activity, BadgeCheck, Building2, CheckCircle2, Download, FileText, KeyRound, LifeBuoy,
-  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, Send, ShieldCheck, Star, Timer, UserPlus,
+  Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, RefreshCw, Send, ShieldCheck, Star, Timer, Upload, UserPlus, Users,
 } from 'lucide-react'
 
 type Sessao = { empresa: string; email: string }
-type Pedido = { id: string; created_at: string; software_nome: string; status: string; forma_pagamento: string | null; provincia: string | null; observacoes: string | null }
+type Pedido = { id: string; created_at: string; software_nome: string; status: string; forma_pagamento: string | null; provincia: string | null; observacoes: string | null; tipo?: string | null; comprovativo_nome?: string | null; utilizadores_extra?: number | null }
 type Licenca = { id: string; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }
+type RenovacaoInfo = { software: string | null; preco: number | null; preco_bi: string }
+type SoftwareDL = { id: string; name: string; version: string | null; description: string | null; category: string | null; file_size: number | null; downloads_count: number | null }
 type Chamado = { id: string; created_at: string; updated_at: string; software: string | null; problema: string; resolucao: string | null; estado: string; prioridade: string; origem: string | null; sla_horas?: number | null; prazo_sla?: string | null; resolvido_em?: string | null; escalonado?: boolean | null; csat?: number | null }
 type Mensagem = { id: string; created_at: string; autor: 'cliente' | 'tecnico' | 'sistema'; autor_nome: string | null; corpo: string }
 
@@ -49,7 +51,7 @@ export default function ClientePortal() {
   const [sessao, setSessao] = useState<Sessao | null>(null)
   const [aviso, setAviso] = useState('')
   const [modoAlt, setModoAlt] = useState<'login' | 'registo'>('login')
-  const [tab, setTab] = useState<'resumo' | 'pedidos' | 'licencas' | 'chamados'>('resumo')
+  const [tab, setTab] = useState<'resumo' | 'pedidos' | 'licencas' | 'downloads' | 'chamados'>('resumo')
   const [registoOk, setRegistoOk] = useState(false)
   const [whats, setWhats] = useState('244933609090') // reforçado pela settings abaixo
 
@@ -68,6 +70,26 @@ export default function ClientePortal() {
   const [carregandoMsgs, setCarregandoMsgs] = useState(false)
   const [novaMsg, setNovaMsg] = useState('')
   const [csatRascunho, setCsatRascunho] = useState<{ id: string; nota: number; comentario: string } | null>(null)
+
+  // Parte 7.1 — auto-serviço: renovação 1-clique,utilizadores extra, comprovativo, downloads
+  const [renovacao, setRenovacao] = useState<RenovacaoInfo | null>(null)
+  const [modalRen, setModalRen] = useState<{ id: string; chave: string; expDias: number | null } | null>(null)
+  const [modalUsu, setModalUsu] = useState(false)
+  const [fUsu, setFUsu] = useState({ extras: 5, nota: '' })
+  const [aSubmeter, setASubmeter] = useState(false)
+  const [aAnexar, setAAnexar] = useState<string | null>(null) // id do pedido a receber comprovativo
+  const [softDL, setSoftDL] = useState<SoftwareDL[]>([])
+  const [softDLLoaded, setSoftDLLoaded] = useState(false)
+  const [baixando, setBaixando] = useState<string | null>(null)
+
+  // catálogo de downloads: carrega à primeira vez que a tab abre (não gasta fetch por sempre)
+  useEffect(() => {
+    if (tab !== 'downloads' || softDLLoaded || vista !== 'dentro') return
+    apiJson<{ ok: boolean; softwares?: SoftwareDL[] }>('/api/portal/downloads')
+      .then(({ body }) => { setSoftDL(body.softwares || []) })
+      .catch(() => {})
+      .finally(() => setSoftDLLoaded(true))
+  }, [tab, softDLLoaded, vista])
 
   // sessão existente (cookie) — levanta dados de imediato
   useEffect(() => {
@@ -90,11 +112,12 @@ export default function ClientePortal() {
   const carregarTudo = useCallback(async () => {
     const [p, l, c] = await Promise.all([
       apiJson<{ ok: boolean; pedidos?: Pedido[] }>('/api/portal/pedidos'),
-      apiJson<{ ok: boolean; licencas?: Licenca[] }>('/api/portal/licencas'),
+      apiJson<{ ok: boolean; licencas?: Licenca[] } & { renovacao?: RenovacaoInfo }>('/api/portal/licencas'),
       apiJson<{ ok: boolean; chamados?: Chamado[] }>('/api/portal/chamados'),
     ])
     setPedidos(p.body.pedidos || [])
     setLicencas(l.body.licencas || [])
+    setRenovacao(l.body.renovacao || null)
     setChamados(c.body.chamados || [])
   }, [])
 
@@ -180,6 +203,60 @@ export default function ClientePortal() {
     const { status, body } = await apiJson<{ message?: string }>(`/api/portal/chamados/${chamadoId}/csat`, { method: 'POST', body: JSON.stringify({ nota: csatRascunho.nota, comentario: csatRascunho.comentario }) })
     if (status === 200) { setChamados(l => l.map(c => c.id === chamadoId ? { ...c, csat: csatRascunho.nota } : c)); setCsatRascunho(null); setAviso(body.message || 'Obrigado pela avaliação!') } else setAviso(body.error || 'Não foi possível registar a avaliação.')
     setOcupado(false)
+  }
+
+  // ─── Parte 7.1 · auto-serviço de faturação ───
+  const renovarLicenca = async () => {
+    if (!modalRen) return
+    setASubmeter(true)
+    const { status, body } = await apiJson<{ pedido?: Pedido }>('/api/portal/pedidos/renovar', { method: 'POST', body: JSON.stringify({ licenca_id: modalRen.id }) })
+    setASubmeter(false)
+    if (status === 201) {
+      setModalRen(null)
+      setTab('pedidos')
+      setAviso('✅ Renovação pedida! A proforma já está disponível — pode anexar o comprovativo do pagamento logo a seguir.')
+      await carregarTudo()
+      window.setTimeout(() => setAviso(''), 7000)
+    } else setAviso(body.error || 'Não foi possível registar a renovação.')
+  }
+
+  const pedirUsuarios = async (e: React.FormEvent) => {
+    e.preventDefault(); setASubmeter(true)
+    const { status: st, body: b } = await apiJson('/api/portal/pedidos/usuarios', { method: 'POST', body: JSON.stringify({ utilizadores_extra: fUsu.extras, nota: fUsu.nota }) })
+    setASubmeter(false)
+    if (st === 201) {
+      setModalUsu(false); setFUsu({ extras: 5, nota: '' })
+      setTab('pedidos')
+      setAviso(`✅ Solicitação de +${fUsu.extras} utilizador(es) enviada — o comercial envia a proposta em breve.`)
+      await carregarTudo()
+      window.setTimeout(() => setAviso(''), 7000)
+    } else setAviso(b.error || 'Não foi possível enviar a solicitação.')
+  }
+
+  const anexarComprovativo = async (pedidoId: string, file: File) => {
+    setAAnexar(pedidoId)
+    const nome = file.name.slice(0, 200)
+    if (file.size > 2 * 1024 * 1024) { setAviso('Comprovativo demasiado grande (máximo 2 MB).'); setAAnexar(null); return }
+    const b64 = await new Promise<string>((ok, _) => {
+      const fr = new FileReader()
+      fr.onload = () => ok(String(fr.result || '').split(',')[1] || '')
+      fr.readAsDataURL(file)
+    })
+    const { status, body } = await apiJson<{ message?: string }>(`/api/portal/pedidos/${pedidoId}/comprovativo`, { method: 'POST', body: JSON.stringify({ comprovativo_nome: nome, comprovativo_b64: b64 }) })
+    setAAnexar(null)
+    if (status === 200) { setAviso(body.message || 'Comprovativo anexado!'); await carregarTudo(); window.setTimeout(() => setAviso(''), 5000) }
+    else setAviso(body.error || 'Não foi possível anexar o comprovativo.')
+  }
+
+  const baixarSoftware = async (sw: SoftwareDL) => {
+    setBaixando(sw.id)
+    const { status, body } = await apiJson<{ download_url?: string }>('/api/portal/software/' + sw.id + '/download', { method: 'POST' })
+    setBaixando(null)
+    if (status === 200 && body.download_url) {
+      window.open(body.download_url, '_blank', 'noopener')
+      setAviso(`⬇️ ${sw.name} a descarregar… instalador oficial v${sw.version || '—'}.`)
+      window.setTimeout(() => setAviso(''), 5000)
+    } else setAviso('Download indisponível de momento — contacte a equipa.')
   }
 
   const trocarSenha = async (e: React.FormEvent) => {
@@ -290,7 +367,7 @@ export default function ClientePortal() {
         {aviso && <div className="mb-6 text-sm bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 rounded-xl px-4 py-3 flex items-center gap-2"><CheckCircle2 size={16} /> {aviso}</div>}
 
         <div className="flex gap-1 p-1 rounded-xl bg-white/5 border border-white/10 w-max mb-6 overflow-x-auto max-w-full">
-          {([['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['licencas', 'Licenças'], ['chamados', 'Chamados']] as const).map(([id, label]) => (
+          {([['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['licencas', 'Licenças'], ['downloads', 'Downloads'], ['chamados', 'Chamados']] as const).map(([id, label]) => (
             <button key={id} onClick={() => { setTab(id); setAviso('') }} className={`px-4 py-2 text-sm rounded-lg whitespace-nowrap transition-all ${tab === id ? 'bg-cyan-400 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'}`}>{label}</button>
           ))}
         </div>
@@ -342,13 +419,22 @@ export default function ClientePortal() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-[15px]">{p.software_nome}</strong>
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusTone(p.status)}`}>{p.status}</span>
+                    {p.tipo === 'renovacao' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-sky-400/30 bg-sky-400/10 text-sky-300">🔁 Renovação</span>}
+                    {p.tipo === 'usuarios' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/10 text-violet-300">👥 +{p.utilizadores_extra || '?'} utilizadores</span>}
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">#{p.id.slice(0, 8).toUpperCase()} · {fmt(p.created_at)} · {p.forma_pagamento || 'forma de pagamento por definir'}{p.provincia ? ` · ${p.provincia}` : ''}</p>
                   {p.observacoes && <p className="mt-2 text-sm text-slate-300 bg-white/5 border border-white/10 rounded-lg px-3 py-2"><b className="text-slate-400 text-xs">Nota da equipa:</b> {p.observacoes}</p>}
+                  {p.comprovativo_nome && <p className="mt-2 text-xs text-emerald-400/90 flex items-center gap-1.5"><Receipt size={13} /> Comprovativo anexado: {p.comprovativo_nome} — à espera da confirmação da equipa.</p>}
                 </div>
                 <div className="shrink-0 flex flex-col gap-2 min-w-[170px]">
-                  <a href={`/api/portal/pedidos/${p.id}/proforma.pdf`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center justify-center gap-2 text-sm border border-white/15 text-slate-200 rounded-lg px-3.5 py-2 hover:bg-white/5 transition-colors"><Download size={15} /> Proforma PDF</a>
+                  {p.tipo !== 'usuarios' && <a href={`/api/portal/pedidos/${p.id}/proforma.pdf`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center justify-center gap-2 text-sm border border-white/15 text-slate-200 rounded-lg px-3.5 py-2 hover:bg-white/5 transition-colors"><Download size={15} /> Proforma PDF</a>}
                   {p.status === 'Pago' && <a href={`/api/portal/pedidos/${p.id}/ft.pdf`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center justify-center gap-2 text-sm border border-cyan-400/30 bg-cyan-400/10 text-cyan-200 rounded-lg px-3.5 py-2 hover:bg-cyan-400/15 transition-colors"><Receipt size={15} /> Recibo / FT</a>}
+                  {p.tipo && p.tipo !== 'nova' && ['Pendente', 'Em Verificação', 'Aprovado'].includes(p.status) && !p.comprovativo_nome && (
+                    <label className="inline-flex items-center justify-center gap-2 text-sm border border-amber-400/30 bg-amber-400/10 text-amber-300 rounded-lg px-3.5 py-2 cursor-pointer hover:bg-amber-400/15 transition-colors">
+                      {aAnexar === p.id ? <span className="animate-pulse">A anexar…</span> : <><Upload size={15} /> Anexar comprovativo</>}
+                      <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void anexarComprovativo(p.id, f); e.currentTarget.value = '' }} />
+                    </label>
+                  )}
                   <a href={`https://wa.me/${whats}`} target="_blank" rel="noreferrer noopener" className={`text-center text-[11px] ${whats ? 'text-slate-500 hover:text-slate-300' : 'pointer-events-none opacity-50'} transition-colors`}>Dúvidas — falar com o comercial →</a>
                 </div>
               </div>
@@ -372,10 +458,39 @@ export default function ClientePortal() {
                     <code className="mt-2 block text-cyan-300 text-base tracking-wider select-all">{l.chave_licenca}</code>
                     <p className="mt-1.5 text-xs text-slate-500">activada {fmt(l.data_ativacao)} · expira {fmt(l.data_expiracao)}</p>
                   </div>
-                  {dias !== null && dias <= 15 && <a href={`https://wa.me/${whats}`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1.5 text-xs bg-emerald-500/10 border border-emerald-400/30 text-emerald-300 rounded-lg px-3 py-2 hover:bg-emerald-500/20 transition-colors"><MessageCircle size={13} /> Renovar</a>}
+                  {(l.status === 'activa' || dias !== null && dias < 0) ? (
+                    <div className="flex flex-col gap-2 min-w-[190px]">
+                      <button onClick={() => setModalRen({ id: l.id, chave: l.chave_licenca, expDias: dias })} className="inline-flex items-center justify-center gap-1.5 text-xs bg-emerald-500/10 border border-emerald-400/30 text-emerald-300 rounded-lg px-3 py-2 font-semibold hover:bg-emerald-500/20 transition-colors"><RefreshCw size={13} /> Renovar licença</button>
+                      <button onClick={() => setModalUsu(true)} className="inline-flex items-center justify-center gap-1.5 text-xs text-slate-300 border border-white/15 rounded-lg px-3 py-2 hover:bg-white/5 transition-colors"><Users size={13} /> Mais utilizadores</button>
+                      <span className="text-[10px] text-slate-600 text-center">ou por WhatsApp: <a className="underline hover:text-slate-400" href={`https://wa.me/${whats}`}>falar com o comercial</a></span>
+                    </div>
+                  ) : dias !== null && dias <= 15 && <a href={`https://wa.me/${whats}`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1.5 text-xs bg-emerald-500/10 border border-emerald-400/30 text-emerald-300 rounded-lg px-3 py-2 hover:bg-emerald-500/20 transition-colors"><MessageCircle size={13} /> Renovar</a>}
                 </div>
               )
             })}</div>
+        )}
+
+        {tab === 'downloads' && (
+          softDL.length === 0 && softDLLoaded === false
+            ? <Empty ic={<KeyRound size={44} />} t="A carregar catálogo…" d="Os instaladores oficiais aparecem aqui." />
+            : softDL.length === 0
+              ? <Empty ic={<Download size={44} />} t="Sem instaladores publicados" d="Assim que a equipa publicar instaladores, ficam aqui para sempre." />
+              : <div className="space-y-3">{softDL.map(s => (
+                <div key={s.id} className="bg-white/[.03] border border-white/10 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <strong className="text-[15px]">{s.name}</strong>
+                      {s.version && <span className="text-[11px] text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2 py-0.5 rounded-full">v{s.version}</span>}
+                      {s.category && <span className="text-[11px] text-slate-400 border border-white/10 px-2 py-0.5 rounded-full">{s.category}</span>}
+                    </div>
+                    {s.description && <p className="mt-1.5 text-sm text-slate-400 max-w-2xl">{s.description}</p>}
+                    <p className="mt-1 text-[11px] text-slate-600">{s.file_size ? `${(s.file_size / (1024 * 1024)).toFixed(1)} MB · ` : ''}instalador oficial — nada de ficheiros de terceiros</p>
+                  </div>
+                  <button onClick={() => void baixarSoftware(s)} disabled={baixando === s.id} className="shrink-0 inline-flex items-center gap-2 bg-cyan-400 text-slate-950 font-bold rounded-lg px-4 py-2.5 text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50">
+                    <Download size={15} /> {baixando === s.id ? 'A preparar…' : 'Descarregar'}
+                  </button>
+                </div>
+              ))}</div>
         )}
 
         {tab === 'chamados' && (
@@ -445,6 +560,42 @@ export default function ClientePortal() {
           </div>
         )}
       </main>
+
+      {/* ─── Parte 7.1 · modais de auto-serviço ─── */}
+      {modalRen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-5" onClick={() => !aSubmeter && setModalRen(null)}>
+          <div className="bg-[#0e1726] border border-white/15 rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold flex items-center gap-2 text-lg"><RefreshCw size={18} className="text-emerald-400" /> Renovar licença</h3>
+            <div className="mt-4 space-y-2 text-sm text-slate-300">
+              <p>Licença <code className="text-cyan-300">{modalRen.chave}</code></p>
+              <p>Software: <b>{renovacao?.software || 'PalancaSoft Suite'}</b></p>
+              <p>Valor da proforma automática: <b className="text-emerald-400">{renovacao?.preco_bi || 'Sob consulta'}</b></p>
+              {modalRen.expDias !== null && <p className="text-xs text-slate-500">{modalRen.expDias >= 0 ? `Faltam ${modalRen.expDias} dia(s) para expirar.` : 'Licença expirada — a renovação reactiva de imediato depois de paga.'}</p>}
+              <p className="text-xs text-slate-500 mt-2">Ao confirmar, criamos um pedido real no funil da equipa com a proforma disponível em segundos — anexa o comprovativo do pagamento sem sair do portal.</p>
+            </div>
+            <div className="mt-5 flex gap-2 justify-end">
+              <button onClick={() => setModalRen(null)} disabled={aSubmeter} className="text-sm text-slate-400 border border-white/10 rounded-lg px-4 py-2.5 hover:bg-white/5 transition-colors">Cancelar</button>
+              <button onClick={() => void renovarLicenca()} disabled={aSubmeter} className="text-sm bg-emerald-400 text-slate-950 font-bold rounded-lg px-4 py-2.5 hover:bg-emerald-300 transition-colors disabled:opacity-50"><RefreshCw size={14} className="inline mr-1" />{aSubmeter ? 'A pedir…' : 'Confirmar renovação'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {modalUsu && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-5" onClick={() => !aSubmeter && setModalUsu(false)}>
+          <form onSubmit={pedirUsuarios} className="bg-[#0e1726] border border-white/15 rounded-2xl max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <h3 className="font-bold flex items-center gap-2 text-lg"><Users size={18} className="text-violet-400" /> Solicitar mais utilizadores</h3>
+            <p className="mt-2 text-sm text-slate-400">Diz-nos quantos utilizadores extra precisa — o comercial responde com a proposta (valor mensal dos elementos adicionais, sem fixação prévia).</p>
+            <label className="block mt-4"><span className="text-xs font-semibold text-slate-400">Nº de utilizadores extra *</span>
+              <input type="number" min={1} max={500} required value={fUsu.extras} onChange={e => setFUsu({ ...fUsu, extras: Math.max(1, Math.min(500, Number(e.target.value) || 1)) })} className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" /></label>
+            <label className="block mt-3"><span className="text-xs font-semibold text-slate-400">Nota (opcional)</span>
+              <textarea value={fUsu.nota} onChange={e => setFUsu({ ...fUsu, nota: e.target.value })} rows={2} maxLength={500} placeholder="Ex.: para a nova filial do Huambo…" className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" /></label>
+            <div className="mt-5 flex gap-2 justify-end">
+              <button type="button" onClick={() => setModalUsu(false)} disabled={aSubmeter} className="text-sm text-slate-400 border border-white/10 rounded-lg px-4 py-2.5 hover:bg-white/5 transition-colors">Cancelar</button>
+              <button type="submit" disabled={aSubmeter} className="text-sm bg-violet-400 text-slate-950 font-bold rounded-lg px-4 py-2.5 hover:bg-violet-300 transition-colors disabled:opacity-50"><Users size={14} className="inline mr-1" />{aSubmeter ? 'A enviar…' : 'Enviar solicitação'}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <footer className="border-t border-white/10 mt-12">
         <div className="max-w-6xl mx-auto px-5 py-6 flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500">

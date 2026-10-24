@@ -51,6 +51,10 @@ async function principal() {
     ['/api/admin/licenses', 'licenças admin'],
     ['/api/admin/log-erros', 'logs de erros'],
     ['/api/admin/settings', 'definições'],
+    // Parte 7.1 — auto-serviço do portal
+    ['/api/portal/downloads', 'downloads do portal'],
+    ['/api/portal/pedidos', 'pedidos do portal'],
+    ['/api/portal/licencas', 'licenças do portal'],
   ]
   for (const [rota, nome] of casos) {
     const r = await pedir(rota)
@@ -66,6 +70,12 @@ async function principal() {
   verificar('POST /api/contact (vazio) → 400', contatoVazio.status === 400, `res=${contatoVazio.status}`)
   const pedidoLixo = await pedir('/api/license-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
   verificar('POST /api/license-order (sem dados) → 400', pedidoLixo.status >= 400 && pedidoLixo.status < 500, `res=${pedidoLixo.status}`)
+
+  // 5b. Parte 7.1 — auto-serviço: sem sessão não se pede renovação nem anexam comprovativos
+  const renSemSessao = await pedir('/api/portal/pedidos/renovar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ licenca_id: '00000000-0000-0000-0000-000000000000' }) })
+  verificar('POST /api/portal/pedidos/renovar (sem sessão) → 401', renSemSessao.status === 401 || renSemSessao.status === 403, `res=${renSemSessao.status}`)
+  const compSemSessao = await pedir('/api/portal/pedidos/00000000-0000-0000-0000-000000000000/comprovativo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comprovativo_b64: 'x' }) })
+  verificar('POST /api/portal/pedidos/:id/comprovativo (sem sessão) → 401', compSemSessao.status === 401 || compSemSessao.status === 403, `res=${compSemSessao.status}`)
 
   // 6. Report de erros (client) — formato completo e formato mínimo
   const rep1 = await pedir('/api/log-erro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensagem: '[smoke] teste de report', detalhe: 'Stack de teste', pagina: BASE + '/smoke' }) })
