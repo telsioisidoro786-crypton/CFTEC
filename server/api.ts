@@ -3785,6 +3785,45 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, { ok: true, mrrKz, arrKz: mrrKz * 12, receita12, meses12, licencas: { activas: activas.length, expirando30d, churn30d: churnLicencas, churnRate }, empresas })
             }
 
+            // ─── PARTE 7.6 · CLIENTE 360 — ficha completa de uma empresa ──────
+            // Junta num só payload: conta no portal, licenças, pedidos (incl.
+            // auto-serviço 7.1), recibos/FT emitidos, chamados e downloads.
+            if (path === '/api/admin/cliente360' && req.method === 'GET') {
+              const nivel360 = currentAdmin(req)?.level || ''
+              if (!['super_admin', 'gestor', 'developer'].includes(nivel360)) return json(res, 403, { ok: false, error: 'Sem permissão para os relatórios.' })
+              const lic360 = await licencaAtual()
+              if (nivel360 !== 'developer' && !lic360.moduloRelatorios) return json(res, 403, { ok: false, error: lic360.mensagem })
+              const nif360 = (new URL(req.url || '/', 'http://x').searchParams.get('nif') || '').trim().slice(0, 40)
+              if (!nif360) return json(res, 400, { ok: false, error: 'Indique o NIF da empresa (?nif=...).' })
+              const d360 = new Date(Date.now() - 30 * 86400000).toISOString()
+              const [conta360, licen360, pedidos360, recibos360, chamados360, dls360] = await Promise.all([
+                supabase.from('clientes_portal').select('nome_empresa, email, estado, telefone_whatsapp').eq('nif', nif360).limit(1),
+                supabase.from('licencas_palancasoft').select('cliente_nome, chave_licenca, data_ativacao, data_expiracao, status, created_at').eq('nif', nif360).order('created_at', { ascending: false }).limit(100),
+                supabase.from('pedidos_licencas').select('id, software_nome, tipo, status, forma_pagamento, created_at').eq('nif', nif360).order('created_at', { ascending: false }).limit(20),
+                supabase.from('recibos_faturacao').select('numero, valor, software, criado_em').eq('cliente_nif', nif360).order('criado_em', { ascending: false }).limit(20),
+                supabase.from('chamados_suporte').select('id, estado, prioridade, software, csat, origem, created_at, resolvido_em').eq('nif', nif360).order('created_at', { ascending: false }).limit(20),
+                supabase.from('download_events').select('created_at').eq('portal_nif', nif360).order('created_at', { ascending: false }).limit(500),
+              ])
+              const licL = ((licen360.data || []) as unknown as { cliente_nome: string | null; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }[])
+              const pedL = ((pedidos360.data || []) as unknown as { id: string; software_nome: string | null; tipo: string | null; status: string | null; forma_pagamento: string | null; created_at: string }[])
+              const recL = ((recibos360.data || []) as unknown as { numero: string | null; valor: number | null; software: string | null; criado_em: string | null }[])
+              const chmL = ((chamados360.data || []) as unknown as { id: string; estado: string; prioridade: string | null; software: string | null; csat: number | null; origem: string | null; created_at: string; resolvido_em: string | null }[])
+              const dlsL = ((dls360.data || []) as unknown as { created_at: string }[])
+              const contaP = ((conta360.data || [])[0] || null) as unknown as { nome_empresa: string; email: string; estado: string; telefone_whatsapp: string } | null
+              const nome360 = contaP?.nome_empresa || licL[0]?.cliente_nome || nif360
+              const hoje360 = new Date().toISOString().slice(0, 10)
+              const activas360 = licL.filter(l => l.status === 'activa' && l.data_expiracao)
+              return json(res, 200, {
+                ok: true,
+                empresa: { nome: nome360, nif: nif360, portal: contaP ? { email: contaP.email, estado: contaP.estado, whatsapp: contaP.telefone_whatsapp || null } : null },
+                licencas: { activas: activas360.length, total: licL.length, expira: activas360.length ? activas360.map(l => l.data_expiracao as string).sort()[0] : null, lista: licL.slice(0, 20) },
+                pedidos: pedL,
+                recibos: recL,
+                chamados: chmL,
+                downloads: { total: dlsL.length, total30: dlsL.filter(d => (d.created_at || '') >= d360).length, ultimo: dlsL[0]?.created_at || null },
+              })
+            }
+
             // WEB PUSH — chave pública VAPID para o banner do painel assinar o dispositivo
             if (path === '/api/admin/push-key' && req.method === 'GET') {
               if (!pushActivo) return json(res, 501, { ok: false, error: 'Web Push não configurado (.env sem VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY).' })

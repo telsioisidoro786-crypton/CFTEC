@@ -58,6 +58,7 @@ async function principal() {
     ['/api/admin/log-erros', 'logs de erros'],
     ['/api/admin/settings', 'definições'],
     ['/api/admin/analytics', 'analytics de negócio (7.3)'],
+    ['/api/admin/cliente360?nif=5007770001', 'ficha Cliente 360 (7.6)'],
     // Parte 7.1 — auto-serviço do portal
     ['/api/portal/downloads', 'downloads do portal'],
     ['/api/portal/pedidos', 'pedidos do portal'],

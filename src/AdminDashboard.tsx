@@ -1609,6 +1609,28 @@ export default function AdminDashboard() {
     } catch { /* secção mostra estado vazio */ }
   }
 
+  // Parte 7.6 — Cliente 360: ficha completa de uma empresa com um clique na tabela
+  type Ficha360 = {
+    empresa: { nome: string; nif: string; portal: { email: string; estado: string; whatsapp: string | null } | null }
+    licencas: { activas: number; total: number; expira: string | null; lista: { cliente_nome: string | null; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }[] }
+    pedidos: { id: string; software_nome: string | null; tipo: string | null; status: string | null; forma_pagamento: string | null; created_at: string }[]
+    recibos: { numero: string | null; valor: number | null; software: string | null; criado_em: string | null }[]
+    chamados: { id: string; estado: string; prioridade: string | null; software: string | null; csat: number | null; origem: string | null; created_at: string; resolvido_em: string | null }[]
+    downloads: { total: number; total30: number; ultimo: string | null }
+  }
+  const [ficha360, setFicha360] = useState<Ficha360 | null>(null)
+  const [ficha360Aberta, setFicha360Aberta] = useState(false)
+  const abrirFicha360 = async (nif: string) => {
+    setFicha360Aberta(true)
+    setFicha360(null)
+    try {
+      const response = await fetch('/api/admin/cliente360?nif=' + encodeURIComponent(nif), { credentials: 'include' })
+      const data = await response.json()
+      if (response.ok && data.ok) setFicha360(data)
+      else setFicha360Aberta(false)
+    } catch { setFicha360Aberta(false) }
+  }
+
   useEffect(() => {
     if (activeSection === 'relatorios') void loadStatsSla()
   }, [activeSection])
@@ -2889,10 +2911,27 @@ export default function AdminDashboard() {
           onClose={() => { if (adminUser?.email) marcarTour(adminUser.email); setTourOpen(false) }}
           onNavigate={(s) => { setActiveSection(s); setSidebarOpen(false) }}
         />
+        {ficha360Aberta && <div className="admin-modal-backdrop" onMouseDown={() => setFicha360Aberta(false)}><div className="admin-modal admin-modal--lg" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head" style={{ borderTop: '3px solid var(--brand, #0ea5e9)' }}><div><span className="admin-panel-kicker">CLIENTE 360 · FICHA COMPLETA</span><h2>{ficha360 ? ficha360.empresa.nome : 'A carregar ficha…'}</h2>{ficha360 && <span style={{ color: '#64748b', fontSize: '.72rem' }}>NIF {ficha360.empresa.nif}{ficha360.empresa.portal ? ` · portal: ${ficha360.empresa.portal.email}${ficha360.empresa.portal.whatsapp ? ` · WhatsApp ${ficha360.empresa.portal.whatsapp}` : ''}` : ' · sem conta no portal'}</span>}</div><button onClick={() => setFicha360Aberta(false)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><div className="admin-modal-body">
+          {!ficha360 ? <div className="admin-empty-state"><Loader2 size={32} className="spin" style={{ color: 'var(--brand, #0ea5e9)' }} /><h3>A reunir licenças, pedidos, recibos e chamados…</h3><p>One request, seis fontes de dados.</p></div> : <>
+            <div className="sla-grid" style={{ marginBottom: 18 }}>
+              <div className="sla-kpi"><small>Licenças</small><strong>{ficha360.licencas.activas}<small style={{ fontWeight: 400 }}> / {ficha360.licencas.total}</small></strong><span>activas / total de chaves</span></div>
+              <div className="sla-kpi" data-tip="Validade mais próxima entre as licenças activas"><small>Expira em</small><strong>{ficha360.licencas.expira ? new Date(`${ficha360.licencas.expira}T00:00:00Z`).toLocaleDateString('pt-PT') : '—'}</strong><span>{ficha360.licencas.expira ? (() => { const d = Math.ceil((new Date(`${ficha360.licencas.expira}T00:00:00Z`).getTime() - Date.now()) / 86400000); return d < 0 ? 'VENCIDA ⚠️' : d <= 30 ? `⏰ em ${d} dia(s)` : 'licença activa' })() : 'sem licença activa'}</span></div>
+              <div className="sla-kpi"><small>FT emitidas · ficha</small><strong>{ficha360.recibos.length}</strong><span>total {ficha360.recibos.reduce((s, r) => s + (r.valor || 0), 0).toLocaleString('pt-PT')} Kz</span></div>
+              <div className="sla-kpi"><small>Downloads / chamados</small><strong>{ficha360.downloads.total30} <small style={{ fontWeight: 400 }}>·</small> {ficha360.chamados.length}</strong><span>últimos 30 dias · total downloads {ficha360.downloads.total}</span></div>
+            </div>
+            <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '.72rem', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>Licenças</p>
+            <div className="admin-table-wrap" style={{ marginBottom: 16 }}><table className="admin-table"><thead><tr><th>Chave</th><th>Estado</th><th>Activação</th><th>Expira</th></tr></thead><tbody>{ficha360.licencas.lista.length === 0 ? <tr><td colSpan={4}>Sem licenças registadas.</td></tr> : ficha360.licencas.lista.map(l => <tr key={l.chave_licenca}><td><code style={{ fontSize: '.72rem' }}>{l.chave_licenca}</code></td><td>{l.status === 'activa' ? <span className="tl-badge tl-badge-ordem">Activa</span> : <span className="tl-badge tl-badge-servico">{l.status}</span>}</td><td>{l.data_ativacao ? new Date(`${l.data_ativacao}T00:00:00Z`).toLocaleDateString('pt-PT') : '—'}</td><td>{l.data_expiracao ? new Date(`${l.data_expiracao}T00:00:00Z`).toLocaleDateString('pt-PT') : '—'}</td></tr>)}</tbody></table></div>
+            <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '.72rem', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>Pedidos recentes (inclui auto-serviço no portal)</p>
+            <div className="admin-table-wrap" style={{ marginBottom: 16 }}><table className="admin-table"><thead><tr><th>Data</th><th>Software</th><th>Tipo</th><th>Estado</th><th>Pagamento</th></tr></thead><tbody>{ficha360.pedidos.length === 0 ? <tr><td colSpan={5}>Sem pedidos.</td></tr> : ficha360.pedidos.map(p => <tr key={p.id}><td>{new Date(p.created_at).toLocaleDateString('pt-PT')}</td><td>{p.software_nome || '—'}</td><td>{p.tipo === 'renovacao' ? '🔁 Renovação' : p.tipo === 'usuarios' ? '👥 +Utilizadores' : p.tipo ? p.tipo : 'Nova'}</td><td>{p.status || '—'}</td><td>{p.forma_pagamento || '—'}</td></tr>)}</tbody></table></div>
+            <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '.72rem', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>Recibos / FT</p>
+            <div className="admin-table-wrap" style={{ marginBottom: 16 }}><table className="admin-table"><thead><tr><th>Nº</th><th>Software</th><th>Valor</th><th>Data</th></tr></thead><tbody>{ficha360.recibos.length === 0 ? <tr><td colSpan={4}>Sem recibos emitidos.</td></tr> : ficha360.recibos.map((r, i) => <tr key={(r.numero || 'r') + i}><td><strong>{r.numero || '—'}</strong></td><td>{r.software || '—'}</td><td>{r.valor != null ? `${Number(r.valor).toLocaleString('pt-PT')} Kz` : '—'}</td><td>{r.criado_em ? new Date(r.criado_em).toLocaleDateString('pt-PT') : '—'}</td></tr>)}</tbody></table></div>
+            <p style={{ margin: '0 0 6px', fontWeight: 700, fontSize: '.72rem', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted)' }}>Chamados de suporte</p>
+            <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Data</th><th>Software</th><th>Prioridade</th><th>Estado</th><th>CSAT</th></tr></thead><tbody>{ficha360.chamados.length === 0 ? <tr><td colSpan={5}>Sem chamados.</td></tr> : ficha360.chamados.map(c => <tr key={c.id}><td>{new Date(c.created_at).toLocaleDateString('pt-PT')}</td><td>{c.software || '—'}</td><td>{c.prioridade || '—'}</td><td>{c.estado}{c.resolvido_em ? ` · ${new Date(c.resolvido_em).toLocaleDateString('pt-PT')}` : ''}</td><td>{c.csat ? `★ ${c.csat}/5` : '—'}</td></tr>)}</tbody></table></div>
+          </>}
+        </div></div></div>}
         {showUpgrade && (
           <div
-            className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm"
-            onClick={(e) => { if (e.target === e.currentTarget) setShowUpgrade(false) }}
+            className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm"            onClick={(e) => { if (e.target === e.currentTarget) setShowUpgrade(false) }}
             role="dialog" aria-modal="true" aria-label="Upgrade do plano"
           >
             <div className="relative my-8">
@@ -3202,7 +3241,7 @@ export default function AdminDashboard() {
               <small>Receita facturada por mês (12 meses)</small>
               <div className="sla-barras">{analytics.meses12.map(m => { const max = Math.max(1, ...analytics.meses12.map(x => x.total)); return <div key={m.mes} className="sla-barra" title={`${m.mes}: ${m.total.toLocaleString('pt-PT')} Kz · ${m.ft} FT`}><div className="sla-barra-fill"><i style={{ height: `${Math.round((m.total / max) * 100)}%` }} /></div><span>{m.label}</span></div> })}</div>
             </div>
-            <div className="sla-kpi sla-kpi--wide"><small>Engajamento por empresa · últimos 30 dias (downloads + chamados ×3)</small>{analytics.empresas.length === 0 ? <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>Sem sinais ainda — os downloads do portal e os chamados alimentam este quadro.</span> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Empresa</th><th>NIF</th><th>⬇️</th><th>📞</th><th>Último sinal</th></tr></thead><tbody>{analytics.empresas.map(e => <tr key={e.nif + '|' + e.nome}><td><strong>{e.nome}</strong></td><td>{e.nif}</td><td>{e.downloads}</td><td>{e.chamados}</td><td>{e.ultimo ? new Date(e.ultimo).toLocaleDateString('pt-PT') : '—'}</td></tr>)}</tbody></table></div>}</div>
+            <div className="sla-kpi sla-kpi--wide"><small>Engajamento por empresa · últimos 30 dias (downloads + chamados ×3)</small>{analytics.empresas.length === 0 ? <span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>Sem sinais ainda — os downloads do portal e os chamados alimentam este quadro.</span> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Empresa</th><th>NIF</th><th>⬇️</th><th>📞</th><th>Último sinal</th></tr></thead><tbody>{analytics.empresas.map(e => <tr key={e.nif + '|' + e.nome} style={{ cursor: 'pointer' }} onClick={() => void abrirFicha360(e.nif)} title="Abrir ficha completa da empresa (Cliente 360)"><td><strong>{e.nome}</strong></td><td>{e.nif}</td><td>{e.downloads}</td><td>{e.chamados}</td><td>{e.ultimo ? new Date(e.ultimo).toLocaleDateString('pt-PT') : '—'}</td></tr>)}</tbody></table></div>}</div>
           </div>}</Card>}
 
         {activeSection === 'developer' && <>
@@ -3272,7 +3311,7 @@ export default function AdminDashboard() {
             </div>
             {analytics.empresas.length === 0 ? <div className="admin-empty-state"><Users size={40} /><h3>Sem sinais de actividade</h3><p>Quando os clientes entrarem no portal (downloads, chamados, renovações), os sinais aparecem aqui.</p></div> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Empresa</th><th>NIF</th><th>Lic.</th><th>Validade</th><th>Valor anual</th><th>⬇️ 30d</th><th>📞 30d</th><th>Último sinal</th></tr></thead><tbody>{analytics.empresas.map(e => {
               const diasVal = e.expira ? Math.ceil((new Date(`${e.expira}T00:00:00Z`).getTime() - Date.now()) / 86400000) : null
-              return <tr key={e.nif + '|' + e.nome}><td><strong>{e.nome}</strong></td><td>{e.nif}</td><td>{e.activas || '—'}</td><td>{!e.expira ? '—' : <span className="tl-badge tl-badge-servico" data-tip={diasVal !== null && diasVal < 0 ? 'Licença VENCIDA' : diasVal !== null && diasVal <= 30 ? 'Vence em breve — fale com o cliente' : 'Licença activa'}>{new Date(`${e.expira}T00:00:00Z`).toLocaleDateString('pt-PT')}{diasVal !== null && diasVal < 0 ? ' ⚠️' : diasVal !== null && diasVal <= 30 ? ' ⏰' : ''}</span>}</td><td>{e.anualKz ? `${e.anualKz.toLocaleString('pt-PT')} Kz` : '—'}</td><td>{e.downloads}</td><td>{e.chamados}</td><td>{e.ultimo ? new Date(e.ultimo).toLocaleDateString('pt-PT') : '—'}</td></tr>
+              return <tr key={e.nif + '|' + e.nome} style={{ cursor: 'pointer' }} onClick={() => void abrirFicha360(e.nif)} title="Abrir ficha completa da empresa (Cliente 360)"><td><strong>{e.nome}</strong></td><td>{e.nif}</td><td>{e.activas || '—'}</td><td>{!e.expira ? '—' : <span className="tl-badge tl-badge-servico" data-tip={diasVal !== null && diasVal < 0 ? 'Licença VENCIDA' : diasVal !== null && diasVal <= 30 ? 'Vence em breve — fale com o cliente' : 'Licença activa'}>{new Date(`${e.expira}T00:00:00Z`).toLocaleDateString('pt-PT')}{diasVal !== null && diasVal < 0 ? ' ⚠️' : diasVal !== null && diasVal <= 30 ? ' ⏰' : ''}</span>}</td><td>{e.anualKz ? `${e.anualKz.toLocaleString('pt-PT')} Kz` : '—'}</td><td>{e.downloads}</td><td>{e.chamados}</td><td>{e.ultimo ? new Date(e.ultimo).toLocaleDateString('pt-PT') : '—'}</td></tr>
             })}</tbody></table></div>}
           </Card>}
         </>}
