@@ -59,6 +59,7 @@ async function principal() {
     ['/api/admin/settings', 'definições'],
     ['/api/admin/analytics', 'analytics de negócio (7.3)'],
     ['/api/admin/cliente360?nif=5007770001', 'ficha Cliente 360 (7.6)'],
+    ['/api/admin/renovacoes-lote', 'machine renovações lote (7.7)'],
     // Parte 7.1 — auto-serviço do portal
     ['/api/portal/downloads', 'downloads do portal'],
     ['/api/portal/pedidos', 'pedidos do portal'],

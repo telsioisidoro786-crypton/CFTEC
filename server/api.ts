@@ -3785,6 +3785,96 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, { ok: true, mrrKz, arrKz: mrrKz * 12, receita12, meses12, licencas: { activas: activas.length, expirando30d, churn30d: churnLicencas, churnRate }, empresas })
             }
 
+            // ─── PARTE 7.7 · MÁQUINA DE RENOVAÇÕES — lote comercial ───────────
+            // GET  = pré-visualização: licenças activas que expiram dentro da
+            //        janela (ou já vencidas) + contactos do portal + flag de
+            //        renovação já em curso (não duplica).
+            // POST = gera pedidos de renovação reais (tipo 'renovacao') — o
+            //        mesmo funil de liquidação/FT — e envia o aviso por e-mail
+            //        ao responsável. Só alvos novos; tudo na auditoria.
+            if (path === '/api/admin/renovacoes-lote' && (req.method === 'GET' || req.method === 'POST')) {
+              const nivelLot = currentAdmin(req)?.level || ''
+              if (!['super_admin', 'gestor', 'developer'].includes(nivelLot)) return json(res, 403, { ok: false, error: 'Sem permissão para as renovações em lote.' })
+              const licLot = await licencaAtual()
+              if (nivelLot !== 'developer' && !licLot.moduloComercial) return json(res, 403, { ok: false, error: licLot.mensagem })
+              const janelaRaw = req.method === 'POST'
+                ? Math.round(Number(((await readBody(req)) as { janela?: number | string } | undefined)?.janela || 0))
+                : Math.round(Number(new URL(req.url || '/', 'http://x').searchParams.get('janela') || 0))
+              const janela = [7, 30, 60].includes(janelaRaw) ? janelaRaw : 30
+              const hojeLot = new Date().toISOString().slice(0, 10)
+              const limiteLot = new Date(Date.now() + janela * 86400000).toISOString().slice(0, 10)
+              // alvos: licenças ACTIVAS com validade <= hoje+janela (vencidas incluídas — as mais urgentes)
+              const { data: licLotData, error: licLotErr } = await supabase.from('licencas_palancasoft')
+                .select('id, nif, cliente_nome, chave_licenca, data_expiracao, status')
+                .eq('status', 'activa').not('data_expiracao', 'is', null).lte('data_expiracao', limiteLot)
+                .order('data_expiracao', { ascending: true }).limit(200)
+              if (licLotErr) return json(res, 500, { ok: false, error: licLotErr.message })
+              const licAlvo = (licLotData || []) as unknown as { id: string; nif: string | null; cliente_nome: string | null; chave_licenca: string; data_expiracao: string; status: string }[]
+              // por NIF: renovação já em curso? · contacto do portal? · último software?
+              const nifsLot = Array.from(new Set(licAlvo.map(l => (l.nif || '').trim()).filter(Boolean)))
+              const [emCursoLot, portalLot, sempreLot] = await Promise.all([
+                nifsLot.length ? supabase.from('pedidos_licencas').select('nif, created_at').eq('tipo', 'renovacao').in('status', ['Pendente', 'Em Verificação', 'Aprovado']).in('nif', nifsLot) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; created_at: string }[] }),
+                nifsLot.length ? supabase.from('clientes_portal').select('nif, nome_empresa, email, telefone_whatsapp, nome_responsavel').in('nif', nifsLot) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; nome_empresa: string; email: string; telefone_whatsapp: string; nome_responsavel: string | null }[] }),
+                nifsLot.length ? supabase.from('pedidos_licencas').select('nif, software_nome, tipo, created_at').in('nif', nifsLot).order('created_at', { ascending: false }).limit(500) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; software_nome: string | null; tipo: string | null; created_at: string }[] }),
+              ])
+              const emCursoSet = new Set(((emCursoLot.data || []) as { nif: string }[]).map(r => (r.nif || '').trim()))
+              const portalPorNif = new Map(((portalLot.data || []) as { nif: string; nome_empresa: string; email: string; telefone_whatsapp: string; nome_responsavel: string | null }[]).map(p => [(p.nif || '').trim(), p]))
+              const softPorNif = new Map<string, string>()
+              for (const p of ((sempreLot.data || []) as { nif: string; software_nome: string | null; tipo: string | null }[])) {
+                const k = (p.nif || '').trim(); if (!k || softPorNif.has(k)) continue
+                softPorNif.set(k, String(p.software_nome || '').trim() || 'PalancaSoft Suite')
+              }
+              const alvos = licAlvo.map(l => {
+                const nif = (l.nif || '').trim()
+                const p = portalPorNif.get(nif)
+                const dias = l.data_expiracao ? Math.ceil((new Date(`${l.data_expiracao}T00:00:00Z`).getTime() - Date.now()) / 86400000) : null
+                return {
+                  licenca_id: l.id, nif, empresa: p?.nome_empresa || l.cliente_nome || nif || '—',
+                  chave_licenca: l.chave_licenca, expira: l.data_expiracao, dias,
+                  software: softPorNif.get(nif) || 'PalancaSoft Suite',
+                  email: p?.email || null, whatsapp: p?.telefone_whatsapp || null, responsavel: p?.nome_responsavel || null,
+                  emCurso: nif ? emCursoSet.has(nif) : false,
+                }
+              })
+              if (req.method === 'GET')
+                return json(res, 200, { ok: true, janela, hoje: hojeLot, limite: limiteLot, total: alvos.length, prontos: alvos.filter(a => !a.emCurso).length, alvos })
+
+              // ── POST: gerar + avisar ──
+              const prontosLot = alvos.filter(a => !a.emCurso && a.nif)
+              const criadosLot: { nif: string; empresa: string; pedido: string }[] = []
+              const emailsLot: { empresa: string; ok: boolean; detalhe: string }[] = []
+              for (const a of prontosLot) {
+                const diasTxt = a.expira ? new Date(`${a.expira}T00:00:00Z`).toLocaleDateString('pt-PT', { timeZone: 'UTC' }) : '—'
+                const { data: novoLot, error: errLot } = await supabase.from('pedidos_licencas').insert({
+                  software_nome: a.software.slice(0, 120),
+                  nome_empresa: a.empresa.slice(0, 160),
+                  nif: a.nif,
+                  nome_responsavel: (a.responsavel || a.empresa).slice(0, 150),
+                  telefone_whatsapp: a.whatsapp || '',
+                  email: a.email || '',
+                  provincia: '—',
+                  forma_pagamento: 'Transferência Bancária / IBAN',
+                  observacoes: `Máquina de renovações (Parte 7.7): licença ${a.chave_licenca} expira ${diasTxt} — gerada em lote (janela ${janela}d) pelo admin. Aviso enviado ao cliente.`,
+                  status: 'Pendente',
+                  tipo: 'renovacao',
+                }).select('id').single()
+                if (errLot || !novoLot) { emailsLot.push({ empresa: a.empresa, ok: false, detalhe: `falhou insert: ${errLot?.message || '?'}` }); continue }
+                criadosLot.push({ nif: a.nif, empresa: a.empresa, pedido: String(novoLot.id).slice(0, 8).toUpperCase() })
+                if (a.email) {
+                  const htmlLot = `<p style="margin:0 0 14px">Exmo. responsável pela <b>${a.empresa}</b>,</p><p style="margin:0 0 14px">A licença <b>${a.software}</b> utilizada pela sua empresa <b>expira em ${diasTxt}</b> (chave <b>${a.chave_licenca}</b>). Para garantir a continuidade do software, preparamos já o pedido de renovação — está <b>disponível no seu portal do cliente</b> com a proforma de pagamento.</p><table style="margin:0 0 12px;border-collapse:collapse">${emailLinha('Software', a.software)}${emailLinha('Licença', a.chave_licenca)}${emailLinha('Validade até', diasTxt)}</table><p style="margin:0">Assim que efectuarmos a liquidação, a licença é estendida automaticamente. Qualquer dúvida, responda ao e-mail da equipa comercial.</p>`
+                  const rLot = await sendEmailRaw(a.email, `A licença ${a.software} expira em ${diasTxt} — renovação preparada · CFTEC`, emailShell('Renovação da sua licença — validade até ' + diasTxt, htmlLot))
+                  emailsLot.push({ empresa: a.empresa, ok: rLot.enviado, detalhe: rLot.detalhe })
+                } else emailsLot.push({ empresa: a.empresa, ok: false, detalhe: 'sem e-mail no portal' })
+              }
+              logAuditoria({ email: currentAdmin(req)?.email || '', level: nivelLot }, 'admin_renovacoes_lote', 'pedido', `janela=${janela}`, { gerados: criadosLot.length, saltados: alvos.length - prontosLot.length, emailsOk: emailsLot.filter(e => e.ok).length })
+              fireAdminAlert(`🔁 Máquina de renovações: ${criadosLot.length} pedido(s) gerados (janela ${janela}d), ${alvos.length - prontosLot.length} saltados (já em curso), e-mails ${emailsLot.filter(e => e.ok).length}/${emailsLot.length}.`)
+              return json(res, 200, {
+                ok: true, janela, gerados: criadosLot.length, saltados: alvos.length - prontosLot.length,
+                pedidos: criadosLot,
+                emails: { enviados: emailsLot.filter(e => e.ok).length, falhados: emailsLot.filter(e => !e.ok).length, detalhe: emailsLot },
+              })
+            }
+
             // ─── PARTE 7.6 · CLIENTE 360 — ficha completa de uma empresa ──────
             // Junta num só payload: conta no portal, licenças, pedidos (incl.
             // auto-serviço 7.1), recibos/FT emitidos, chamados e downloads.
