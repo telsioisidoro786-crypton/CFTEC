@@ -1,9 +1,6 @@
-# CFTEC — cftec.co
 User-agent: *
 Allow: /
-# Áreas privadas (painel e portal do cliente) fora de indexação
 Disallow: /admin
-Disallow: /api/
-Disallow: /cliente/assets/
+Disallow: /api
 
 Sitemap: https://cftec.co/sitemap.xml

@@ -104,15 +104,15 @@
 
   /* ---------- Dados dos downloads (ficheiros de exemplo: substitua os links pelos reais) ---------- */
   const DOWNLOADS = [
-    { id: 1, nome: 'PalancaSoft ERP — Instalador Completo', cat: 'PalancaSoft', versao: 'v7.1', tamanho: 148.6, agt: true, tipo: '.exe', notas: 'Faturação certificada AGT, novo módulo de relatórios e melhorias de desempenho.', downloads: 3248, url: '#' },
-    { id: 2, nome: 'PalancaSoft — Atualização Fiscal', cat: 'PalancaSoft', versao: 'v7.1.2', tamanho: 22.3, agt: true, tipo: '.exe', notas: 'Ajustes de conformidade fiscal e correções de arredondamento em faturas.', downloads: 2109, url: '#' },
-    { id: 3, nome: 'PalancaSoft Servidor (Rede Local)', cat: 'PalancaSoft', versao: 'v7.1', tamanho: 96.4, agt: true, tipo: '.exe', notas: 'Instalação em servidor para ambientes multiutilizador em rede local.', downloads: 874, url: '#' },
-    { id: 4, nome: 'Negomil ERP — Instalador Comercial', cat: 'Negomil', versao: 'v5.4', tamanho: 212.0, agt: true, tipo: '.exe', notas: 'Módulos comercial e tesouraria com melhorias na conciliação.', downloads: 1560, url: '#' },
-    { id: 5, nome: 'Negomil ERP — Módulo Escolar', cat: 'Negomil', versao: 'v5.4', tamanho: 87.2, agt: false, tipo: '.exe', notas: 'Gestão de matrículas, propinas e pautas para instituições de ensino.', downloads: 642, url: '#' },
-    { id: 6, nome: 'Negomil ERP — Módulo Fiscal', cat: 'Negomil', versao: 'v5.3.1', tamanho: 41.8, agt: true, tipo: '.exe', notas: 'Mapas fiscais e exportação SAF-T (AO).', downloads: 1133, url: '#' },
-    { id: 7, nome: 'CFTEC Suporte Remoto', cat: 'Utilitários', versao: 'v2.0', tamanho: 9.4, agt: false, tipo: '.exe', notas: 'Ferramenta leve para a equipa técnica prestar assistência à distância.', downloads: 4021, url: '#' },
-    { id: 8, nome: 'Gestor de Cópias de Segurança', cat: 'Utilitários', versao: 'v1.6', tamanho: 14.7, agt: false, tipo: '.exe', notas: 'Backups automáticos das bases de dados PalancaSoft e Negomil.', downloads: 1788, url: '#' },
-    { id: 9, nome: 'Manual do Utilizador PalancaSoft', cat: 'Utilitários', versao: 'v7.1', tamanho: 6.2, agt: false, tipo: 'PDF', notas: 'Guia passo a passo: instalação, faturação e relatórios.', downloads: 2950, url: '#' }
+    { id: 1, nome: 'PalancaSoft ERP — Instalador Completo', cat: 'PalancaSoft', versao: 'v7.1', tamanho: 148.6, agt: true, tipo: '.exe', notas: 'Faturação certificada AGT, novo módulo de relatórios e melhorias de desempenho.', downloads: 3248, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de PalancaSoft ERP — Instalador Completo") },
+    { id: 2, nome: 'PalancaSoft — Atualização Fiscal', cat: 'PalancaSoft', versao: 'v7.1.2', tamanho: 22.3, agt: true, tipo: '.exe', notas: 'Ajustes de conformidade fiscal e correções de arredondamento em faturas.', downloads: 2109, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de PalancaSoft — Atualização Fiscal") },
+    { id: 3, nome: 'PalancaSoft Servidor (Rede Local)', cat: 'PalancaSoft', versao: 'v7.1', tamanho: 96.4, agt: true, tipo: '.exe', notas: 'Instalação em servidor para ambientes multiutilizador em rede local.', downloads: 874, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de PalancaSoft Servidor (Rede Local)") },
+    { id: 4, nome: 'Negomil ERP — Instalador Comercial', cat: 'Negomil', versao: 'v5.4', tamanho: 212.0, agt: true, tipo: '.exe', notas: 'Módulos comercial e tesouraria com melhorias na conciliação.', downloads: 1560, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de Negomil ERP — Instalador Comercial") },
+    { id: 5, nome: 'Negomil ERP — Módulo Escolar', cat: 'Negomil', versao: 'v5.4', tamanho: 87.2, agt: false, tipo: '.exe', notas: 'Gestão de matrículas, propinas e pautas para instituições de ensino.', downloads: 642, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de Negomil ERP — Módulo Escolar") },
+    { id: 6, nome: 'Negomil ERP — Módulo Fiscal', cat: 'Negomil', versao: 'v5.3.1', tamanho: 41.8, agt: true, tipo: '.exe', notas: 'Mapas fiscais e exportação SAF-T (AO).', downloads: 1133, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de Negomil ERP — Módulo Fiscal") },
+    { id: 7, nome: 'CFTEC Suporte Remoto', cat: 'Utilitários', versao: 'v2.0', tamanho: 9.4, agt: false, tipo: '.exe', notas: 'Ferramenta leve para a equipa técnica prestar assistência à distância.', downloads: 4021, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de CFTEC Suporte Remoto") },
+    { id: 8, nome: 'Gestor de Cópias de Segurança', cat: 'Utilitários', versao: 'v1.6', tamanho: 14.7, agt: false, tipo: '.exe', notas: 'Backups automáticos das bases de dados PalancaSoft e Negomil.', downloads: 1788, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de Gestor de Cópias de Segurança") },
+    { id: 9, nome: 'Manual do Utilizador PalancaSoft', cat: 'Utilitários', versao: 'v7.1', tamanho: 6.2, agt: false, tipo: 'PDF', notas: 'Guia passo a passo: instalação, faturação e relatórios.', downloads: 2950, url: 'https://wa.me/244933609090?text=' + encodeURIComponent("Olá CFTEC! Quero o download de Manual do Utilizador PalancaSoft") }
   ];
 
   const state = { cat: 'Todos', q: '' };
@@ -208,7 +208,7 @@
   }));
 
   /* ---------- Validação e envio de formulários ---------- */
-  const WHATSAPP = '244900000001'; // substitua pelo número comercial real (formato internacional, sem +)
+  const WHATSAPP = '244933609090'; // substitua pelo número comercial real (formato internacional, sem +)
 
   function validate(fields) {
     let ok = true;

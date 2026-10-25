@@ -35,6 +35,22 @@
 <script src="https://unpkg.com/lucide@latest"></script>
 
 <link rel="stylesheet" href="assets/css/style.css" />
+
+<link rel="canonical" href="https://cftec.co/portal/blog.html">
+<meta property="og:site_name" content="CFTEC">
+<meta property="og:title" content="CFTEC | Notícias e Novidades">
+<meta property="og:description" content="Acompanhe lançamentos, atualizações fiscais e dicas de infraestrutura de TI da CFTEC em Angola.">
+<meta property="og:url" content="https://cftec.co/portal/blog.html">
+<meta property="og:type" content="article">
+<meta property="og:locale" content="pt_AO">
+<meta property="og:image" content="https://cftec.co/portal/assets/img/og-hero.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="CFTEC — PalancaSoft, Negomil ERP e Infraestrutura de TI em Angola">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="CFTEC | Notícias e Novidades">
+<meta name="twitter:description" content="Acompanhe lançamentos, atualizações fiscais e dicas de infraestrutura de TI da CFTEC em Angola.">
+<meta name="twitter:image" content="https://cftec.co/portal/assets/img/og-hero.jpg">
 </head>
 <body class="bg-white">
 
@@ -200,7 +216,7 @@
   <!-- ============ HERO BLOG ============ -->
   <section class="relative isolate overflow-hidden bg-navy py-16 lg:py-24">
     <div class="absolute inset-0 -z-10">
-      <img src="assets/img/servers-1.jpg" alt="" aria-hidden="true" class="h-full w-full object-cover">
+      <img src="assets/img/servers-1.webp" alt="" aria-hidden="true" class="h-full w-full object-cover">
       <div class="page-hero-overlay absolute inset-0"></div>
     </div>
     <div class="container max-w-7xl mx-auto px-5 relative z-10 text-center">
@@ -257,7 +273,7 @@
     <div class="container max-w-7xl mx-auto px-5">
       <div class="bg-navy rounded-2xl overflow-hidden relative isolate shadow-xl shadow-navy/25">
         <div class="absolute inset-0 -z-10">
-          <img src="assets/img/servers-1.jpg" alt="" aria-hidden="true" class="h-full w-full object-cover opacity-40">
+          <img src="assets/img/servers-1.webp" alt="" aria-hidden="true" class="h-full w-full object-cover opacity-40">
           <div class="absolute inset-0 bg-gradient-to-br from-navy/95 via-navy/80 to-royal-dark/70"></div>
         </div>
         <div class="grid lg:grid-cols-[1.2fr_1fr] gap-10 items-center p-8 md:p-12 relative z-10">
@@ -308,16 +324,16 @@
     <div>
       <h4 class="!text-white font-display font-semibold mb-4 text-sm">Categorias</h4>
       <ul class="space-y-2 text-sm">
-        <li><a class="hover:text-white transition" href="#">Lançamentos</a></li>
-        <li><a class="hover:text-white transition" href="#">Segurança CCTV</a></li>
-        <li><a class="hover:text-white transition" href="#">Fiscal AGT</a></li>
-        <li><a class="hover:text-white transition" href="#">Dicas de TI</a></li>
+        <li><a class="hover:text-white transition" href="blog.html">Lançamentos</a></li>
+        <li><a class="hover:text-white transition" href="index.html#servicos">Segurança CCTV</a></li>
+        <li><a class="hover:text-white transition" href="blog.html">Fiscal AGT</a></li>
+        <li><a class="hover:text-white transition" href="blog.html">Dicas de TI</a></li>
       </ul>
     </div>
     <div>
       <h4 class="!text-white font-display font-semibold mb-4 text-sm">Contacto</h4>
       <ul class="space-y-2 text-sm">
-        <li class="flex gap-2"><i data-lucide="phone" class="w-4 h-4 mt-0.5 text-blue-400"></i>+244 900 000 001</li>
+        <li class="flex gap-2"><i data-lucide="phone" class="w-4 h-4 mt-0.5 text-blue-400"></i>+244 933 609 090</li>
         <li class="flex gap-2"><i data-lucide="mail" class="w-4 h-4 mt-0.5 text-blue-400"></i>geral@cftec.ao</li>
         <li class="flex gap-2"><i data-lucide="map-pin" class="w-4 h-4 mt-0.5 text-blue-400"></i>Luanda, Angola</li>
       </ul>
@@ -343,12 +359,12 @@
   'use strict';
 
   const ARTIGOS = [
-    { id: 1, titulo: 'PalancaSoft v7.1 já disponível', categoria: 'Lançamento', data: '15 Out 2025', resumo: 'Nova interface de relatórios gerenciais, melhorias de performance na faturação e correções de conformidade fiscal AGT.', conteudo: '<p>A CFTEC lançou oficialmente a versão <strong>v7.1 do PalancaSoft ERP</strong>, trazendo melhorias significativas para gestores e equipes financeiras.</p>', autor: 'Equipe CFTEC', foto: 'erp-dashboard.jpg', imagem: 'monitor', tempoLeitura: '5 min' },
-    { id: 2, titulo: 'Dicas de segurança CCTV para empresas', categoria: 'Segurança', data: '03 Set 2025', resumo: 'Como posicionar câmeras, configurar detecção de movimento e proteger o seu património com sistemas de videovigilância IP.', conteudo: '<p>A segurança eletrónica é essencial para proteger o património da sua empresa.</p>', autor: 'Equipe CFTEC', foto: 'cctv-1.jpg', imagem: 'cctv', tempoLeitura: '4 min' },
-    { id: 3, titulo: 'Por que faturar com certificação AGT?', categoria: 'Fiscal', data: '18 Jul 2025', resumo: 'Entenda as obrigações fiscais para empresas angolanas e como o PalancaSoft ajuda.', conteudo: '<p>A faturação eletrónica certificada pela <strong>AGT</strong> é obrigatória para empresas em Angola.</p>', autor: 'Equipe CFTEC', foto: 'tax.jpg', imagem: 'file-check-2', tempoLeitura: '6 min' },
-    { id: 4, titulo: 'Negomil ERP: módulo escolar', categoria: 'Lançamento', data: '10 Ago 2025', resumo: 'Gestão de matrículas, propinas e pautas com o módulo escolar do Negomil ERP.', conteudo: '<p>Instituições de ensino em Angola agora podem contar com o <strong>módulo escolar do Negomil ERP</strong>.</p>', autor: 'Equipe CFTEC', foto: 'school.jpg', imagem: 'graduation-cap', tempoLeitura: '4 min' },
-    { id: 5, titulo: 'Como escolher o ERP certo', categoria: 'Dicas', data: '22 Jul 2025', resumo: 'Guia rápido para comparar PalancaSoft e Negomil ERP.', conteudo: '<p>Escolher um ERP é uma decisão estratégica.</p>', autor: 'Equipe CFTEC', foto: 'web.jpg', imagem: 'layout-dashboard', tempoLeitura: '7 min' },
-    { id: 6, titulo: 'Backup automático: por que sua empresa não pode ficar sem', categoria: 'Dicas', data: '05 Jul 2025', resumo: 'A importância de backups automáticos para bases de dados de PalancaSoft e Negomil.', conteudo: '<p>Perder dados pode parar um negócio.</p>', autor: 'Equipe CFTEC', foto: 'servers-1.jpg', imagem: 'hard-drive', tempoLeitura: '3 min' }
+    { id: 1, titulo: 'PalancaSoft v7.1 já disponível', categoria: 'Lançamento', data: '15 Out 2025', resumo: 'Nova interface de relatórios gerenciais, melhorias de performance na faturação e correções de conformidade fiscal AGT.', conteudo: '<p>A CFTEC lançou oficialmente a versão <strong>v7.1 do PalancaSoft ERP</strong>, trazendo melhorias significativas para gestores e equipes financeiras.</p>', autor: 'Equipe CFTEC', foto: 'erp-dashboard.webp', imagem: 'monitor', tempoLeitura: '5 min' },
+    { id: 2, titulo: 'Dicas de segurança CCTV para empresas', categoria: 'Segurança', data: '03 Set 2025', resumo: 'Como posicionar câmeras, configurar detecção de movimento e proteger o seu património com sistemas de videovigilância IP.', conteudo: '<p>A segurança eletrónica é essencial para proteger o património da sua empresa.</p>', autor: 'Equipe CFTEC', foto: 'cctv-1.webp', imagem: 'cctv', tempoLeitura: '4 min' },
+    { id: 3, titulo: 'Por que faturar com certificação AGT?', categoria: 'Fiscal', data: '18 Jul 2025', resumo: 'Entenda as obrigações fiscais para empresas angolanas e como o PalancaSoft ajuda.', conteudo: '<p>A faturação eletrónica certificada pela <strong>AGT</strong> é obrigatória para empresas em Angola.</p>', autor: 'Equipe CFTEC', foto: 'tax.webp', imagem: 'file-check-2', tempoLeitura: '6 min' },
+    { id: 4, titulo: 'Negomil ERP: módulo escolar', categoria: 'Lançamento', data: '10 Ago 2025', resumo: 'Gestão de matrículas, propinas e pautas com o módulo escolar do Negomil ERP.', conteudo: '<p>Instituições de ensino em Angola agora podem contar com o <strong>módulo escolar do Negomil ERP</strong>.</p>', autor: 'Equipe CFTEC', foto: 'school.webp', imagem: 'graduation-cap', tempoLeitura: '4 min' },
+    { id: 5, titulo: 'Como escolher o ERP certo', categoria: 'Dicas', data: '22 Jul 2025', resumo: 'Guia rápido para comparar PalancaSoft e Negomil ERP.', conteudo: '<p>Escolher um ERP é uma decisão estratégica.</p>', autor: 'Equipe CFTEC', foto: 'web.webp', imagem: 'layout-dashboard', tempoLeitura: '7 min' },
+    { id: 6, titulo: 'Backup automático: por que sua empresa não pode ficar sem', categoria: 'Dicas', data: '05 Jul 2025', resumo: 'A importância de backups automáticos para bases de dados de PalancaSoft e Negomil.', conteudo: '<p>Perder dados pode parar um negócio.</p>', autor: 'Equipe CFTEC', foto: 'servers-1.webp', imagem: 'hard-drive', tempoLeitura: '3 min' }
   ];
 
   document.addEventListener('DOMContentLoaded', () => {
