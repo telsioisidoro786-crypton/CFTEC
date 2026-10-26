@@ -73,6 +73,8 @@ import {
   Download,
   Repeat,
   AlertCircle,
+  Send,
+  Inbox,
 } from 'lucide-react'
 import PushNotificationBanner from './components/PushNotificationBanner'
 import SystemTour, { marcarTour, tourFeito } from './SystemTour'
@@ -640,6 +642,12 @@ export default function AdminDashboard() {
   const [logErros, setLogErros] = useState<LogErroRow[]>([])
   const [logErrosVer, setLogErrosVer] = useState<'activos' | 'resolvidos'>('activos')
   const [logErrosAResolvidos, setLogErrosAResolvidos] = useState(false)
+  // Central de alertas (parte 8.2) — fila com estado de entrega
+  type AlertaRow = { id: string; criado_em: string; canal: 'callmebot' | 'email' | 'push'; texto: string; estado: 'enviado' | 'falhou' | 'saltou'; detalhe: string | null }
+  const [alertaFila, setAlertaFila] = useState<AlertaRow[]>([])
+  const [alertaResumo, setAlertaResumo] = useState<{ enviados: number; falhados: number; saltados: number; ultimo: string | null }>({ enviados: 0, falhados: 0, saltados: 0, ultimo: null })
+  const [alertaSemTabela, setAlertaSemTabela] = useState(false)
+  const [alertaTestando, setAlertaTestando] = useState<string | null>(null)
   const [users, setUsers] = useState<AdminUserRow[]>([])
   const [showUserForm, setShowUserForm] = useState(false)
   const [userForm, setUserForm] = useState({ name: '', email: '', password: '', role: 'gestor' })
@@ -1439,6 +1447,32 @@ export default function AdminDashboard() {
       if (body.ok) notify('✅ Mensagem de teste a caminho (WhatsApp/Telegram) — confere no telemóvel! (' + (body.detalhe || 'ok') + ')')
       else notify('❌ Falhou: ' + (body.detalhe || body.error || 'erro desconhecido'))
     } catch { notify('Falha de rede no teste') }
+  }
+
+  // Central de alertas (parte 8.2) — fila + resumo + teste por canal
+  const carregarAlertas = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/alertas', { credentials: 'include' })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) { setAlertaFila(b.fila || []); setAlertaResumo(b.resumo || { enviados: 0, falhados: 0, saltados: 0, ultimo: null }); setAlertaSemTabela(!!b.sem_tabela) }
+      else notify('Não foi possível ler a central de alertas: ' + (b.error || r.status))
+    } catch { /* silencioso: painel continua */ }
+  }, [])
+  // recarrega ao abrir a área Developer (alertas mudam em background)
+  useEffect(() => { if (activeSection === 'developer') void carregarAlertas() }, [activeSection, carregarAlertas])
+
+  const testarCanalAlerta = async (canal: 'callmebot' | 'email' | 'push') => {
+    const nome = canal === 'callmebot' ? 'WhatsApp/Telegram' : canal === 'email' ? 'e-mail' : 'Web Push'
+    setAlertaTestando(canal)
+    notify(`A enviar teste por ${nome}…`)
+    try {
+      const response = await fetch('/api/admin/alertas/testar', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ canal }) })
+      const body = await response.json().catch(() => ({}))
+      if (body.ok) notify(`✅ Teste por ${nome}: entregue — ${body.detalhe || 'ok'}`)
+      else notify(`⚠️ Teste por ${nome}: ${body.detalhe || body.error || 'falhou'}`)
+      await carregarAlertas()
+    } catch { notify('Falha de rede no teste') }
+    setAlertaTestando(null)
   }
 
   // Licenças PalancaSoft
@@ -3372,6 +3406,27 @@ export default function AdminDashboard() {
               </div>
             ))}</div>}
           </Card>}
+          <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">CONFIABILIDADE · NEXORA SYSTEMS</span><h2>Central de alertas</h2></div><button className="icon-btn" title="Recarregar fila + resumo" onClick={() => void carregarAlertas()}><RefreshCw size={15} /></button></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Todo o aviso da plataforma (chamado novo, pedido, renovação, liquidação…) sai pelos 3 canais de notificação e deixa <b>rasto</b> aqui: estado de entrega real (✓ enviado · ✗ falhou · — saltou sem chaves) e o motivo exacto quando não chegou. Teste cada canal a qualquer momento — o resultado entra na fila com a sua assinatura.</p>
+            {alertaSemTabela && <div className="licenca-aviso licenca-aviso--off" style={{ marginBottom: 14 }}><AlertTriangle size={15} /> A fila ainda não existe na base de dados — corra <b>supabase-parte82-alertas.sql</b> no SQL Editor do Supabase para activar. Os alertas continuam a ser enviados na mesma (só sem rasto).</div>}
+            <div className="sla-grid" style={{ marginBottom: 16 }}>
+              <div className="sla-kpi"><small>Entregues · 30d</small><strong>{alertaResumo.enviados}</strong><span>alertas chegaram ao destino</span></div>
+              <div className="sla-kpi"><small>Falhados · 30d</small><strong style={alertaResumo.falhados > 0 ? { color: '#dc2626' } : undefined}>{alertaResumo.falhados}</strong><span>{alertaResumo.falhados > 0 ? 'ver o detalhe na fila' : 'nenhuma falha'}</span></div>
+              <div className="sla-kpi"><small>Saltados · 30d</small><strong style={alertaResumo.saltados > 0 ? { color: '#d97706' } : undefined}>{alertaResumo.saltados}</strong><span>sem chaves / sem subscrição</span></div>
+              <div className="sla-kpi"><small>Último entregue</small><strong>{alertaResumo.ultimo ? new Date(alertaResumo.ultimo).toLocaleDateString('pt-PT') : '—'}</strong><span>{alertaResumo.ultimo ? new Date(alertaResumo.ultimo).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' }) : 'sem entregas registadas'}</span></div>
+            </div>
+            <div className="settings-actions" style={{ margin: '0 0 16px' }}>
+              <Button type="button" size="sm" onClick={() => void testarCanalAlerta('callmebot')} disabled={alertaTestando !== null}>{alertaTestando === 'callmebot' ? <><Loader2 size={13} className="spin" /> A testar…</> : <><MessageCircle size={13} /> Testar WhatsApp/TG</>}</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => void testarCanalAlerta('email')} disabled={alertaTestando !== null}>{alertaTestando === 'email' ? <><Loader2 size={13} className="spin" /> A testar…</> : <><Send size={13} /> Testar e-mail</>}</Button>
+              <Button type="button" size="sm" variant="outline" onClick={() => void testarCanalAlerta('push')} disabled={alertaTestando !== null}>{alertaTestando === 'push' ? <><Loader2 size={13} className="spin" /> A testar…</> : <><Bell size={13} /> Testar Web Push</>}</Button>
+            </div>
+            <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Data</th><th>Canal</th><th>Alerta</th><th>Estado</th><th>Detalhe</th></tr></thead><tbody>{alertaFila.length === 0 ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: '18px 0' }}><Inbox size={18} style={{ display: 'block', margin: '0 auto 6px', color: '#94a3b8' }} /><span style={{ fontSize: '.72rem', color: '#64748b' }}>{alertaSemTabela ? 'Sem fila ainda — corra o SQL indicado acima.' : 'Nenhum alerta registado. Os próximos avisos aparecem aqui.'}</span></td></tr> : alertaFila.map(a => <tr key={a.id}>
+              <td style={{ whiteSpace: 'nowrap', fontSize: '.72rem', color: '#64748b' }}>{new Date(a.criado_em).toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
+              <td data-tip={a.canal === 'callmebot' ? 'CallMeBot: WhatsApp admin + fallback Telegram' : a.canal === 'email' ? 'Resend → e-mail de notificação (Definições)' : 'Web Push → browser da equipa'}><span className={`alerta-chip alerta-chip--${a.canal}`}>{a.canal === 'callmebot' ? 'WhatsApp/TG' : a.canal === 'email' ? 'E-mail' : 'Push'}</span></td>
+              <td style={{ maxWidth: 300, fontSize: '.72rem' }}>{a.texto}</td>
+              <td><span className={`alerta-chip alerta-chip--${a.estado}`}>{a.estado === 'enviado' ? '✓ enviado' : a.estado === 'falhou' ? '✗ falhou' : '— saltou'}</span></td>
+              <td style={{ fontSize: '.7rem', color: '#64748b', maxWidth: 230 }}>{a.detalhe || '—'}</td>
+            </tr>)}</tbody></table></div>
+          </Card>
           <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['recibos_faturacao', 'recibos / faturas (FT)'], ['pedidos_upgrade', 'pedidos de upgrade (contrato)'], ['chamados_suporte', 'chamados'], ['chamados_mensagens', 'conversas dos chamados'], ['wiki_tecnica', 'wiki técnica + FAQ'], ['clientes_portal', 'contas do portal do cliente'], ['download_events', 'eventos de downloads'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['logs_erros', 'diário de erros'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button></div></Card>
           {analytics && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">DESEMPENHO · PORTAL DOS CLIENTES</span><h2>Monitorização & análise dos clientes</h2></div><div style={{ display: 'flex', gap: 6 }}><button className="icon-btn" title="Exportar CSV — empresas (licenças, validade, valor anual, engajamento)" onClick={() => { if (!analytics) return; exportarCSV('monitorizacao-clientes', ['Empresa', 'NIF', 'Licenças activas', 'Validade', 'Valor anual (Kz)', 'Downloads 30d', 'Chamados 30d', 'Último sinal'], analytics.empresas.map(e => [e.nome, e.nif, e.activas || 0, e.expira || '', e.anualKz ?? '', e.downloads, e.chamados, e.ultimo || ''])) }}><Download size={15} /></button><button className="icon-btn" title="Actualizar números" onClick={() => void loadAnalytics()}><RefreshCw size={15} /></button></div></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Como cada empresa usa realmente o portal nos <b>últimos 30 dias</b>: downloads do catálogo oficial e chamados de suporte (peso ×3), cruzados com as licenças e o valor anual já recebido. Servem para decidir renovações, cortesias e quem merece atenção comercial.</p>
             <div className="sla-grid" style={{ marginBottom: 16 }}>

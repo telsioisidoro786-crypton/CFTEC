@@ -36,20 +36,44 @@ const VAPID_PRIVATE = process.env.VAPID_PRIVATE_KEY || ''
 const pushActivo = !!(VAPID_PUBLIC && VAPID_PRIVATE)
 if (pushActivo) webpush.setVapidDetails('mailto:suporte@cftec.co', VAPID_PUBLIC, VAPID_PRIVATE)
 
+// PARTE 8.2 — Central de alertas: cada alerta ao admin deixa rasto na
+// tabela alertas_fila (canal, estado de entrega, motivo). Fire-and-forget:
+// se a tabela ainda não existe (SQL «supabase-parte82-alertas.sql» não
+// corrido), salta em silêncio e a plataforma funciona como dantes.
+async function registrarAlerta(texto: string, canal: 'callmebot' | 'email' | 'push', estado: 'enviado' | 'falhou' | 'saltou', detalhe: string): Promise<void> {
+  if (!supabase) return
+  try {
+    const { error } = await supabase.from('alertas_fila').insert({
+      texto: texto.slice(0, 500), canal, estado, detalhe: detalhe.slice(0, 400),
+    })
+    if (error && !/does not exist|schema cache/i.test(error.message)) {
+      console.warn('[ALERTA] fila não gravada:', error.message)
+    }
+  } catch { /* rede/na Tabela ausente — silêncio */ }
+}
+
 // Envia Web Push a toda a equipa elegível para o tipo de evento
 // (pedido → comercial+super | chamado → técnico+super) e limpa subscrições mortas
-async function pushNotifyEquipa(tipo: 'pedido' | 'chamado', titulo: string, corpo: string) {
-  if (!pushActivo || !supabase) return
+// Devolve { enviados, subscritos } para a central de alertas poder registar o resultado.
+// Regista-se a si mesma na fila: 1 linha por chamada (agrupa os destinos).
+async function pushNotifyEquipa(tipo: 'pedido' | 'chamado', titulo: string, corpo: string): Promise<{ enviados: number; subscritos: number }> {
+  const falha = (estado: 'falhou' | 'saltou', motivo: string) => { void registrarAlerta(`${titulo} — ${corpo}`, 'push', estado, motivo) }
+  if (!supabase) { falha('falhou', 'sem base de dados'); return { enviados: 0, subscritos: 0 } }
+  if (!pushActivo) { falha('saltou', 'Web Push sem chaves VAPID (.env)'); return { enviados: 0, subscritos: 0 } }
   try {
     const niveis = tipo === 'pedido' ? ['gestor', 'super_admin', 'developer'] : ['tecnico', 'super_admin', 'developer']
     const { data: subs } = await supabase
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth_key')
       .in('user_level', niveis)
-    for (const s of subs || []) {
+    const total = (subs || []).length
+    if (total === 0) { falha('saltou', 'sem subscrições no browser da equipa (aceite o banner de notificações)'); return { enviados: 0, subscritos: 0 } }
+    let enviados = 0
+    for (const s of subs!) {
       try {
         await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth_key } },
           JSON.stringify({ type: tipo, title: titulo, body: corpo, url: '/admin' }))
+        enviados++
       } catch (err: { statusCode?: number } | any) {
         // 404/410 = endpoint expirado; remove para não sujar a tabela
         if (err?.statusCode === 404 || err?.statusCode === 410) {
@@ -57,8 +81,12 @@ async function pushNotifyEquipa(tipo: 'pedido' | 'chamado', titulo: string, corp
         }
       }
     }
+    void registrarAlerta(`${titulo} — ${corpo}`, 'push', enviados > 0 ? 'enviado' : 'falhou', `${enviados}/${total} entrega(s) — ${titulo}`)
+    return { enviados, subscritos: total }
   } catch (err) {
     console.warn('[PUSH] falha silenciosa:', err instanceof Error ? err.message : err)
+    falha('falhou', err instanceof Error ? err.message : 'erro desconhecido')
+    return { enviados: 0, subscritos: 0 }
   }
 }
 
@@ -329,13 +357,15 @@ function emailLinha(label: string, valor: string): string {
   return `<tr><td style="padding:6px 12px 6px 0;color:#64748b;font-size:12px;white-space:nowrap;vertical-align:top">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600">${valor}</td></tr>`
 }
 
-/** Dispara e-mail para o admin em fire-and-forget (não bloqueia a resposta) */
+/** Dispara e-mail para o admin em fire-and-forget (não bloqueia a resposta).
+ *  Parte 8.2: regista o resultado na fila `alertas_fila`. */
 function fireAdminEmail(subject: string, html: string): void {
   void getNotifyDestino().then(destino => {
-    if (!destino) { console.warn(`[EMAIL] salto (sem destino configurado): ${subject}`); return }
-    void sendEmailRaw(destino, subject, html).then(r =>
-      console.log(`[EMAIL] ${r.enviado ? 'enviado' : 'não enviado'} → ${destino} · ${r.detalhe} · ${subject}`),
-    )
+    if (!destino) { console.warn(`[EMAIL] salto (sem destino configurado): ${subject}`); void registrarAlerta(subject, 'email', 'saltou', 'sem destino — configure o e-mail de notificação em Definições'); return }
+    void sendEmailRaw(destino, subject, html).then(r => {
+      console.log(`[EMAIL] ${r.enviado ? 'enviado' : 'não enviado'} → ${destino} · ${r.detalhe} · ${subject}`)
+      void registrarAlerta(subject, 'email', r.enviado ? 'enviado' : 'falhou', `${destino} · ${r.detalhe}`)
+    })
   })
 }
 
@@ -483,10 +513,12 @@ async function callmebotTelegram(user: string, texto: string): Promise<WhatsResu
   }
 }
 
-/** Aviso instantâneo ao administração no WhatsApp pessoal (CallMeBot), fire-and-forget. */
+/** Aviso instantâneo ao administração no WhatsApp/Telegram (CallMeBot), fire-and-forget.
+ *  Parte 8.2: regista o resultado na fila `alertas_fila`. */
 function fireAdminAlert(texto: string): void {
   void callmebotAdmin(texto).then(r => {
     console.log(`[ALERTA] ${r.enviado ? 'enviado' : 'não enviado'} · ${r.detalhe} · ${texto.slice(0, 60)}`)
+    void registrarAlerta(texto, 'callmebot', r.enviado ? 'enviado' : r.detalhe.toLowerCase().includes('sem chaves') || r.detalhe.toLowerCase().includes('não configurado') ? 'saltou' : 'falhou', r.detalhe)
   })
 }
 
@@ -3141,6 +3173,58 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const resultado = await callmebotAdmin(`✅ Teste de notificações CFTEC — se recebeu esta mensagem, os alertas WhatsApp do sistema estão activos (${new Date().toLocaleTimeString('pt-PT')}).`)
               logAuditoria(adminTeste, resultado.enviado ? 'whatsapp_teste_ok' : 'whatsapp_teste_falhou', 'definições', null, { detalhe: resultado.detalhe })
               return json(res, resultado.enviado ? 200 : 400, { ok: resultado.enviado, detalhe: resultado.detalhe })
+            }
+
+            // PARTE 8.2 — CENTRAL DE ALERTAS: fila com estado de entrega + teste por canal
+            if (path === '/api/admin/alertas' && req.method === 'GET') {
+              const adminAlertas = currentAdmin(req)
+              if (!adminAlertas || !nivelPleno(adminAlertas.level || '')) return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou Developer vê a central de alertas.' })
+              if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+              // fila: últimos 40; resumo: últimos 30 dias (enviados/falhados/saltados + último entregue)
+              const [fila, desde] = await Promise.all([
+                supabase.from('alertas_fila').select('*').order('criado_em', { ascending: false }).limit(40),
+                supabase.from('alertas_fila').select('canal, estado, criado_em, detalhe').gte('criado_em', new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()).order('criado_em', { ascending: false }),
+              ])
+              // tabela ainda não criada (SQL não corrido) → degradar com hint, não 500
+              const semTabela = [fila.error, desde.error].some(e => e && /does not exist|schema cache/i.test(e.message))
+              let resumo: { enviados: number; falhados: number; saltados: number; ultimo: string | null } = { enviados: 0, falhados: 0, saltados: 0, ultimo: null }
+              if (semTabela) return json(res, 200, { ok: true, sem_tabela: true, fila: [], resumo, hint: 'Correr supabase-parte82-alertas.sql no SQL Editor para activar a fila.' })
+              if (fila.error) return json(res, 500, { ok: false, error: fila.error.message })
+              const linhas = desde.data || []
+              for (const l of linhas) {
+                if (l.estado === 'enviado') resumo.enviados++
+                else if (l.estado === 'falhou') resumo.falhados++
+                else resumo.saltados++
+                if (!resumo.ultimo && l.estado === 'enviado') resumo.ultimo = String(l.criado_em)
+              }
+              return json(res, 200, { ok: true, fila: fila.data || [], resumo })
+            }
+            if (path === '/api/admin/alertas/testar' && req.method === 'POST') {
+              const adminTesteCanal = currentAdmin(req)
+              if (!adminTesteCanal || !nivelPleno(adminTesteCanal.level || '')) return json(res, 403, { ok: false, error: 'Apenas o Super Admin ou Developer testa os canais de alerta.' })
+              const { canal } = await readBody(req) as { canal?: string }
+              const textoTeste = `🧪 Teste do canal ${canal === 'callmebot' ? 'WhatsApp/Telegram' : canal === 'email' ? 'e-mail' : 'Web Push'} — painel CFTEC (${new Date().toLocaleTimeString('pt-PT')}).`
+              if (canal === 'callmebot') {
+                const r = await callmebotAdmin(textoTeste)
+                void registrarAlerta(textoTeste, 'callmebot', r.enviado ? 'enviado' : r.detalhe.toLowerCase().includes('sem chaves') ? 'saltou' : 'falhou', `teste manual (${adminTesteCanal.name}) · ${r.detalhe}`)
+                logAuditoria(adminTesteCanal, 'alerta_teste_callmebot', 'central de alertas', null, { detalhe: r.detalhe })
+                return json(res, r.enviado ? 200 : 400, { ok: r.enviado, detalhe: r.detalhe })
+              }
+              if (canal === 'email') {
+                const destino = await getNotifyDestino()
+                if (!destino) { void registrarAlerta(textoTeste, 'email', 'saltou', `teste manual (${adminTesteCanal.name}) · sem destino — configure o e-mail de notificação em Definições`); return json(res, 400, { ok: false, detalhe: 'sem destino — configure o e-mail de notificação em Definições' }) }
+                const r = await sendEmailRaw(destino, 'Teste de alertas — CFTEC', `<p style="font-size:14px;color:#334155">${escHtml(textoTeste)}</p>`)
+                void registrarAlerta(textoTeste, 'email', r.enviado ? 'enviado' : 'falhou', `teste manual (${adminTesteCanal.name}) · ${destino} · ${r.detalhe}`)
+                logAuditoria(adminTesteCanal, 'alerta_teste_email', 'central de alertas', null, { detalhe: r.detalhe })
+                return json(res, r.enviado ? 200 : 400, { ok: r.enviado, detalhe: `${destino} · ${r.detalhe}` })
+              }
+              if (canal === 'push') {
+                const r = await pushNotifyEquipa('chamado', '🧪 Teste da central de alertas', `Canal Web Push testado por ${adminTesteCanal.name}.`)
+                const detalhe = r.subscritos === 0 ? 'sem subscrições no browser da equipa (aceite o banner de notificações)' : `${r.enviados}/${r.subscritos} entrega(s)`
+                logAuditoria(adminTesteCanal, 'alerta_teste_push', 'central de alertas', null, { detalhe })
+                return json(res, r.enviados > 0 ? 200 : 400, { ok: r.enviados > 0, detalhe })
+              }
+              return json(res, 400, { ok: false, error: 'Canal inválido — use callmebot, email ou push.' })
             }
 
             if (path === '/api/admin/settings' && req.method === 'PATCH') {const payload = await readBody(req) as { entries?: { key: string; value: string }[] }
