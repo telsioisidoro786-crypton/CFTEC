@@ -61,6 +61,12 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .ui-card { background: white; border: 1px solid var(--line); border-radius: 22px; }
 
 .hero { position: relative; min-height: 720px; padding: 145px 0 40px; background: #f8fafc; isolation: isolate; }
+/* PARTE 8.1 — vídeo de fundo do hero (fibra óptica, loop 12 s, sem som).
+   Entre o shape (::before, -2) e a grade/shape (::after): lavado a 15% para
+   o texto escuro continuar perfeito — textura viva, não película. */
+.hero-video { position: absolute; z-index: -1; inset: 0; width: 100%; height: 100%; object-fit: cover; opacity: .15; filter: saturate(.85); pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .hero-video { display: none; } }
+@media (max-width: 760px) { .hero-video { opacity: .11; } }
 .hero::before { content: ''; position: absolute; z-index: -2; top: 0; right: 0; width: 55%; height: 100%; background: #eef7fb; clip-path: polygon(21% 0, 100% 0, 100% 100%, 0 100%); }
 .hero::after { content: ''; position: absolute; z-index: -1; top: 0; right: 0; width: 42%; height: 100%; background: rgba(0, 229, 255, .045); clip-path: polygon(28% 0, 100% 0, 100% 100%, 0 100%); }
 .hero-grid-lines { position: absolute; z-index: -1; inset: 0; opacity: .33; background-image: linear-gradient(rgba(15, 23, 42, .045) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, .045) 1px, transparent 1px); background-size: 44px 44px; mask-image: linear-gradient(90deg, black, transparent 78%); }
