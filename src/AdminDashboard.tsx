@@ -665,6 +665,18 @@ export default function AdminDashboard() {
   const [codigoEmergencia, setCodigoEmergencia] = useState('')
   const [enviandoCodigo, setEnviandoCodigo] = useState(false)
   const [baixandoBackup, setBaixandoBackup] = useState(false)
+  // Backups 2.0 (parte 8.3) — cópias automáticas do bucket + restauro assistido
+  type BackupFicheiro = { nome: string; gerado_em: string | null; tamanho: number }
+  type BackupPrever = { ficheiro: string; gerado_em: string | null; por: string | null; tabelas: { tabela: string; noFicheiro: number; naBase: number; faltam: number }[] }
+  const [backupFicheiros, setBackupFicheiros] = useState<BackupFicheiro[]>([])
+  const [backupUltimoAuto, setBackupUltimoAuto] = useState<string | null>(null)
+  const [backupAGerando, setBackupAGerando] = useState(false)
+  const [backupARestaurar, setBackupARestaurar] = useState<BackupFicheiro | null>(null)
+  const [backupPrever, setBackupPrever] = useState<BackupPrever | null>(null)
+  const [backupModo, setBackupModo] = useState<'faltam' | 'substituir'>('faltam')
+  const [backupEscolhidas, setBackupEscolhidas] = useState<string[]>([])
+  const [backupConfirma, setBackupConfirma] = useState('')
+  const [backupAAplicar, setBackupAAplicar] = useState(false)
   // pop-up de upgrade (Pricing 9) — abre quando uma quota do contrato bloqueia uma acção
   const [showUpgrade, setShowUpgrade] = useState(false)
   // pedidos de pagamento/manutenção (super vê os seus; developer autoriza/recusa)
@@ -2120,6 +2132,79 @@ export default function AdminDashboard() {
     }
   }
 
+  // Backups 2.0 (parte 8.3) — lista do bucket, gerar agora, descarregar, restauro assistido
+  const carregarBackups = useCallback(async () => {
+    try {
+      const r = await fetch('/api/admin/backup/ficheiros', { credentials: 'include' })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) { setBackupFicheiros(b.ficheiros || []); setBackupUltimoAuto(b.ultimo_auto || null) }
+      else notify('Não foi possível ler a lista de cópias: ' + (b.error || r.status))
+    } catch { /* silencioso */ }
+  }, [])
+  useEffect(() => { if (activeSection === 'developer') void carregarBackups() }, [activeSection, carregarBackups])
+
+  const gerarBackupAgora = async () => {
+    if (backupAGerando) return
+    setBackupAGerando(true)
+    notify('A gerar cópia completa para o bucket «backups»…')
+    try {
+      const r = await fetch('/api/admin/backup/gerar', { method: 'POST', credentials: 'include' })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) {
+        const totalLinhas = Object.values(b.contagens || {}).reduce((s: number, n) => s + Number(n || 0), 0) as number
+        notify(`✅ Cópia gerada na nuvem — ${(b.nome || '').split('/').pop()} · ${totalLinhas.toLocaleString('pt-PT')} linhas seguras`)
+        await carregarBackups()
+      } else notify('Falhou: ' + (b.error || r.status))
+    } catch { notify('Falha de rede') }
+    setBackupAGerando(false)
+  }
+
+  const baixarBackupFicheiro = async (nome: string) => {
+    try {
+      const r = await fetch('/api/admin/backup/ficheiros?nome=' + encodeURIComponent(nome), { credentials: 'include' })
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'Falha a descarregar a cópia')
+      const blob = await r.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = nome.split('/').pop() || 'cftec-backup.json'
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+      notify('Cópia descarregada do bucket — guarde num local seguro')
+    } catch (e) {
+      notify(e instanceof Error ? e.message : 'Erro ao descarregar')
+    }
+  }
+
+  const abrirRestaurar = async (f: BackupFicheiro) => {
+    setBackupARestaurar(f)
+    setBackupPrever(null); setBackupModo('faltam'); setBackupEscolhidas([]); setBackupConfirma('')
+    try {
+      const r = await fetch('/api/admin/backup/prever', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: f.nome }) })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) setBackupPrever(b)
+      else { notify('Não foi possível pré-visualizar: ' + (b.error || r.status)); setBackupARestaurar(null) }
+    } catch { notify('Falha de rede na pré-visualização'); setBackupARestaurar(null) }
+  }
+
+  const aplicarRestaurar = async () => {
+    if (!backupARestaurar || !backupEscolhidas.length || backupAAplicar) return
+    if (backupModo === 'substituir' && backupConfirma !== 'SUBSTITUIR') { notify('Escreva SUBSTITUIR para confirmar o modo radical'); return }
+    setBackupAAplicar(true)
+    try {
+      const r = await fetch('/api/admin/backup/restaurar', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: backupARestaurar.nome, tabelas: backupEscolhidas, modo: backupModo, confirmacao: backupModo === 'substituir' ? backupConfirma : undefined }) })
+      const b = await r.json().catch(() => ({}))
+      if (b.ok) {
+        const okT = (b.resultados || []).filter((x: { erro: string | null }) => !x.erro).length
+        notify(`${b.completos ? '✅' : '⚠️'} Restauro concluído — ${okT}/${(b.resultados || []).length} tabela(s) aplicada(s) sem erro${b.completos ? '' : ' (detalhe no Registo de actividades)'}`)
+        setBackupARestaurar(null)
+      } else notify('Falhou: ' + (b.error || r.status))
+    } catch { notify('Falha de rede no restauro') }
+    setBackupAAplicar(false)
+  }
+
   const guardarLicenca = async (parcial: Partial<SysLic>) => {
     try {
       const response = await fetch('/api/admin/system-license', {
@@ -3427,7 +3512,39 @@ export default function AdminDashboard() {
               <td style={{ fontSize: '.7rem', color: '#64748b', maxWidth: 230 }}>{a.detalhe || '—'}</td>
             </tr>)}</tbody></table></div>
           </Card>
-          <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['recibos_faturacao', 'recibos / faturas (FT)'], ['pedidos_upgrade', 'pedidos de upgrade (contrato)'], ['chamados_suporte', 'chamados'], ['chamados_mensagens', 'conversas dos chamados'], ['wiki_tecnica', 'wiki técnica + FAQ'], ['clientes_portal', 'contas do portal do cliente'], ['download_events', 'eventos de downloads'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['logs_erros', 'diário de erros'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button></div></Card>
+          <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">SEGURANÇA · NEXORA SYSTEMS</span><h2>Cópias de segurança</h2></div><span className="developer-lock" data-tip="Exportação exclusiva da conta developer — nem o super admin consegue descarregar">🔒 só o developer</span></div><p style={{ margin: '0 0 14px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Gera um ficheiro <b>.json</b> com todos os dados da plataforma (abaixo). O ficheiro sai <b>directo para o seu computador</b> — nada fica guardado no servidor, zero risco de fuga. Cada exportação fica registada no Registo de actividades. Recomendação: exportar no fim de cada semana e guardar num disco externo ou nuvem privado.</p><ul className="dev-backup-lista">{[['pedidos_licencas', 'pedidos de licença'], ['licencas_palancasoft', 'licenças activas'], ['recibos_faturacao', 'recibos / faturas (FT)'], ['pedidos_upgrade', 'pedidos de upgrade (contrato)'], ['chamados_suporte', 'chamados'], ['chamados_mensagens', 'conversas dos chamados'], ['wiki_tecnica', 'wiki técnica + FAQ'], ['clientes_portal', 'contas do portal do cliente'], ['download_events', 'eventos de downloads'], ['admin_users', 'utilizadores (sem passwords)'], ['settings', 'definições do portal'], ['parceiros_candidaturas', 'parceiros Negomil'], ['contacts', 'contactos do site'], ['blog_posts', 'blog'], ['novidades_destaques', 'destaques'], ['media', 'galeria de mídia'], ['softwares', 'softwares'], ['services', 'serviços'], ['logs_erros', 'diário de erros'], ['audit_log', 'auditoria (últimos 20 000)']].map(([t, l]) => <li key={t} data-tip={t}><Database size={12} /> {l}</li>)}</ul><div className="settings-actions"><Button size="sm" onClick={exportarBackup} disabled={baixandoBackup}>{baixandoBackup ? <><Loader2 size={14} className="spin" /> A gerar cópia…</> : <><ArrowDownToLine size={14} /> Exportar cópia completa (.json)</>}</Button><Button size="sm" variant="outline" onClick={() => void gerarBackupAgora()} disabled={backupAGerando}>{backupAGerando ? <><Loader2 size={14} className="spin" /> A gerar…</> : <><UploadCloud size={14} /> Gerar cópia agora (nuvem)</>}</Button></div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', margin: '18px 0 8px' }}><p style={{ margin: 0, fontWeight: 700, fontSize: '.72rem', letterSpacing: '.06em', textTransform: 'uppercase', color: 'var(--muted, #64748b)' }}>Cópia automática diária · bucket «backups»</p><span style={{ fontSize: '.68rem', color: '#64748b' }}>retenção 30 · último automático: {backupUltimoAuto ? new Date(backupUltimoAuto).toLocaleString('pt-PT') : 'sem registo ainda (activa no 1.º acesso do dia)'}</span></div>
+            <div className="admin-table-wrap" style={{ marginBottom: 8 }}><table className="admin-table"><thead><tr><th>Data da cópia</th><th>Tamanho</th><th style={{ textAlign: 'right' }}>Acções</th></tr></thead><tbody>{backupFicheiros.length === 0 ? <tr><td colSpan={3} style={{ textAlign: 'center', padding: '16px 0', fontSize: '.72rem', color: '#64748b' }}>Nenhuma cópia no bucket.</td></tr> : backupFicheiros.map(f => <tr key={f.nome}>
+              <td>{f.gerado_em ? <strong>{new Date(f.gerado_em).toLocaleDateString('pt-PT')}</strong> : <code style={{ fontSize: '.68rem' }}>{f.nome}</code>}{f.gerado_em ? <span style={{ display: 'block', fontSize: '.68rem', color: '#94a3b8' }}>{new Date(f.gerado_em).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })}</span> : null}</td>
+              <td style={{ fontSize: '.72rem', color: '#64748b' }}>{f.tamanho >= 1048576 ? `${(f.tamanho / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(f.tamanho / 1024))} KB`}</td>
+              <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                <button className="icon-btn" title="Descarregar esta cópia (.json)" onClick={() => void baixarBackupFicheiro(f.nome)}><ArrowDownToLine size={15} /></button>
+                <button className="icon-btn" title="Restaurar assistido — pré-visualiza diferenças antes de aplicar" onClick={() => void abrirRestaurar(f)}><Repeat size={15} /></button>
+              </td>
+            </tr>)}</tbody></table></div>
+          </Card>
+          {backupARestaurar && <div className="admin-modal-backdrop" onMouseDown={() => setBackupARestaurar(null)}><div className="admin-modal" onMouseDown={(e) => e.stopPropagation()}><div className="admin-modal-head" style={{ borderTop: '3px solid #d97706' }}><div><span className="admin-panel-kicker">RESTAURAÇÃO ASSISTIDA · CÓPIA DE SEGURANÇA</span><h2>{backupARestaurar.gerado_em ? new Date(backupARestaurar.gerado_em).toLocaleString('pt-PT') : 'Cópia'}</h2>{backupARestaurar.gerado_em && <span style={{ color: '#64748b', fontSize: '.72rem' }}>{new Date(backupARestaurar.gerado_em).toLocaleTimeString('pt-PT', { hour: '2-digit', minute: '2-digit' })} · {(backupARestaurar.tamanho / 1024).toFixed(0)} KB</span>}</div><button onClick={() => setBackupARestaurar(null)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><div className="admin-modal-body">
+            {!backupPrever ? <div className="admin-empty-state"><Loader2 size={28} className="spin" style={{ color: 'var(--brand, #0ea5e9)' }} /><h3>A comparar a cópia com os dados actuais…</h3><p>Pré-visualização a contar linha a linha.</p></div> : <>
+              <div style={{ fontSize: '.72rem', color: '#64748b', margin: '0 0 12px', lineHeight: 1.6 }}>Cópia gerada por <b>{backupPrever.por || '—'}</b> · {backupPrever.gerado_em ? new Date(backupPrever.gerado_em).toLocaleString('pt-PT') : '—'}. Escolha as tabelas e o modo de restauro.</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, margin: '0 0 12px' }}>
+                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: '.76rem', lineHeight: 1.5, cursor: 'pointer' }}><input type="checkbox" checked={backupModo === 'faltam'} onChange={() => setBackupModo('faltam')} style={{ marginTop: 2 }} /> <span><b>Modo seguro — repõe só o que falta:</b> insere apenas as linhas cuja chave ainda não existe na base. Nunca apaga nada — a escolha por defeito.</span></label>
+                <label style={{ display: 'flex', gap: 9, alignItems: 'flex-start', fontSize: '.76rem', lineHeight: 1.5, cursor: 'pointer' }}><input type="checkbox" checked={backupModo === 'substituir'} onChange={() => setBackupModo('substituir')} style={{ marginTop: 2 }} /> <span><b>Modo radical — substituir:</b> apaga TODAS as linhas actuais das tabelas escolhidas e repõe exactamente o conteúdo da cópia. Use só para recuperação de desastre.</span></label>
+              </div>
+              {backupModo === 'substituir' && <label className="settings-field" style={{ margin: '0 0 12px' }}>Confirmação obrigatória — escreva SUBSTITUIR<input value={backupConfirma} onChange={(e) => setBackupConfirma(e.target.value)} placeholder="SUBSTITUIR" maxLength={12} />{backupConfirma !== 'SUBSTITUIR' && <small style={{ color: '#b45309' }}>O botão de aplicar permanece bloqueado até escrever SUBSTITUIR em maiúsculas.</small>}</label>}
+              <div className="admin-table-wrap" style={{ marginBottom: 4 }}><table className="admin-table"><thead><tr><th></th><th>Tabela</th><th>Nº na cópia</th><th>Actual</th><th>Faltam</th></tr></thead><tbody>{backupPrever.tabelas.map(t => <tr key={t.tabela} style={t.faltam === 0 && backupModo === 'faltam' ? { opacity: .55 } : undefined}>
+                <td><input type="checkbox" checked={backupEscolhidas.includes(t.tabela)} onChange={(e) => setBackupEscolhidas(e.target.checked ? [...backupEscolhidas, t.tabela] : backupEscolhidas.filter(x => x !== t.tabela))} /></td>
+                <td><code style={{ fontSize: '.7rem' }}>{t.tabela}</code></td>
+                <td style={{ fontSize: '.72rem' }}>{t.noFicheiro.toLocaleString('pt-PT')}</td>
+                <td style={{ fontSize: '.72rem' }}>{t.naBase.toLocaleString('pt-PT')}</td>
+                <td style={{ fontSize: '.72rem', fontWeight: 700, color: t.faltam > 0 ? '#15803d' : '#94a3b8' }}>{t.faltam > 0 ? `+${t.faltam.toLocaleString('pt-PT')}` : '—'}</td>
+              </tr>)}</tbody></table></div>
+              {backupModo === 'faltam' && <div style={{ fontSize: '.68rem', color: '#94a3b8', margin: '6px 0 0' }}>Nota: admin_users repõe utilizadores <b>sem password</b> (as credenciais nunca viajam na cópia) — redefina as passwords depois.</div>}
+              <div className="admin-modal-actions">
+                <Button variant="outline" size="sm" onClick={() => setBackupARestaurar(null)}>Cancelar</Button>
+                <Button size="sm" onClick={() => void aplicarRestaurar()} disabled={backupAAplicar || backupEscolhidas.length === 0 || (backupModo === 'substituir' && backupConfirma !== 'SUBSTITUIR')}>{backupAAplicar ? <><Loader2 size={13} className="spin" /> A restaurar…</> : <><Repeat size={13} /> Restaurar {backupEscolhidas.length || ''} tabela(s)</>}</Button>
+              </div>
+            </>}
+          </div></div></div>}
           {analytics && <Card className="admin-panel admin-section-panel"><div className="admin-panel-head"><div><span className="admin-panel-kicker">DESEMPENHO · PORTAL DOS CLIENTES</span><h2>Monitorização & análise dos clientes</h2></div><div style={{ display: 'flex', gap: 6 }}><button className="icon-btn" title="Exportar CSV — empresas (licenças, validade, valor anual, engajamento)" onClick={() => { if (!analytics) return; exportarCSV('monitorizacao-clientes', ['Empresa', 'NIF', 'Licenças activas', 'Validade', 'Valor anual (Kz)', 'Downloads 30d', 'Chamados 30d', 'Último sinal'], analytics.empresas.map(e => [e.nome, e.nif, e.activas || 0, e.expira || '', e.anualKz ?? '', e.downloads, e.chamados, e.ultimo || ''])) }}><Download size={15} /></button><button className="icon-btn" title="Actualizar números" onClick={() => void loadAnalytics()}><RefreshCw size={15} /></button></div></div><p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '.72rem', lineHeight: 1.6 }}>Como cada empresa usa realmente o portal nos <b>últimos 30 dias</b>: downloads do catálogo oficial e chamados de suporte (peso ×3), cruzados com as licenças e o valor anual já recebido. Servem para decidir renovações, cortesias e quem merece atenção comercial.</p>
             <div className="sla-grid" style={{ marginBottom: 16 }}>
               <div className="sla-kpi"><small>Empresas com actividade</small><strong>{analytics.empresas.length}</strong><span>nas consultas dos últimos 30 dias</span></div>

@@ -90,6 +90,14 @@ async function principal() {
   const compSemSessao = await pedir('/api/portal/pedidos/00000000-0000-0000-0000-000000000000/comprovativo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comprovativo_b64: 'x' }) })
   verificar('POST /api/portal/pedidos/:id/comprovativo (sem sessão) → 401', compSemSessao.status === 401 || compSemSessao.status === 403, `res=${compSemSessao.status}`)
 
+  // 5b. Parte 8.3 — Backups 2.0: mutações e restauro só com sessão developer
+  const bg = await pedir('/api/admin/backup/gerar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  verificar('POST /api/admin/backup/gerar (sem sessão) → 401/403', bg.status === 401 || bg.status === 403, `res=${bg.status}`)
+  const bp = await pedir('/api/admin/backup/prever', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  verificar('POST /api/admin/backup/prever (sem sessão) → 401/403', bp.status === 401 || bp.status === 403, `res=${bp.status}`)
+  const br = await pedir('/api/admin/backup/restaurar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  verificar('POST /api/admin/backup/restaurar (sem sessão) → 401/403', br.status === 401 || br.status === 403, `res=${br.status}`)
+
   // 6. Report de erros (client) — formato completo e formato mínimo
   const rep1 = await pedir('/api/log-erro', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mensagem: '[smoke] teste de report', detalhe: 'Stack de teste', pagina: BASE + '/smoke' }) })
   verificar('POST /api/log-erro (completo) → 2xx', rep1.status >= 200 && rep1.status < 300, `res=${rep1.status}`)

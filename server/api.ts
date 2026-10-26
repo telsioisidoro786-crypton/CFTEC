@@ -4785,6 +4785,155 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               return json(res, 200, payload)
             }
 
+            // ============================================================
+            // PARTE 8.3 — BACKUPS 2.0: as cópias automáticas do bucket
+            // «backups» ficam visíveis ao Developer — listar, descarregar,
+            // gerar uma cópia agora, pré-visualizar e restaurar (assistido).
+            // ============================================================
+            const backupNomeValido = (n: string) => /^auto\/\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z\.json$/.test(n)
+            const backupDataNome = (n: string) => {
+              const m = n.match(/^auto\/(\d{4}-\d{2}-\d{2})T(\d\d)-(\d\d)-(\d\d)-(\d{3})Z\.json$/)
+              return m ? `${m[1]}T${m[2]}:${m[3]}:${m[4]}.${m[5]}Z` : null
+            }
+            /** chave única de cada tabela (settings usa 'key', o resto 'id') */
+            const backupColChave = (tabela: string) => (tabela === 'settings' ? 'key' : 'id')
+            const backupLerFicheiro = async (nome: string): Promise<Record<string, any> | null> => {
+              if (!supabase) return null
+              const { data, error } = await supabase.storage.from(BACKUP_AUTO_BUCKET).download(nome)
+              if (error) { console.error('[BACKUP] download:', error.message); return null }
+              try { return JSON.parse(await data.text()) } catch { return null }
+            }
+            const backupHigiene = async (): Promise<void> => { // manter só as 30 cópias recentes
+              if (!supabase) return
+              const { data: objetos } = await supabase.storage.from(BACKUP_AUTO_BUCKET).list('auto', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } })
+              const velhos = (objetos || []).slice(30).map((o) => `auto/${o.name}`)
+              if (velhos.length) await supabase.storage.from(BACKUP_AUTO_BUCKET).remove(velhos)
+            }
+
+            // LISTA + DOWNLOAD (?nome=devolve o próprio ficheiro .json)
+            if (path === '/api/admin/backup/ficheiros' && req.method === 'GET') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'As cópias de segurança são exclusivas do Developer (Master Admin).' })
+              const nome = new URL(req.url || '/', 'http://x').searchParams.get('nome')
+              if (nome) {
+                if (!backupNomeValido(nome)) return json(res, 400, { ok: false, error: 'Nome de ficheiro inválido.' })
+                const { data, error } = await supabase.storage.from(BACKUP_AUTO_BUCKET).download(nome)
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(vez, 'backup_descarregado', 'plataforma', null, { ficheiro: nome })
+                res.writeHead(200, { 'Content-Type': 'application/json', 'Content-Disposition': `attachment; filename="${nome.split('/').pop()}"` })
+                return res.end(await data.text())
+              }
+              const [{ data: objetos }, { data: srow }] = await Promise.all([
+                supabase.storage.from(BACKUP_AUTO_BUCKET).list('auto', { limit: 100, sortBy: { column: 'created_at', order: 'desc' } }),
+                supabase.from('settings').select('value').eq('key', 'ultimo_backup_automatico').maybeSingle(),
+              ])
+              if (!objetos) return json(res, 500, { ok: false, error: 'Bucket «backups» indisponível (crie-o no Supabase Storage).' })
+              return json(res, 200, {
+                ok: true,
+                retencao: 30,
+                ultimo_auto: String((srow as { value?: string } | null)?.value || '') || null,
+                ficheiros: objetos.map((o) => ({ nome: `auto/${o.name}`, gerado_em: backupDataNome(`auto/${o.name}`), tamanho: (o as { metadata?: { size?: number } }).metadata?.size || 0 })),
+              })
+            }
+
+            // GERAR CÓPIA AGORA — mesmo dump do automático, por ordem do Developer
+            if (path === '/api/admin/backup/gerar' && req.method === 'POST') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'As cópias de segurança são exclusivas do Developer (Master Admin).' })
+              const dump = await backupDump(vez.email || 'developer')
+              if (!dump) return json(res, 503, { ok: false, error: 'Sem base de dados configurada.' })
+              const caminho = `auto/${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+              const { _contagens, ...payload } = dump
+              const { error } = await supabase.storage.from(BACKUP_AUTO_BUCKET).upload(caminho, JSON.stringify(payload), { contentType: 'application/json', upsert: false })
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              await backupHigiene()
+              logAuditoria(vez, 'backup_manual_gerado', 'plataforma', null, { ficheiro: caminho, contagens: Object.fromEntries(_contagens as [string, number][]) })
+              return json(res, 200, { ok: true, nome: caminho, contagens: Object.fromEntries(_contagens as [string, number][]) })
+            }
+
+            // PRÉ-VISUALIZAÇÃO DO RESTAURAR — diferenças cópia vs base por tabela
+            if (path === '/api/admin/backup/prever' && req.method === 'POST') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Apenas o Developer restaura cópias.' })
+              const corpo = await readBody(req) as { nome?: string }
+              const nome = String(corpo.nome || '')
+              if (!backupNomeValido(nome)) return json(res, 400, { ok: false, error: 'Nome de ficheiro inválido.' })
+              const ficheiro = await backupLerFicheiro(nome)
+              if (!ficheiro) return json(res, 500, { ok: false, error: 'Não foi possível ler a cópia.' })
+              const linhas: { tabela: string; noFicheiro: number; naBase: number; faltam: number }[] = []
+              for (const tabela of TABELAS_BACKUP) {
+                const noFicheiro = Array.isArray(ficheiro[tabela]) ? (ficheiro[tabela] as unknown[]).length : 0
+                const col = backupColChave(tabela)
+                const { data: base } = await supabase.from(tabela).select(col).limit(50000)
+                const ids = new Set((base || []).map((l: Record<string, unknown>) => String(l[col])))
+                const faltam = Array.isArray(ficheiro[tabela]) ? (ficheiro[tabela] as Record<string, unknown>[]).filter(l => !ids.has(String(l[col]))).length : 0
+                linhas.push({ tabela, noFicheiro, naBase: ids.size, faltam })
+              }
+              return json(res, 200, { ok: true, ficheiro: nome, gerado_em: backupDataNome(nome), por: ficheiro._backup?.por || null, tabelas: linhas })
+            }
+
+            // RESTAURAR — modo 'faltam' (insere só inexistente) ou 'substituir' (apaga + volta ao estado da cópia)
+            if (path === '/api/admin/backup/restaurar' && req.method === 'POST') {
+              const vez = currentAdmin(req)
+              if (!vez) return json(res, 401, { ok: false })
+              if (vez.level !== 'developer') return json(res, 403, { ok: false, error: 'Apenas o Developer restaura cópias.' })
+              const corpo = await readBody(req) as { nome?: string; tabelas?: string[]; modo?: string; confirmacao?: string }
+              const nome = String(corpo.nome || '')
+              if (!backupNomeValido(nome)) return json(res, 400, { ok: false, error: 'Nome de ficheiro inválido.' })
+              const tabelas = (corpo.tabelas || []).filter((t: string): t is typeof TABELAS_BACKUP[number] => (TABELAS_BACKUP as readonly string[]).includes(t))
+              if (!tabelas.length) return json(res, 400, { ok: false, error: 'Escolha pelo menos uma tabela.' })
+              const modo = corpo.modo === 'substituir' ? 'substituir' : 'faltam'
+              if (modo === 'substituir' && corpo.confirmacao !== 'SUBSTITUIR')
+                return json(res, 400, { ok: false, error: 'Confirme escrevendo SUBSTITUIR — este modo apaga os dados actuais das tabelas escolhidas.' })
+              const ficheiro = await backupLerFicheiro(nome)
+              if (!ficheiro) return json(res, 500, { ok: false, error: 'Não foi possível ler a cópia.' })
+              const resultados: { tabela: string; apagados: number; inseridos: number; erro: string | null }[] = []
+              for (const tabela of tabelas) {
+                const linhasTabela = Array.isArray(ficheiro[tabela]) ? (ficheiro[tabela] as Record<string, unknown>[]) : []
+                const col = backupColChave(tabela)
+                let apagados = 0, inseridos = 0, erroT: string | null = null
+                try {
+                  if (modo === 'substituir') {
+                    const { error } = await supabase.from(tabela).delete().not(col, 'is', null)
+                    if (error) throw new Error(`apagar: ${error.message}`)
+                  } else {
+                    // modo 'faltam' — compara ids e insere só o que já não existe
+                    const { data: base, error: eIds } = await supabase.from(tabela).select(col).limit(50000)
+                    if (eIds) throw new Error(`ler base: ${eIds.message}`)
+                    const ids = new Set((base || []).map((l: Record<string, unknown>) => String(l[col])))
+                    const novas = linhasTabela.filter(l => !ids.has(String(l[col])))
+                    apagados = 0
+                    for (let i = 0; i < novas.length; i += 500) {
+                      const lote = novas.slice(i, i + 500)
+                      const { error } = await supabase.from(tabela).insert(lote)
+                      if (error) { erroT = `inserir lote ${Math.floor(i / 500) + 1}: ${error.message}`; break }
+                      inseridos += lote.length
+                    }
+                    resultados.push({ tabela, apagados, inseridos, erro: erroT })
+                    continue
+                  }
+                  if (modo === 'substituir' && !erroT) {
+                    for (let i = 0; i < linhasTabela.length; i += 500) {
+                      const lote = linhasTabela.slice(i, i + 500)
+                      if (!lote.length) continue
+                      const { error } = await supabase.from(tabela).insert(lote)
+                      if (error) { erroT = `inserir lote ${Math.floor(i / 500) + 1}: ${error.message}`; break }
+                      inseridos += lote.length
+                    }
+                    resultados.push({ tabela, apagados: -1, inseridos, erro: erroT })
+                  }
+                } catch (e) {
+                  resultados.push({ tabela, apagados, inseridos, erro: e instanceof Error ? e.message : String(e) })
+                }
+              }
+              logAuditoria(vez, 'backup_restaurado', 'plataforma', null, { ficheiro: nome, modo, resultados })
+              const falharam = resultados.filter(r2 => r2.erro).length
+              return json(res, falharam ? 207 : 200, { ok: true, modo, completos: falharam === 0, resultados })
+            }
+
             // 404 fallback principal: semanticamente qualquer caminho /api/* sem handler
             // termina aqui (sem resposta pendente) — a função nunca deve "pendurar".
             return next()
