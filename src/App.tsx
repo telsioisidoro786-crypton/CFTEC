@@ -51,15 +51,14 @@ import NewsSlider from './components/NewsSlider'
 const fallbackServices = [
   { id: '1', title: 'Desenvolvimento à medida', slug: 'desenvolvimento-a-medida', short_description: 'Aplicações web robustas para a realidade da sua equipa.', full_description: 'Produtos digitais pensados para os processos e objectivos específicos do seu negócio.', icon: 'Code2', is_active: true, created_at: '2025-01-15' },
   { id: '2', title: 'Cloud & conectividade', slug: 'cloud-conectividade', short_description: 'Arquitecturas seguras, escaláveis e sob controlo.', full_description: 'Infraestrutura preparada para manter os seus dados disponíveis e a sua operação em movimento.', icon: 'Network', is_active: true, created_at: '2025-02-20' },
-  { id: '3', title: 'Dados & automação', slug: 'dados-automacao', short_description: 'Informação accionável para decidir com confiança.', full_description: 'Dashboards, integrações e automações que reduzem ruído e desbloqueiam performance.', icon: 'BarChart3', is_active: true, created_at: '2025-03-10' },
+  { id: '3', title: 'Cyber Security', slug: 'cyber-security', short_description: 'Protecção real para os dados e a operação do seu negócio.', full_description: 'Diagnóstico, endurecimento e acompanhamento contínuo da segurança digital da sua empresa.', icon: 'ShieldCheck', is_active: true, created_at: '2025-03-10' },
   { id: '4', title: 'Suporte especializado', slug: 'suporte-especializado', short_description: 'Uma equipa técnica próxima para manter tudo a avançar.', full_description: 'Acompanhamento contínuo, resolução rápida e evolução sustentada da sua tecnologia.', icon: 'Headphones', is_active: true, created_at: '2025-04-05' },
 ]
 
-const fallbackProducts: SiteProduct[] = [
-  { id: '1', name: 'CFTEC Flow', version: 'v2.4', file_size: '45 MB', downloads_count: 183, created_at: '2025-10-12', description: 'O centro de comando para pedidos, equipas e tarefas que não podem ficar para trás.', price: 0 },
-  { id: '2', name: 'CFTEC Insight', version: 'v1.8', file_size: '32 MB', downloads_count: 97, created_at: '2025-10-07', description: 'Dashboards que transformam a complexidade dos seus dados em próximos passos claros.', price: 0 },
-  { id: '3', name: 'CFTEC Desk', version: 'v3.1', file_size: '58 MB', downloads_count: 246, created_at: '2025-09-27', description: 'Uma experiência simples para organizar suporte, pedidos e relações com clientes.', price: 0 },
-]
+// Catálogo real vem sempre da BD (tabela «softwares», editável no painel).
+// PARTE 8.4: sem produtos registados a secção mostra um convite ao contacto —
+// nada de produtos fictícios.
+const fallbackProducts: SiteProduct[] = []
 
 // Icon mapping for services
 type SiteProduct = { id: string; name: string; version: string; file_size: string; downloads_count: number; created_at: string; description?: string | null; price?: number | null; category?: string | null; file_url?: string | null; changelog?: string | null }
@@ -258,7 +257,7 @@ function App() {
     try {
       const r = await fetch('/api/software')
       const data = await r.json()
-      setSoftwareData(data.length ? data : fallbackProducts)
+      setSoftwareData(Array.isArray(data) ? data : [])
     } catch {
       setSoftwareData(fallbackProducts)
     } finally {
@@ -560,19 +559,22 @@ function App() {
         <section className="section section-products" id="softwares">
           <div className="container">
             <div className="section-heading split-heading reveal"><div><span className="section-kicker">03 / Vitrine digital</span><h2>Software que<br /><em>já fala consigo.</em></h2></div><p>Produtos prontos para acelerar o dia-a-dia da sua operação. Simples de começar, poderosos para escalar.</p></div>
-            <div className="products-grid">
+            {!loadingSoftware && softwareData.length === 0
+              ? <div className="products-vazio reveal" role="status">
+                  <p><b>O catálogo de downloads está a ser reposto.</b> Enquanto isso, fale directamente com o nosso comercial — enviamos instalação, licenças e o catálogo completo no próprio atendimento.</p>
+                  <a className="product-link product-buy" href={siteWhatsHREF + '?text=' + encodeURIComponent('Olá CFTEC! Quero conhecer o software disponível (PalancaSoft / Nexora / à medida).')} target="_blank" rel="noreferrer">Pedir catálogo pelo WhatsApp <ArrowRight size={15} /></a>
+                </div>
+              : <div className="products-grid">
               {softwareData.map((product, index) => {
                 const tones = ['dark', 'light', 'mid']
                 const tone = tones[index % tones.length]
-                const statuses = ['Mais vendido', 'Novo', 'Estável']
-                const status = statuses[index % statuses.length]
                 const features = product.description ? [product.description] : []
                 const category = product.category || 'Solução CFTEC'
                 return (
                   <Card className={`product-card product-card--${tone} reveal`} key={product.id}>
                     <div className="product-head">
                       <span className="product-code">CF / {product.name.toUpperCase().replace('CFTEC ', '').replace(' ', '_')}</span>
-                      <span className="product-status"><span /> {status}</span>
+                      {product.file_size && <span className="product-status">{product.file_size}</span>}
                     </div>
                     <div className="product-illustration">
                       <div className="product-window">
@@ -600,7 +602,7 @@ function App() {
                   </Card>
                 )
               })}
-            </div>
+            </div>}
           </div>
         </section>
 
