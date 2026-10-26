@@ -486,11 +486,6 @@ function App() {
 
       <main>
         <section className="hero" id="inicio">
-          {/* Fonte: Wikimedia Commons — "Fiber Optic Filament Tips (Free to Use Stock
-              Video Footage).webm" (uso livre). Recorte 20→32 s, sem som, VP9 889 KB. */}
-          <video className="hero-video" ref={(v) => { if (v) { v.muted = true; v.play().catch(() => {/* autoplay bloqueado — o poster fica */}) } }} autoPlay loop playsInline preload="auto" poster="/hero-fibra-poster.jpg" aria-hidden="true">
-            <source src="/hero-fibra.webm" type="video/webm" />
-          </video>
           <div className="hero-grid-lines" aria-hidden="true" />
           <div className="container hero-inner">
             <div className="hero-copy">
