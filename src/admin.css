@@ -1438,3 +1438,122 @@ html[data-theme='dark'] .kanban-card:hover{box-shadow:0 8px 20px rgba(0,0,0,.55)
 @media (prefers-reduced-motion:reduce){
   .anim-icon,.anim-icon *{animation-duration:.01s!important;animation-iteration-count:1!important}
 }
+
+/* ============================================================ */
+/* PARTE 8.7 — MODAL DA WIKI TÉCNICA (ficha SOP técnica)         */
+/* ============================================================ */
+.wiki-modal{max-width:780px}
+.wiki-modal .admin-modal-head{position:relative;border-bottom:0;padding-bottom:14px}
+.wiki-modal-head::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:2px;background:linear-gradient(90deg,#00e5ff,#3b82f6 45%,#7c3aed)}
+.wiki-modal-head h2{font-size:1.02rem}
+.wiki-modal-meta{display:inline-flex;align-items:center;gap:5px;margin-top:6px;color:#64748b;font:600 .6rem 'DM Mono',monospace;letter-spacing:.03em}
+.wiki-modal-meta svg{color:#00b8d4;flex-shrink:0}
+.wiki-modal-body{padding:20px 24px 24px}
+.wiki-fs{margin:0 0 14px;padding:16px;border:1px solid #e2e8f0;border-radius:14px;background:#fbfdff}
+.wiki-fs legend{display:inline-flex;align-items:center;gap:9px;font:700 .72rem 'Space Grotesk',sans-serif;color:#0f172a;letter-spacing:.02em}
+.wiki-fs legend small{margin-left:auto;gap:0}
+.wiki-fs-num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#0f172a;color:#00e5ff;font:700 .7rem 'DM Mono',monospace}
+.wiki-fs-num--prob{background:#334155}
+.wiki-fs-num--sol{background:#0f766e;color:#5eead4}
+.wiki-fs-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:13px}
+.wiki-fs-grid label{display:flex;flex-direction:column;gap:6px;font:600 .66rem 'Manrope',sans-serif;color:#64748b;letter-spacing:.05em}
+.wiki-fs-grid .wiki-fs-full{grid-column:1/-1}
+.wiki-fs-grid input{width:100%;padding:11px 13px;border:1px solid #e2e8f0;border-radius:10px;font:.78rem 'Manrope',sans-serif;color:#0f172a;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+.wiki-fs-grid input:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.wiki-fs-hint{grid-column:1/-1;color:#94a3b8;font:500 .62rem 'Manrope',sans-serif;letter-spacing:0}
+.wiki-fs-duplo{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+.wiki-fs textarea{width:100%;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;font:.8rem/1.7 'Manrope',sans-serif;color:#0f172a;background:#fff;resize:vertical;transition:border-color .15s ease,box-shadow .15s ease}
+.wiki-fs textarea:focus{outline:none;border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.wiki-fs textarea.wiki-fs-mono{font:.72rem/1.9 'DM Mono',monospace;letter-spacing:.01em}
+.wiki-modal .admin-form-section{border-bottom:0}
+
+@media (max-width:860px){
+  .wiki-fs-grid{grid-template-columns:1fr}
+  .wiki-fs-duplo{grid-template-columns:1fr}
+}
+
+/* ============================================================ */
+/* PARTE 8.7 — MODO DARK COMPLETO: os cartões do Developer e     */
+/* os furos que ficavam brancos (toggles, SLA, upgrades, chips)   */
+/* ============================================================ */
+/* Modais */
+html[data-theme='dark'] .admin-modal-head{border-bottom-color:#1d2940;background:linear-gradient(180deg,#0e1a2f,#0b1424)}
+html[data-theme='dark'] .admin-modal-close:hover,html[data-theme='dark'] .admin-modal-head button:hover{background:#1b2740;color:#e6edf7}
+html[data-theme='dark'] .admin-modal-actions{border-top-color:#1d2940}
+html[data-theme='dark'] .admin-modal-body{color:#cdd9ea}
+html[data-theme='dark'] .admin-modal p{color:#aebdcd}
+html[data-theme='dark'] .admin-modal strong,html[data-theme='dark'] .admin-modal b,html[data-theme='dark'] .admin-modal .upg-total{color:#e8eefb}
+/* Formulários dentro de modais */
+html[data-theme='dark'] .admin-form-section{border-bottom-color:#1a2540}
+html[data-theme='dark'] .admin-form-section legend{color:#e8eefb}
+html[data-theme='dark'] .admin-form-grid label{color:#c3cfdf}
+html[data-theme='dark'] .admin-form-grid input,html[data-theme='dark'] .admin-form-grid select,html[data-theme='dark'] .admin-form-grid textarea{background:#0d1730;border-color:#22304e;color:#e6edf7;box-shadow:none}
+html[data-theme='dark'] .admin-form-grid input::placeholder,html[data-theme='dark'] .admin-form-grid textarea::placeholder{color:#5c6f8a}
+html[data-theme='dark'] .admin-form-grid input:focus,html[data-theme='dark'] .admin-form-grid select:focus,html[data-theme='dark'] .admin-form-grid textarea:focus{border-color:#2563eb;background:#0d1730;box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+html[data-theme='dark'] .admin-field-hint{color:#7d90ab}
+html[data-theme='dark'] .settings-field input,html[data-theme='dark'] .settings-field select,html[data-theme='dark'] .settings-field textarea{background:#0d1730;border-color:#22304e;color:#e6edf7;box-shadow:none}
+html[data-theme='dark'] .settings-field input::placeholder{color:#5c6f8a}
+html[data-theme='dark'] .settings-field input:disabled{background:#0a1220;color:#64748b}
+html[data-theme='dark'] .settings-hint{color:#7d90ab}
+html[data-theme='dark'] .settings-row{background:#0d1730}
+html[data-theme='dark'] .settings-row strong,html[data-theme='dark'] .security-line strong{color:#e8eefb}
+html[data-theme='dark'] .security-line{background:#0d1730}
+html[data-theme='dark'] .user-role-select{background:#0d1730;border-color:#22304e;color:#e6edf7}
+html[data-theme='dark'] .metric-input{background:#0d1730;border-color:#22304e;color:#e6edf7}
+html[data-theme='dark'] .metric-input:focus{border-color:#2563eb}
+/* Secção Developer — cartões brancos */
+html[data-theme='dark'] .dev-toggle-row{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .dev-toggle-row:hover{border-color:#2c3e64}
+html[data-theme='dark'] .dev-toggle-row strong{color:#e8eefb}
+html[data-theme='dark'] .dev-regras-grid div{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .dev-lic-form{border-top-color:#22304e}
+html[data-theme='dark'] .dev-bypass-box{background:#0d1730;border-color:#2a3a5c}
+html[data-theme='dark'] .dev-bypass-box strong{color:#e8eefb}
+html[data-theme='dark'] .dev-bypass-codigo{border-color:rgba(148,163,184,.35)}
+html[data-theme='dark'] .dev-backup-lista li{background:#0d1730;color:#aebdcd;border:1px solid #22304e}
+html[data-theme='dark'] .sla-kpi{background:linear-gradient(160deg,#0e1a2f,#0b1424);border-color:#22304e}
+html[data-theme='dark'] .sla-kpi strong{color:#e8eefb}
+html[data-theme='dark'] .sla-kpi small{color:#7d90ab}
+html[data-theme='dark'] .upg-row{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .upg-row:hover{border-color:#2c3e64}
+html[data-theme='dark'] .upg-itens{color:#aebdcd}
+html[data-theme='dark'] .upg-data{color:#7d90ab}
+html[data-theme='dark'] .upg-nota{color:#a5b4fc}
+html[data-theme='dark'] .settings-card--upg-dev{background:#0d1730;border-color:#22304e}
+/* Chips / avisos */
+html[data-theme='dark'] .developer-lock{background:rgba(124,58,237,.16);border-color:rgba(167,139,250,.35);color:#c4b5fd}
+html[data-theme='dark'] .licenca-aviso{background:rgba(251,191,36,.09);border-color:rgba(251,191,36,.3);color:#fcd34d}
+html[data-theme='dark'] .licenca-aviso--leitura{background:rgba(56,189,248,.08);border-color:rgba(56,189,248,.3);color:#7dd3fc}
+html[data-theme='dark'] .license-key{background:#0d1730;color:#a5f3eb;border:1px solid #22304e}
+html[data-theme='dark'] .contact-status--read,html[data-theme='dark'] .contact-status--fechado{background:#0d1730;color:#94a3b8}
+html[data-theme='dark'] .order-filter-tab{background:#0d1730;border-color:#22304e;color:#aebdcd}
+html[data-theme='dark'] .order-filter-tab.is-active{background:#1b2740;border-color:#2563eb;color:#e8eefb}
+html[data-theme='dark'] .tl-badge-servico{background:rgba(56,189,248,.12);color:#7dd3fc}
+html[data-theme='dark'] .icon-btn:hover,html[data-theme='dark'] .admin-table button:hover{background:#1b2740;color:#e6edf7}
+html[data-theme='dark'] .admin-file-label{border-color:#22304e;background:#0d1730}
+html[data-theme='dark'] .admin-file-label:hover{border-color:#3b82f6}
+html[data-theme='dark'] .upload-zone{border-color:#22304e}
+html[data-theme='dark'] .upload-zone:hover{border-color:#3b82f6;background:#0d1730}
+html[data-theme='dark'] .media-tile button{background:#0d1730;color:#94a3b8}
+html[data-theme='dark'] .media-tile button:hover{background:#1b2740;color:#00e5ff}
+html[data-theme='dark'] .service-admin-row:hover{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .mini-table-bar{background:#22304e}
+html[data-theme='dark'] .admin-panel--quick button:hover{background:#0d1730;border-color:#00e5ff}
+/* Wiki — contadores de caracteres */
+html[data-theme='dark'] .wiki-char-count{color:#7d90ab}
+html[data-theme='dark'] .wiki-char-count--warn{color:#fbbf24}
+html[data-theme='dark'] .wiki-char-count--max{color:#f87171}
+/* Wiki — ficha SOP */
+html[data-theme='dark'] .wiki-modal-meta{color:#7d90ab}
+html[data-theme='dark'] .wiki-fs{background:#0b1424;border-color:#22304e}
+html[data-theme='dark'] .wiki-fs legend{color:#e8eefb}
+html[data-theme='dark'] .wiki-fs-num{background:#1b2740;color:#00e5ff}
+html[data-theme='dark'] .wiki-fs-num--prob{background:#334155}
+html[data-theme='dark'] .wiki-fs-num--sol{background:#0f2e2a;color:#5eead4}
+html[data-theme='dark'] .wiki-fs-grid label{color:#aebdcd}
+html[data-theme='dark'] .wiki-fs-grid input,html[data-theme='dark'] .wiki-fs textarea{background:#0d1730;border-color:#22304e;color:#e6edf7;box-shadow:none}
+html[data-theme='dark'] .wiki-fs-grid input:focus,html[data-theme='dark'] .wiki-fs textarea:focus{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+html[data-theme='dark'] .wiki-fs-grid input::placeholder,html[data-theme='dark'] .wiki-fs textarea::placeholder{color:#5c6f8a}
+html[data-theme='dark'] .wiki-fs-hint{color:#7d90ab}
+html[data-theme='dark'] .admin-modal .admin-modal-actions{background:linear-gradient(180deg,rgba(10,17,29,0) 0%,#0a111d 24%)}
+html[data-theme='dark'] .admin-modal-warn{background:rgba(220,38,38,.14)}
