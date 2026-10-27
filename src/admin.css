@@ -1557,3 +1557,135 @@ html[data-theme='dark'] .wiki-fs-grid input::placeholder,html[data-theme='dark']
 html[data-theme='dark'] .wiki-fs-hint{color:#7d90ab}
 html[data-theme='dark'] .admin-modal .admin-modal-actions{background:linear-gradient(180deg,rgba(10,17,29,0) 0%,#0a111d 24%)}
 html[data-theme='dark'] .admin-modal-warn{background:rgba(220,38,38,.14)}
+
+/* ============================================================ */
+/* PARTE 8.8 — MODAL DO CHAMADO (ficha de atendimento) +         */
+/* CONVERSA (chat) + PERFIL DO TOPO (avatar/shine/presence)      */
+/* ============================================================ */
+/* --- 8.8a Ficha do novo chamado --- */
+.cham-modal{max-width:720px}
+.cham-modal .admin-modal-head{position:relative;border-bottom:0;padding-bottom:14px}
+.cham-modal-head::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:2px;background:linear-gradient(90deg,#4f46e5,#06b6d4 50%,#7c3aed)}
+.cham-modal-head h2{font-size:1.02rem}
+.cham-modal-meta{display:inline-flex;align-items:center;gap:5px;margin-top:6px;color:#64748b;font:600 .6rem 'DM Mono',monospace;letter-spacing:.03em}
+.cham-modal-meta svg{color:#4f46e5;flex-shrink:0}
+.cham-modal-body{padding:20px 24px 24px}
+.cham-fs{margin:0 0 14px;padding:16px;border:1px solid #e2e8f0;border-radius:14px;background:#fbfdff}
+.cham-fs:last-of-type{margin-bottom:0}
+.cham-fs legend{display:inline-flex;align-items:center;gap:9px;width:100%;font:700 .72rem 'Space Grotesk',sans-serif;color:#0f172a;letter-spacing:.02em}
+.cham-fs-num{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:#312e81;color:#a5b4fc;font:700 .7rem 'DM Mono',monospace}
+.cham-fs-num--soft{background:#0e7490;color:#a5f3fc}
+.cham-fs-num--prob{background:#334155;color:#cbd5e1}
+.cham-fs-req{margin-left:auto;font:600 .55rem 'DM Mono',monospace;color:#94a3b8;letter-spacing:.08em;text-transform:uppercase}
+.cham-fs-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:13px}
+.cham-fs-grid--dois{grid-template-columns:1.5fr 1fr;margin-top:13px}
+.cham-fs label{display:flex;flex-direction:column;gap:6px;font:600 .66rem 'Manrope',sans-serif;color:#64748b;letter-spacing:.05em}
+.cham-fs input,.cham-fs select{width:100%;padding:11px 13px;border:1px solid #e2e8f0;border-radius:10px;font:.78rem 'Manrope',sans-serif;color:#0f172a;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+.cham-fs input:focus,.cham-fs select:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.cham-fs input::placeholder{color:#94a3b8}
+.cham-prio--critica{border-color:#fda4af;box-shadow:0 0 0 3px rgba(225,29,72,.08);color:#be123c}
+.cham-prio--critica:focus,.cham-prio--media:focus,.cham-prio--baixa:focus{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.cham-prio--media{border-color:#fcd34d;box-shadow:0 0 0 3px rgba(180,83,9,.06);color:#b45309}
+.cham-prio--baixa{border-color:#86efac;box-shadow:0 0 0 3px rgba(21,128,61,.06);color:#15803d}
+.cham-problema{width:100%;margin-top:12px;padding:12px 14px;border:1px solid #e2e8f0;border-radius:10px;font:.8rem/1.65 'Manrope',sans-serif;color:#0f172a;background:#fff;resize:vertical;transition:border-color .15s ease,box-shadow .15s ease}
+.cham-problema:focus{outline:none;border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.cham-problema::placeholder{color:#94a3b8}
+.cham-count{margin-left:auto;font:600 .58rem 'DM Mono',monospace;color:#94a3b8;transition:color .15s ease}
+.cham-count--warn{color:#b45309}
+
+/* --- 8.8b Conversa do chamado --- */
+.cham-chat{width:min(640px,94vw)}
+.cham-chat .admin-modal-head{position:relative;align-items:flex-start;display:flex;justify-content:space-between;gap:12px;border-bottom:0;padding:18px 24px 14px}
+.cham-chat .admin-modal-head>div{flex:1 1 auto;min-width:0}
+.cham-chat-head::after{content:'';position:absolute;left:0;right:0;bottom:0;height:3px;border-radius:2px;background:linear-gradient(90deg,#4f46e5,#06b6d4 50%,#7c3aed)}
+.cham-chat-id{display:flex;align-items:center;gap:12px}
+.cham-chat-id>div{min-width:0}
+.cham-chat-avi{width:42px;height:42px;border-radius:12px;background:linear-gradient(135deg,#312e81,#4f46e5);color:#e0e7ff;font:700 .82rem 'Space Grotesk',sans-serif;display:grid;place-items:center;flex:0 0 auto;transition:transform .25s ease}
+.cham-chat:hover .cham-chat-avi{transform:scale(1.05) rotate(-2deg)}
+.cham-chat-id h2{display:flex;align-items:center;gap:8px;font-size:1rem;white-space:nowrap;overflow:hidden}
+.cham-chat-sub{display:block;margin-top:2px;color:#64748b;font:600 .62rem 'DM Mono',monospace;letter-spacing:.03em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cham-estado{display:inline-block;flex:0 0 auto;padding:2px 9px;border-radius:999px;font:700 .55rem 'Space Grotesk',sans-serif;letter-spacing:.06em;text-transform:uppercase;border:1px solid transparent;animation:estadoIn .45s ease both}
+@keyframes estadoIn{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+.cham-estado--pendente{background:#fef3c7;color:#b45309;border-color:#fde68a}
+.cham-estado--andamento{background:#dbeafe;color:#1d4ed8;border-color:#bfdbfe}
+.cham-estado--resolvido{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
+.cham-chat .thread-msgs{margin:16px 24px 0;background-color:#f8fafc;background-image:radial-gradient(rgba(148,163,184,.2) 1px,transparent 1px);background-size:14px 14px;padding:12px 16px;min-height:200px;max-height:46vh;scroll-behavior:smooth}
+.cham-chat .thread-msg{border-radius:14px;padding:9px 13px;transition:box-shadow .2s ease,transform .2s ease;animation:msgIn .32s ease both}
+.cham-chat .thread-msg:hover{box-shadow:0 2px 10px rgba(15,23,42,.08)}
+.cham-chat .thread-msg--cliente{border-radius:14px 14px 14px 4px}
+.cham-chat .thread-msg--tecnico{border-radius:14px 14px 4px 14px}
+.cham-chat .thread-msg--sistema{border-radius:999px}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.thread-msg--cliente{border-left:0}
+.cham-chat .thread-meta{margin-bottom:4px}
+.cham-chat .thread-meta small{margin-left:auto;font:500 .56rem 'DM Mono',monospace}
+.cham-chat .thread-resposta{margin:12px 24px 24px;gap:10px}
+.cham-chat .thread-resposta textarea{border-color:#e2e8f0;border-radius:12px;background:#fff;transition:border-color .15s ease,box-shadow .15s ease}
+.cham-chat .thread-resposta textarea:focus{outline:none;border-color:#4f46e5;border-bottom-right-radius:4px;box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.cham-chat .thread-resposta button{align-self:flex-end;min-height:38px}
+.cham-chat .thread-csat-nota{margin:0 24px 24px;border:1px solid #fde68a;background:linear-gradient(135deg,#fffbeb,#fef9c3)}
+
+/* --- 8.8c Perfil do topo (avatar + presença + shine) --- */
+.admin-profile .admin-avatar{position:relative;overflow:hidden;transition:transform .28s ease,box-shadow .28s ease}
+.admin-avatar::after{content:'';position:absolute;top:-30%;bottom:-30%;left:0;width:45%;background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.5) 45%,rgba(255,255,255,0));transform:translateX(-160%) skewX(-18deg);animation:profShine 4.6s ease-in-out infinite}
+@keyframes profShine{0%,56%{transform:translateX(-160%) skewX(-18deg)}80%,100%{transform:translateX(340%) skewX(-18deg)}}
+.admin-presence{position:absolute;right:-1px;bottom:-1px;width:11px;height:11px;border-radius:50%;background:#22c55e;border:2px solid #fff;z-index:1;animation:profPulse 2.4s ease-in-out infinite}
+@keyframes profPulse{0%,100%{box-shadow:0 0 0 0 rgba(34,197,94,.4)}50%{box-shadow:0 0 0 4px rgba(34,197,94,0)}}
+.admin-profile{will-change:transform}
+.admin-profile:hover{transform:translateY(-1px);box-shadow:0 4px 14px rgba(15,23,42,.1);border-color:#93c5fd}
+.admin-profile:hover .admin-avatar{transform:scale(1.05) rotate(-3deg);box-shadow:0 2px 10px rgba(14,116,144,.35)}
+.admin-profile>svg{transition:transform .25s ease,color .25s ease}
+.admin-profile:hover>svg{transform:translateX(3px);color:#3b82f6}
+.admin-role-chip{transition:all .25s ease}
+.admin-profile:hover .admin-role-chip{color:#0e7490;border-color:#67e8f9;box-shadow:0 1px 8px rgba(8,145,178,.22)}
+@media (prefers-reduced-motion:reduce){
+  .admin-avatar::after,.admin-presence{animation:none}
+  .cham-estado{animation:none}
+  .cham-chat .thread-msg{animation:none}
+}
+
+/* ============================================================ */
+/* PARTE 8.8 — DARK: chamado/conversa + perfil do topo           */
+/* ============================================================ */
+/* Ficha do chamado */
+html[data-theme='dark'] .cham-modal-meta{color:#7d90ab}
+html[data-theme='dark'] .cham-fs{background:#0b1424;border-color:#22304e}
+html[data-theme='dark'] .cham-fs legend{color:#e8eefb}
+html[data-theme='dark'] .cham-fs-num{background:#1e2a4a;color:#a5b4fc}
+html[data-theme='dark'] .cham-fs-num--soft{background:#0f2e38;color:#a5f3fc}
+html[data-theme='dark'] .cham-fs-num--prob{background:#22304e;color:#cbd5e1}
+html[data-theme='dark'] .cham-fs-req{color:#5c6f8a}
+html[data-theme='dark'] .cham-fs label{color:#aebdcd}
+html[data-theme='dark'] .cham-fs input,html[data-theme='dark'] .cham-fs select,html[data-theme='dark'] .cham-problema{background:#0d1730;border-color:#22304e;color:#e6edf7;box-shadow:none}
+html[data-theme='dark'] .cham-fs input::placeholder,html[data-theme='dark'] .cham-problema::placeholder{color:#5c6f8a}
+html[data-theme='dark'] .cham-fs input:focus,html[data-theme='dark'] .cham-fs select:focus,html[data-theme='dark'] .cham-problema:focus{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.2)}
+html[data-theme='dark'] .cham-prio--critica{border-color:rgba(244,63,94,.45);color:#fda4af;box-shadow:none}
+html[data-theme='dark'] .cham-prio--media{border-color:rgba(251,191,36,.4);color:#fcd34d;box-shadow:none}
+html[data-theme='dark'] .cham-prio--baixa{border-color:rgba(74,222,128,.4);color:#86efac;box-shadow:none}
+html[data-theme='dark'] .cham-count{color:#5c6f8a}
+html[data-theme='dark'] .cham-count--warn{color:#fbbf24}
+/* Conversa */
+html[data-theme='dark'] .cham-chat-avi{background:linear-gradient(135deg,#1e2a4a,#4f46e5);color:#c7d2fe}
+html[data-theme='dark'] .cham-chat-sub{color:#7d90ab}
+html[data-theme='dark'] .cham-estado--pendente{background:rgba(251,191,36,.12);color:#fcd34d;border-color:rgba(251,191,36,.3)}
+html[data-theme='dark'] .cham-estado--andamento{background:rgba(59,130,246,.14);color:#93c5fd;border-color:rgba(59,130,246,.3)}
+html[data-theme='dark'] .cham-estado--resolvido{background:rgba(34,197,94,.12);color:#86efac;border-color:rgba(34,197,94,.3)}
+html[data-theme='dark'] .cham-chat .thread-msgs{background-color:#060d18;border-color:#1d2940;background-image:radial-gradient(rgba(50,69,106,.35) 1px,transparent 1px)}
+html[data-theme='dark'] .cham-chat .thread-msg{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .thread-msg--cliente{border-left:3px solid #6366f1}
+html[data-theme='dark'] .thread-msg--tecnico{background:rgba(16,185,129,.08);border-color:rgba(16,185,129,.28)}
+html[data-theme='dark'] .thread-msg--sistema{background:transparent;border-color:#22304e;color:#8ba0b9}
+html[data-theme='dark'] .cham-chat .thread-meta strong{color:#c7d2fe}
+html[data-theme='dark'] .thread-corpo{color:#dbe4f0}
+html[data-theme='dark'] .cham-chat .thread-resposta textarea{background:#0d1730;border-color:#22304e;color:#e6edf7}
+html[data-theme='dark'] .cham-chat .thread-resposta textarea::placeholder{color:#5c6f8a}
+html[data-theme='dark'] .cham-chat .thread-resposta textarea:focus{border-color:#4f46e5;box-shadow:0 0 0 3px rgba(79,70,229,.2)}
+html[data-theme='dark'] .cham-chat .thread-csat-nota{background:rgba(251,191,36,.08);border-color:rgba(251,191,36,.28);color:#fcd34d}
+/* Perfil do topo */
+html[data-theme='dark'] .admin-presence{border-color:#0d1730}
+html[data-theme='dark'] .admin-avatar::after{background:linear-gradient(100deg,rgba(255,255,255,0),rgba(255,255,255,.28) 45%,rgba(255,255,255,0))}
+html[data-theme='dark'] .admin-profile:hover{border-color:#2c3e64;box-shadow:0 4px 16px rgba(0,0,0,.4)}
+html[data-theme='dark'] .admin-profile:hover>svg{color:#60a5fa}
+@media (prefers-reduced-motion:reduce){
+  html[data-theme='dark'] .admin-avatar::after,html[data-theme='dark'] .admin-presence{animation:none}
+}
