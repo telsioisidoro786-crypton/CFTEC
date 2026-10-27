@@ -8,6 +8,7 @@ import {
   Activity, BadgeCheck, Building2, CheckCircle2, Download, FileText, HelpCircle, KeyRound, LifeBuoy,
   Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, RefreshCw, Search, Send, ShieldCheck, Star, ThumbsUp, Timer, Upload, UserPlus, Users,
 } from 'lucide-react'
+import { IconChat, IconRepeat, IconThumb, IconUsers } from './components/animIcons'
 
 type Sessao = { empresa: string; email: string }
 type Pedido = { id: string; created_at: string; software_nome: string; status: string; forma_pagamento: string | null; provincia: string | null; observacoes: string | null; tipo?: string | null; comprovativo_nome?: string | null; utilizadores_extra?: number | null }
@@ -459,8 +460,8 @@ export default function ClientePortal() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <strong className="text-[15px]">{p.software_nome}</strong>
                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${statusTone(p.status)}`}>{p.status}</span>
-                    {p.tipo === 'renovacao' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-sky-400/30 bg-sky-400/10 text-sky-300">🔁 Renovação</span>}
-                    {p.tipo === 'usuarios' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/10 text-violet-300">👥 +{p.utilizadores_extra || '?'} utilizadores</span>}
+                    {p.tipo === 'renovacao' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-sky-400/30 bg-sky-400/10 text-sky-300"><IconRepeat size={11} /> Renovação</span>}
+                    {p.tipo === 'usuarios' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/10 text-violet-300"><IconUsers size={11} /> +{p.utilizadores_extra || '?'} utilizadores</span>}
                   </div>
                   <p className="mt-1.5 text-xs text-slate-500">#{p.id.slice(0, 8).toUpperCase()} · {fmt(p.created_at)} · {p.forma_pagamento || 'forma de pagamento por definir'}{p.provincia ? ` · ${p.provincia}` : ''}</p>
                   {p.observacoes && <p className="mt-2 text-sm text-slate-300 bg-white/5 border border-white/10 rounded-lg px-3 py-2"><b className="text-slate-400 text-xs">Nota da equipa:</b> {p.observacoes}</p>}
@@ -565,7 +566,7 @@ export default function ClientePortal() {
                         </div>
                         <div className="shrink-0 flex items-center gap-2">
                           {a.software && <span className="text-[11px] text-slate-300 border border-white/10 px-2 py-0.5 rounded-full">{a.software}</span>}
-                          {(a.ajudou || 0) > 0 && <span className="text-[11px] text-emerald-300 bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 rounded-full">👍 {a.ajudou}</span>}
+                          {(a.ajudou || 0) > 0 && <span className="text-[11px] text-emerald-300 bg-emerald-400/10 border border-emerald-400/20 px-2 py-0.5 rounded-full"><IconThumb size={11} /> {a.ajudou}</span>}
                         </div>
                       </button>
                       {faqAberto === a.id && (
@@ -643,7 +644,7 @@ export default function ClientePortal() {
                     typeof c.csat === 'number'
                       ? <div className="mt-3 text-xs text-amber-300 inline-flex items-center gap-1.5">{Array.from({ length: 5 }, (_, i) => <Star key={i} size={13} className={i < (c.csat as number) ? 'fill-amber-300 text-amber-300' : 'text-slate-600'} />)} <span className="ml-1">avaliado: {c.csat}/5 — obrigado!</span></div>
                       : <div className="mt-3 bg-white/[.04] border border-white/10 rounded-xl p-4">
-                        <p className="text-xs text-slate-400 mb-2 font-semibold">💬 O atendimento ficou a fechar? Avalie este chamado (1-5 estrelas):</p>
+                        <p className="text-xs text-slate-400 mb-2 font-semibold"><IconChat size={12} className="align-[-2px] mr-1" /> O atendimento ficou a fechar? Avalie este chamado (1-5 estrelas):</p>
                         <div className="flex items-center gap-1.5">
                           {([1, 2, 3, 4, 5] as const).map(n => (
                             <button key={n} onClick={() => setCsatRascunho({ id: c.id, nota: n, comentario: csatRascunho?.id === c.id ? csatRascunho.comentario : '' })} className="p-0.5">

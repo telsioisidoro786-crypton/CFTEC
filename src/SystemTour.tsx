@@ -12,6 +12,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
+import { IconBell, IconBook, IconBriefcase, IconChart, IconCompass, IconFolder, IconGear, IconPhone, IconRocket, IconTarget, IconWallet } from './components/animIcons'
 
 /**
  * Tour guiado do Sistema CFTEC (onboarding) — abre no primeiro login e pode
@@ -35,7 +36,14 @@ export function marcarTour(email: string): void {
 }
 
 type Focus = 'comercial' | 'tecnico' | 'geral'
-type Step = { icon: typeof LayoutDashboard; emoji: string; title: string; text: string; section?: Section }
+
+// PARTE 8.6 — os emojis do tour viram ícones animados (mesma linguagem do painel).
+const PASSE = {
+  wave: IconTarget, compass: IconCompass, briefcase: IconBriefcase, gear: IconGear,
+  bell: IconBell, chart: IconChart, folder: IconFolder, wallet: IconWallet,
+  phone: IconPhone, book: IconBook, rocket: IconRocket,
+} as const
+type Step = { icon: typeof LayoutDashboard; emoji: keyof typeof PASSE; title: string; text: string; section?: Section }
 
 // secções visíveis por nível (espelha navItems do AdminDashboard — "Ir agora" nunca cai em área bloqueada)
 const SEC_POR_NIVEL: Partial<Record<Section, Level[]>> = {
@@ -57,33 +65,33 @@ const podeVer = (level: Level | undefined, sec: Section): boolean => {
 
 const PASSOS: Record<Focus, Step[]> = {
   geral: [
-    { icon: LayoutDashboard, emoji: '👋', title: 'Bem-vindo ao Portal CFTEC!', text: 'Este é o teu painel de trabalho. Os indicadores no topo (pedidos, licenças, chamados) actualizam-se em tempo real — é o teu primeiro ponto de atenção a cada manhã.' },
-    { icon: Menu, emoji: '🧭', title: 'Menu lateral — o teu workspace', text: 'Cada pessoa vê apenas o que lhe compete: o Comercial vê pedidos e licenças; o técnico vê chamados e wiki; a administração vê tudo. O sino (🔔) conta os pedidos novos por ler.' },
-    { icon: ShoppingCart, emoji: '💼', title: 'Funil comercial', text: 'Os pedidos correm no Kanban até gerarem Fatura Proforma e Fatura Interna (FT) — cada cartão é um cliente com o seu estado.' },
-    { icon: BookOpen, emoji: '🛠️', title: 'Suporte técnico', text: 'Novos softwares vão para o catálogo de downloads; os casos vivem em "Chamados de Suporte"; a memória da equipa fica na "Wiki Técnica".' },
-    { icon: Bell, emoji: '🔔', title: 'Alertas no telemóvel', text: 'No topo do painel, usa o cartão "Ativar Alertas" para receber Web Push no ecrã de bloqueio — cada novo pedido ou chamado aviso na hora, mesmo com o painel fechado.' },
+    { icon: LayoutDashboard, emoji: 'wave', title: 'Bem-vindo ao Portal CFTEC!', text: 'Este é o teu painel de trabalho. Os indicadores no topo (pedidos, licenças, chamados) actualizam-se em tempo real — é o teu primeiro ponto de atenção a cada manhã.' },
+    { icon: Menu, emoji: 'compass', title: 'Menu lateral — o teu workspace', text: 'Cada pessoa vê apenas o que lhe compete: o Comercial vê pedidos e licenças; o técnico vê chamados e wiki; a administração vê tudo. O sino da barra superior conta os pedidos novos por ler.' },
+    { icon: ShoppingCart, emoji: 'briefcase', title: 'Funil comercial', text: 'Os pedidos correm no Kanban até gerarem Fatura Proforma e Fatura Interna (FT) — cada cartão é um cliente com o seu estado.' },
+    { icon: BookOpen, emoji: 'gear', title: 'Suporte técnico', text: 'Novos softwares vão para o catálogo de downloads; os casos vivem em "Chamados de Suporte"; a memória da equipa fica na "Wiki Técnica".' },
+    { icon: Bell, emoji: 'bell', title: 'Alertas no telemóvel', text: 'No topo do painel, usa o cartão "Ativar Alertas" para receber Web Push no ecrã de bloqueio — cada novo pedido ou chamado aviso na hora, mesmo com o painel fechado.' },
   ],
   comercial: [
-    { icon: LayoutDashboard, emoji: '📊', title: 'Indicadores & Visão Geral', text: 'KPIs no topo: pedidos, licenças activas, contactos por ler e progresso de metas. Tudo em tempo real.' },
-    { icon: Menu, emoji: '🧭', title: 'Menu lateral — área comercial', text: 'Como comercial, as tuas áreas são: Pedidos de Licença, Licenças PalancaSoft, Revenda Negomil e Relatórios & Metas. O sino (🔔) na barra superior conta os pedidos novos.' },
-    { icon: ShoppingCart, emoji: '🗂️', title: 'Kanban de Pedidos', text: 'Cada cartão representa um cliente. Arrasta o cartão da coluna "Pendente" para "Aprovado" → a Fatura Proforma em PDF é gerada automaticamente e fica pronta a enviar.', section: 'pedidos' },
-    { icon: Wallet, emoji: '💰', title: 'Confirmar Pagamento → FT + Meta', text: 'No cartão aprovado, clica "Confirmar Pagamento" para emitir a Fatura Interna (FT) em PDF e fechar a venda. A tua meta mensal de vendas actualiza-se em "Relatórios & Metas".' },
-    { icon: Bell, emoji: '🔔', title: 'Alertas no ecrã de bloqueio', text: 'Clica no cartão "Ativar Alertas" no topo do painel para receberes notificação push no telemóvel sempre que um cliente fizer um pedido — nunca perdes um cliente por demora.' },
+    { icon: LayoutDashboard, emoji: 'chart', title: 'Indicadores & Visão Geral', text: 'KPIs no topo: pedidos, licenças activas, contactos por ler e progresso de metas. Tudo em tempo real.' },
+    { icon: Menu, emoji: 'compass', title: 'Menu lateral — área comercial', text: 'Como comercial, as tuas áreas são: Pedidos de Licença, Licenças PalancaSoft, Revenda Negomil e Relatórios & Metas. O sino na barra superior conta os pedidos novos.' },
+    { icon: ShoppingCart, emoji: 'folder', title: 'Kanban de Pedidos', text: 'Cada cartão representa um cliente. Arrasta o cartão da coluna "Pendente" para "Aprovado" → a Fatura Proforma em PDF é gerada automaticamente e fica pronta a enviar.', section: 'pedidos' },
+    { icon: Wallet, emoji: 'wallet', title: 'Confirmar Pagamento → FT + Meta', text: 'No cartão aprovado, clica "Confirmar Pagamento" para emitir a Fatura Interna (FT) em PDF e fechar a venda. A tua meta mensal de vendas actualiza-se em "Relatórios & Metas".' },
+    { icon: Bell, emoji: 'bell', title: 'Alertas no ecrã de bloqueio', text: 'Clica no cartão "Ativar Alertas" no topo do painel para receberes notificação push no telemóvel sempre que um cliente fizer um pedido — nunca perdes um cliente por demora.' },
   ],
   tecnico: [
-    { icon: LayoutDashboard, emoji: '📈', title: 'O teu painel técnico', text: 'Os KPIs mostram o que corre no parque da CFTEC: softwares publicados, serviços, mídias e chamados abertos.' },
-    { icon: Menu, emoji: '🧭', title: 'Menu lateral — área técnica', text: 'As tuas áreas: Softwares & Downloads, Blog/CMS, Novidades, Contactos, Chamados de Suporte e Wiki Técnica.' },
-    { icon: LifeBuoy, emoji: '🎧', title: 'Atender chamados', text: 'Cada chamado de suporte tem estado (Aberto → Em análise → Resolvido). Responde ao cliente, actualiza o estado e fecha o caso em "Chamados de Suporte".', section: 'chamados' },
-    { icon: BookOpen, emoji: '📚', title: 'Wiki técnica', text: 'Antes de resolver do zero, pesquisa a Wiki Técnica: procedimentos, falhas conhecidas e soluções ficam documentados para toda a equipa.', section: 'wiki' },
-    { icon: Package, emoji: '📤', title: 'Novas versões de software', text: 'Em "Softwares & Downloads" publica a nova versão (upload do pacote + changelog) — os clientes descarregam sempre a versão certa.', section: 'software' },
-    { icon: Bell, emoji: '🔔', title: 'Alertas no ecrã de bloqueio', text: 'Ativa o cartão "Ativar Alertas" no topo do painel para receberes push no telemóvel: novo chamado de suporte = aviso imediato no teu ecrã.' },
+    { icon: LayoutDashboard, emoji: 'chart', title: 'O teu painel técnico', text: 'Os KPIs mostram o que corre no parque da CFTEC: softwares publicados, serviços, mídias e chamados abertos.' },
+    { icon: Menu, emoji: 'compass', title: 'Menu lateral — área técnica', text: 'As tuas áreas: Softwares & Downloads, Blog/CMS, Novidades, Contactos, Chamados de Suporte e Wiki Técnica.' },
+    { icon: LifeBuoy, emoji: 'phone', title: 'Atender chamados', text: 'Cada chamado de suporte tem estado (Aberto → Em análise → Resolvido). Responde ao cliente, actualiza o estado e fecha o caso em "Chamados de Suporte".', section: 'chamados' },
+    { icon: BookOpen, emoji: 'book', title: 'Wiki técnica', text: 'Antes de resolver do zero, pesquisa a Wiki Técnica: procedimentos, falhas conhecidas e soluções ficam documentados para toda a equipa.', section: 'wiki' },
+    { icon: Package, emoji: 'briefcase', title: 'Novas versões de software', text: 'Em "Softwares & Downloads" publica a nova versão (upload do pacote + changelog) — os clientes descarregam sempre a versão certa.', section: 'software' },
+    { icon: Bell, emoji: 'bell', title: 'Alertas no ecrã de bloqueio', text: 'Ativa o cartão "Ativar Alertas" no topo do painel para receberes push no telemóvel: novo chamado de suporte = aviso imediato no teu ecrã.' },
   ],
 }
 
-const FOCOS: { id: Focus; nome: string; desc: string; emoji: string; recomendado: Level[] }[] = [
-  { id: 'comercial', nome: 'Comercial', desc: 'Aprovar pedidos, mover o Kanban, emitir Proforma/FT em PDF e bater metas.', emoji: '💼', recomendado: ['gestor'] },
-  { id: 'tecnico', nome: 'Técnico', desc: 'Atender chamados, usar a Wiki interna e publicar novas versões de software.', emoji: '🛠️', recomendado: ['tecnico'] },
-  { id: 'geral', nome: 'Geral', desc: 'Tour completo: painel, funil comercial, suporte técnico e alertas no telemóvel.', emoji: '🚀', recomendado: ['super_admin', 'developer'] },
+const FOCOS: { id: Focus; nome: string; desc: string; emoji: keyof typeof PASSE; recomendado: Level[] }[] = [
+  { id: 'comercial', nome: 'Comercial', desc: 'Aprovar pedidos, mover o Kanban, emitir Proforma/FT em PDF e bater metas.', emoji: 'briefcase', recomendado: ['gestor'] },
+  { id: 'tecnico', nome: 'Técnico', desc: 'Atender chamados, usar a Wiki interna e publicar novas versões de software.', emoji: 'gear', recomendado: ['tecnico'] },
+  { id: 'geral', nome: 'Geral', desc: 'Tour completo: painel, funil comercial, suporte técnico e alertas no telemóvel.', emoji: 'rocket', recomendado: ['super_admin', 'developer'] },
 ]
 
 export type SystemTourProps = {
@@ -142,7 +150,7 @@ export default function SystemTour({ open, level, userName, onClose, onNavigate 
         {!escolheu ? (
           <>
             <div className="tour-welcome">
-              <span className="tour-welcome-emoji">🎉</span>
+              <span className="tour-welcome-emoji"><IconRocket size={44} strokeWidth={1.6} /></span>
               <h2>Bem-vindo ao Portal CFTEC{userName ? `, ${userName}` : ''}!</h2>
               <p>Leva 2 minutos. Escolhe o teu foco e vê o mais importante — podes rever este guia sempre que quiseres pelo botão <b>Guia de Uso</b> da barra superior.</p>
             </div>
@@ -155,7 +163,7 @@ export default function SystemTour({ open, level, userName, onClose, onNavigate 
                     className={`tour-choice-card${rec ? ' is-recommended' : ''}`}
                     onClick={() => { setFoco(f.id); setEscolheu(true); setI(0) }}
                   >
-                    <span className="tour-choice-emoji">{f.emoji}</span>
+                    <span className="tour-choice-emoji">{(() => { const Ico = PASSE[f.emoji]; return <Ico size={26} strokeWidth={1.8} /> })()}</span>
                     <strong>{f.nome}{rec ? <em className="tour-flag">Recomendado</em> : null}</strong>
                     <span>{f.desc}</span>
                     <span className="tour-choice-go"><ChevronsRight size={14} /> Começar</span>
@@ -170,7 +178,7 @@ export default function SystemTour({ open, level, userName, onClose, onNavigate 
         ) : (
           <>
             <div className="tour-step">
-              <div className="tour-art"><span>{passo.emoji}</span></div>
+              <div className="tour-art"><span>{(() => { const Ico = PASSE[passo.emoji]; return <Ico size={40} strokeWidth={1.6} /> })()}</span></div>
               <div className="tour-body">
                 <span className="tour-kicker">Passo {i + 1} de {passos.length}</span>
                 <h3>{passo.title}</h3>

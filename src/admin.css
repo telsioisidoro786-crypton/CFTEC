@@ -1401,3 +1401,40 @@ html[data-theme='dark'] .kanban-col-head i{background:#111c31;border-color:#2835
 html[data-theme='dark'] .kanban-col-hint{color:#64748b}
 html[data-theme='dark'] .kanban-card{background:#101a2e;border-color:#28354a;box-shadow:0 1px 2px rgba(0,0,0,.45)}
 html[data-theme='dark'] .kanban-card:hover{box-shadow:0 8px 20px rgba(0,0,0,.55)}
+
+/* ============================================================ */
+/* PARTE 8.6 — ÍCONES ANIMADOS estilo Flaticon/line-md           */
+/* SVG stroke inline; o traço desenha-se ao montar + micro-gesto */
+/* ============================================================ */
+.anim-icon{display:inline-block;vertical-align:-.15em;flex-shrink:0}
+.anim-icon path,.anim-icon rect,.anim-icon circle,.anim-icon line{
+  stroke-dasharray:100;stroke-dashoffset:100;
+  animation:icon-draw .65s cubic-bezier(.25,.8,.35,1) forwards
+}
+@keyframes icon-draw{to{stroke-dashoffset:0}}
+@keyframes icon-pop{0%{transform:scale(.5);opacity:0}55%{transform:scale(1.14);opacity:1}100%{transform:scale(1)}}
+@keyframes icon-tada{0%,100%{transform:rotate(0)}15%{transform:rotate(-10deg) scale(1.12)}45%{transform:rotate(9deg)}70%{transform:rotate(-4deg)}}
+@keyframes icon-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.6;transform:scale(.93)}}
+@keyframes icon-swing{0%,100%{transform:rotate(0)}25%{transform:rotate(9deg)}65%{transform:rotate(-8deg)}}
+@keyframes icon-spin{to{transform:rotate(360deg)}}
+@keyframes icon-bob{0%,100%{transform:translateY(-1px)}50%{transform:translateY(1.7px)}}
+@keyframes icon-blink{0%,100%{opacity:.2}45%{opacity:1}}
+@keyframes icon-ping{0%{transform:scale(.8);opacity:.85}75%,100%{transform:scale(2.2);opacity:0}}
+@keyframes icon-late{0%{opacity:0;transform:translateX(2px)}100%{opacity:1;transform:none}}
+.anim-icon.ai-pop{animation:icon-pop .5s cubic-bezier(.2,1.4,.4,1) both}
+.anim-icon.ai-tada{animation:icon-tada 1s ease-in-out both;transform-origin:50% 62%}
+.anim-icon.ai-pulse{animation:icon-pulse 1.9s ease-in-out infinite}
+.anim-icon.ai-swing{animation:icon-swing 1.5s ease-in-out infinite;transform-origin:50% 22%}
+.anim-icon.ai-ring{animation:icon-swing 1.4s ease-in-out infinite;transform-origin:50% 60%}
+.anim-icon.ai-spin{animation:icon-spin 6s linear infinite}
+.anim-icon .ai-bob{animation:icon-bob 1.4s ease-in-out infinite}
+.anim-icon .ai-sand{animation:icon-blink 1.2s ease-in-out infinite}
+.anim-icon .ai-d1{animation:icon-blink 1.5s ease-in-out infinite;transform-box:fill-box;transform-origin:center}
+.anim-icon .ai-d2{animation:icon-blink 1.5s ease-in-out .22s infinite;transform-box:fill-box;transform-origin:center}
+.anim-icon .ai-d3{animation:icon-blink 1.5s ease-in-out .44s infinite;transform-box:fill-box;transform-origin:center}
+.anim-icon .ai-late{opacity:0;animation:icon-draw .65s cubic-bezier(.25,.8,.35,1) .28s forwards,icon-late .45s ease-out .28s forwards}
+.anim-icon .ai-ping{animation:icon-ping 1.8s cubic-bezier(.2,.6,.35,1) infinite;transform-box:fill-box;transform-origin:center;opacity:0}
+.thread-gear{margin-right:4px;vertical-align:-2px}
+@media (prefers-reduced-motion:reduce){
+  .anim-icon,.anim-icon *{animation-duration:.01s!important;animation-iteration-count:1!important}
+}

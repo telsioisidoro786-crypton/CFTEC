@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Bell, BellOff, CheckCircle2 } from 'lucide-react'
 import { Button } from './ui/button'
+import { IconBell, IconLock } from './animIcons'
 
 /**
  * PushNotificationBanner — activação discreta das notificações Web Push
@@ -98,7 +99,7 @@ export default function PushNotificationBanner() {
     return (
       <div className="push-banner push-banner--on" role="status">
         <CheckCircle2 size={14} />
-        <span><strong>🔔 Alertas activos</strong> — novos pedidos e chamados chegam ao seu dispositivo, mesmo com o painel fechado.</span>
+        <span><strong><IconBell size={13} /> Alertas activos</strong> — novos pedidos e chamados chegam ao seu dispositivo, mesmo com o painel fechado.</span>
         <Button size="sm" variant="outline" onClick={enviarTeste} disabled={aEnviar}>{aEnviar ? 'A enviar…' : 'Enviar teste'}</Button>
         {msg && <small>{msg}</small>}
       </div>
@@ -109,9 +110,9 @@ export default function PushNotificationBanner() {
     <div className="push-banner" role="status">
       {estado === 'denied' ? <BellOff size={14} /> : <Bell size={14} />}
       {estado === 'denied'
-        ? <span><strong>Alertas bloqueados</strong> — permitir o CFTEC nas definições do browser (ícone 🔒 na barra de endereço).</span>
+        ? <span><strong>Alertas bloqueados</strong> — permitir o CFTEC nas definições do browser (ícone <IconLock size={11} /> na barra de endereço).</span>
         : <span><strong>Novos pedidos e chamados para si</strong> — active os alertas e seja avisado no ecrã, sem abrir o painel.</span>}
-      {estado !== 'denied' && <Button size="sm" onClick={activar}>🔔 Ativar Alertas de Novos Pedidos</Button>}
+      {estado !== 'denied' && <Button size="sm" onClick={activar}><IconBell size={13} /> Ativar Alertas de Novos Pedidos</Button>}
       {msg && <small>{msg}</small>}
     </div>
   )
