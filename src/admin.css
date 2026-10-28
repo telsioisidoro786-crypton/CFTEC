@@ -1718,3 +1718,20 @@ html[data-theme='dark'] .sla-kpi:hover{box-shadow:0 6px 18px rgba(0,0,0,.35)}
 @media (prefers-reduced-motion:reduce){
   html[data-theme='dark'] .admin-presence{animation:none}
 }
+
+/* ============================================================ */
+/* Wiki Técnica — lista de artigos em dark (os .wiki-item e      */
+/* .wiki-block ficavam brancos; paleta igual à do modal da wiki) */
+/* ============================================================ */
+html[data-theme='dark'] .wiki-item{background:#0b1424;border-color:#1b2842}
+html[data-theme='dark'] .wiki-item[open]{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .wiki-item summary strong{color:#e8eefb}
+html[data-theme='dark'] .wiki-item summary small{color:#7d90ab}
+html[data-theme='dark'] .wiki-open-hint{color:#5c6f8a}
+html[data-theme='dark'] .wiki-software{background:rgba(96,165,250,.15);color:#93c5fd}
+html[data-theme='dark'] .wiki-block{border-color:#22304e}
+html[data-theme='dark'] .wiki-block p{color:#cdd9ea}
+html[data-theme='dark'] .wiki-block--sol{background:rgba(16,185,129,.07);border-color:rgba(74,222,128,.25)}
+html[data-theme='dark'] .wiki-block--sol span{color:#4ade80}
+html[data-theme='dark'] .wiki-tag b{background:#13203a;color:#aebdcd}
+html[data-theme='dark'] .wiki-tag b:hover{background:rgba(37,99,235,.22);color:#60a5fa}
