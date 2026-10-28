@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { FormEvent, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import { Avatar, AvatarFallback } from './components/ui/avatar'
@@ -85,7 +85,8 @@ import { WikiSection } from './admin/sections/WikiSection'
 import { ConversaModal } from './admin/modals/ConversaModal'
 import { IconAlert, IconBell, IconChat, IconClock, IconDownload, IconGear, IconHourglass, IconKey, IconLock, IconPen, IconPhone, IconRepeat, IconTarget, IconThumb, IconUnlock, IconUsers } from './components/animIcons'
 import SystemTour, { marcarTour, tourFeito } from './SystemTour'
-import { Pricing } from './components/ui/pricing-9'
+// Code-splitting: o pop-up de upgrade só carrega motion quando abre (a lib sai do chunk do painel e o aviso de 500kb morre)
+const Pricing = lazy(() => import('./components/ui/pricing-9').then(m => ({ default: m.Pricing })))
 
 // Icon mapping for services
 const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
@@ -3132,7 +3133,7 @@ export default function AdminDashboard() {
                 aria-label="Fechar"
                 className="absolute right-3 top-3 z-20 flex size-9 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md transition-colors hover:bg-muted"
               ><X size={17} /></button>
-              <Pricing onRequest={solicitarUpgrade} />
+              <Suspense fallback={<div className="sk-panel sk-panel--tall" />}><Pricing onRequest={solicitarUpgrade} /></Suspense>
             </div>
           </div>
         )}

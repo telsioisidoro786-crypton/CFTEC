@@ -16,4 +16,9 @@ const adminApi = (): Plugin => ({
 export default defineConfig({
   plugins: [react(), adminApi()],
   server: { port: 3000, host: '0.0.0.0', hmr: { protocol: 'wss', clientPort: 443 } },
+  build: {
+    chunkSizeWarningLimit: 700,
+    // three.module (689kb) sai do bundle do site por dyn import e só carrega
+    // depois do first paint para quem vê a cena 3D do hero — não é regressão.
+  },
 })
