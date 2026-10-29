@@ -32,3 +32,5 @@ export type RepoEmpresa = { nif: string; nome: string; downloads: number; chamad
 
 export type AnalyticsState = { ok?: boolean; mrrKz: number; arrKz: number; receita12: number; meses12: { mes: string; label: string; total: number; ft: number }[]; licencas: { activas: number; expirando30d: number; churn30d: number; churnRate: number }; empresas: RepoEmpresa[] } | null
 
+
+export type AuditRow = { id: string; created_at: string; actor_email: string; actor_level: string | null; acao: string; entidade: string; entidade_id: string | null; detalhe: string | null }
