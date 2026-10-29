@@ -34,3 +34,11 @@ export type AnalyticsState = { ok?: boolean; mrrKz: number; arrKz: number; recei
 
 
 export type AuditRow = { id: string; created_at: string; actor_email: string; actor_level: string | null; acao: string; entidade: string; entidade_id: string | null; detalhe: string | null }
+
+// Settings — utilizadores, sessões e log de erros (Fase Settings — movidos de AdminDashboard.tsx)
+
+export type AdminUserRow = { id: string; name: string; email: string; role: string; is_active: boolean; created_at: string }
+
+export type SessaoActiva = { jti: string; actual: boolean; emitida: string; dispositivo: string }
+
+export type LogErroRow = { id: string; criado_em: string; origem: 'client' | 'server'; nivel: string; mensagem: string; detalhe: string | null; pagina: string | null; user_agent: string | null; resolvido: boolean }
