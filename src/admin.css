@@ -1735,3 +1735,41 @@ html[data-theme='dark'] .wiki-block--sol{background:rgba(16,185,129,.07);border-
 html[data-theme='dark'] .wiki-block--sol span{color:#4ade80}
 html[data-theme='dark'] .wiki-tag b{background:#13203a;color:#aebdcd}
 html[data-theme='dark'] .wiki-tag b:hover{background:rgba(37,99,235,.22);color:#60a5fa}
+
+/* ===== Pesquisa global ⌘K (Productividade admin — Parte A) ===== */
+.admin-palette-backdrop{position:fixed;inset:0;z-index:140;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);display:flex;justify-content:center;align-items:flex-start;padding:10vh 16px 16px;animation:paletteFade .14s ease}
+@keyframes paletteFade{from{opacity:0}to{opacity:1}}
+.admin-palette{width:min(620px,100%);border-radius:16px;background:#fff;box-shadow:0 30px 90px rgba(6,12,24,.4);overflow:hidden;animation:palettePop .16s ease}
+@keyframes palettePop{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+.admin-palette-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid #e6eaf1}
+.admin-palette-head svg{color:#4f46e5;flex:none}
+.admin-palette-head input{flex:1;border:0;outline:0;background:transparent;font-size:1.02rem;color:#0f172a;font-family:inherit}
+.admin-palette-head input::placeholder{color:#94a3b8}
+.admin-palette-head kbd{flex:none;font:600 .68rem/1 'Space Grotesk',sans-serif;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:6px;padding:5px 8px}
+.admin-palette-body{max-height:52vh;overflow-y:auto;padding:6px 8px 10px}
+.admin-palette-empty{margin:16px 8px;font-size:.88rem;color:#64748b;line-height:1.5}
+.admin-palette-grupo+.admin-palette-grupo{margin-top:4px}
+.admin-palette-grupo-head{display:flex;align-items:center;gap:7px;padding:9px 12px 5px;font:700 .68rem 'Space Grotesk',sans-serif;letter-spacing:.07em;text-transform:uppercase;color:#64748b}
+.admin-palette-item{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:transparent;padding:9px 12px;border-radius:10px;cursor:pointer}
+.admin-palette-item.is-active{background:#eef2ff;box-shadow:inset 0 0 0 1px #dbe3ff}
+.admin-palette-item-titulo{font-weight:600;font-size:.92rem;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}
+.admin-palette-item-sub{flex:1;min-width:0;font-size:.8rem;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.admin-palette-item-badge{flex:none;font-size:.68rem;font-weight:600;color:#0e7490;background:rgba(8,145,178,.1);border-radius:999px;padding:2px 9px;white-space:nowrap}
+.admin-palette-foot{display:flex;gap:14px;flex-wrap:wrap;padding:10px 16px;border-top:1px solid #e6eaf1;color:#94a3b8;font-size:.72rem}
+.admin-palette-foot span{display:flex;align-items:center;gap:5px}
+.admin-palette-foot kbd{font:600 .64rem/1 'Space Grotesk',sans-serif;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;border-radius:5px;padding:3px 6px}
+
+html[data-theme='dark'] .admin-palette{background:#0d1730;box-shadow:0 30px 90px rgba(0,0,0,.6)}
+html[data-theme='dark'] .admin-palette-head{border-bottom-color:#1d2a44}
+html[data-theme='dark'] .admin-palette-head svg{color:#22d3ee}
+html[data-theme='dark'] .admin-palette-head input{color:#eef4fb}
+html[data-theme='dark'] .admin-palette-head input::placeholder{color:#5d7089}
+html[data-theme='dark'] .admin-palette-head kbd{color:#8ba0b9;background:#131f33;border-color:#22304e}
+html[data-theme='dark'] .admin-palette-empty{color:#8ba0b9}
+html[data-theme='dark'] .admin-palette-grupo-head{color:#7a8ea6}
+html[data-theme='dark'] .admin-palette-item.is-active{background:#16223a;box-shadow:inset 0 0 0 1px #263454}
+html[data-theme='dark'] .admin-palette-item-titulo{color:#eef4fb}
+html[data-theme='dark'] .admin-palette-item-sub{color:#8ba0b9}
+html[data-theme='dark'] .admin-palette-item-badge{color:#67e8f9;background:rgba(34,211,238,.12)}
+html[data-theme='dark'] .admin-palette-foot{border-top-color:#1d2a44;color:#5d7089}
+html[data-theme='dark'] .admin-palette-foot kbd{color:#8ba0b9;background:#131f33;border-color:#22304e}

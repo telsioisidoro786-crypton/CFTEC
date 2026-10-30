@@ -2435,6 +2435,74 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               }
               return json(res, 200, { ok: true, summary: full })
             }
+
+            // PESQUISA GLOBAL (⌘K / Ctrl+K) — busca em várias tabelas de uma vez, agrupada, máx. 5 por grupo.
+            // Só de leitura: sem logAuditoria. O nível do admin decide os grupos (mesmos níveis do navItems).
+            type SearchItem = { id: string; titulo: string; sub: string; criadoEm?: string; nif?: string | null; estado?: string | null; chamado?: { cliente: string; estado: string; software: string | null; telefone?: string | null; csat?: number | null; prioridade?: string | null } }
+            if (path === '/api/admin/search' && req.method === 'GET') {
+              const admin = currentAdmin(req)
+              if (!admin) return json(res, 401, { ok: false, error: 'Sessão expirada. Entre novamente.' })
+              const crudo = ((req.url || '').split('q=')[1] || '').split('&')[0]
+              let bruto = ''
+              try { bruto = decodeURIComponent(crudo).trim().slice(0, 60) } catch { bruto = crudo.trim().slice(0, 60) }
+              if (bruto.length < 2) return json(res, 200, { ok: true, grupos: [] })
+              const pad = '%' + bruto.replace(/[^\w@ .+\-#]/g, ' ').replace(/\s+/g, '%') + '%'
+              const nivel = admin.level || 'tecnico'
+              const comercial = ['super_admin', 'gestor', 'developer'].includes(nivel)
+              const temaTecnico = ['super_admin', 'tecnico', 'developer'].includes(nivel)
+              const MAX = 5
+              const pedidos = async () => {
+                const { data } = await supabase.from('pedidos_licencas').select('id, created_at, nome_empresa, nif, software_nome, status')
+                  .or(`nome_empresa.ilike.${pad},nif.ilike.${pad},software_nome.ilike.${pad}`).order('created_at', { ascending: false }).limit(MAX)
+                return { tipo: 'pedidos', itens: (data || []).map(o => ({ id: o.id, titulo: o.nome_empresa, sub: `${o.software_nome || '—'} · ${o.status}`, criadoEm: o.created_at, nif: o.nif })) as SearchItem[] }
+              }
+              const contato = async () => {
+                const { data } = await supabase.from('contacts').select('id, created_at, name, email, phone, service_interest, status')
+                  .or(`name.ilike.${pad},email.ilike.${pad},phone.ilike.${pad},service_interest.ilike.${pad}`).order('created_at', { ascending: false }).limit(MAX)
+                return { tipo: 'contactos', itens: (data || []).map(c => ({ id: c.id, titulo: c.name, sub: c.email || c.phone || c.service_interest || '—', criadoEm: c.created_at, estado: c.status })) as SearchItem[] }
+              }
+              const licenca = async () => {
+                const { data } = await supabase.from('licencas_palancasoft').select('id, created_at, cliente_nome, nif, chave_licenca, status, data_expiracao')
+                  .or(`cliente_nome.ilike.${pad},nif.ilike.${pad},chave_licenca.ilike.${pad}`).order('created_at', { ascending: false }).limit(MAX)
+                return { tipo: 'licencas', itens: (data || []).map(l => ({ id: l.id, titulo: l.cliente_nome, sub: l.chave_licenca, criadoEm: l.created_at, nif: l.nif, estado: l.status })) as SearchItem[] }
+              }
+              const chamado = async () => {
+                const { data } = await supabase.from('chamados_suporte').select('id, created_at, cliente, nif, telefone, software, problema, estado, prioridade, csat')
+                  .or(`cliente.ilike.${pad},problema.ilike.${pad},software.ilike.${pad},nif.ilike.${pad}`).order('created_at', { ascending: false }).limit(MAX)
+                return { tipo: 'chamados', itens: (data || []).map(c => ({ id: c.id, titulo: c.cliente, sub: c.software || (c.problema || '').slice(0, 70) || '—', criadoEm: c.created_at, nif: c.nif, estado: c.estado, chamado: { cliente: c.cliente, estado: c.estado, software: c.software, telefone: c.telefone, csat: c.csat, prioridade: c.prioridade } })) as SearchItem[] }
+              }
+              const portal = async () => {
+                const { data } = await supabase.from('clientes_portal').select('id, created_at, nome_empresa, nif, email, estado')
+                  .or(`nome_empresa.ilike.${pad},email.ilike.${pad},nif.ilike.${pad}`).order('created_at', { ascending: false }).limit(MAX)
+                return { tipo: 'portal', itens: (data || []).map(p => ({ id: p.id, titulo: p.nome_empresa, sub: p.email, criadoEm: p.created_at, nif: p.nif, estado: p.estado })) as SearchItem[] }
+              }
+              const parceiro = async () => {
+                const { data } = await supabase.from('parceiros_candidaturas').select('id, created_at, nome_responsavel, empresa_nif, provincia, modalidade, status')
+                  .or(`nome_responsavel.ilike.${pad},empresa_nif.ilike.${pad},provincia.ilike.${pad}`).order('created_at', { ascending: false }).limit(MAX)
+                return { tipo: 'parceiros', itens: (data || []).map(p => ({ id: p.id, titulo: p.nome_responsavel, sub: `${p.modalidade} · ${p.provincia || '—'}`, criadoEm: p.created_at, estado: p.status })) as SearchItem[] }
+              }
+              const wikiLbl = async () => {
+                const { data } = await supabase.from('wiki_tecnica').select('id, updated_at, titulo, problema, tags')
+                  .or(`titulo.ilike.${pad},problema.ilike.${pad},tags.ilike.${pad}`).order('updated_at', { ascending: false }).limit(MAX)
+                return { tipo: 'wiki', itens: (data || []).map(w => ({ id: w.id, titulo: w.titulo, sub: w.tags || (w.problema || '').slice(0, 80) || '—', criadoEm: w.updated_at })) as SearchItem[] }
+              }
+              const soft = async () => {
+                const { data } = await supabase.from('softwares').select('id, name, version, category, description')
+                  .or(`name.ilike.${pad},category.ilike.${pad},description.ilike.${pad}`).order('downloads_count', { ascending: false }).limit(MAX)
+                return { tipo: 'softwares', itens: (data || []).map(s => ({ id: s.id, titulo: s.name, sub: `v${s.version || '?'}${s.category ? ` · ${s.category}` : ''}` })) as SearchItem[] }
+              }
+              const promessas: Promise<{ tipo: string; itens: SearchItem[] }>[] = [
+                comercial ? pedidos() : null, comercial ? contato() : null, comercial ? licenca() : null,
+                chamado(), comercial ? portal() : null, comercial ? parceiro() : null,
+                temaTecnico ? wikiLbl() : null, soft(),
+              ].filter(Boolean) as Promise<{ tipo: string; itens: SearchItem[] }>[]
+              const resultados = await Promise.allSettled(promessas)
+              const grupos = resultados
+                .filter((g): g is PromiseFulfilledResult<{ tipo: string; itens: SearchItem[] }> => g.status === 'fulfilled')
+                .map(g => g.value)
+                .filter(g => g.itens.length > 0)
+              return json(res, 200, { ok: true, grupos })
+            }
             
             if (path === '/api/admin/contacts' && req.method === 'GET') {
               // Ponto 5: campos do funil; se a migração ainda não correu, degrada para a leitura clássica

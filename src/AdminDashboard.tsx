@@ -87,6 +87,8 @@ import { DeveloperSection } from './admin/sections/DeveloperSection'
 import { AuditoriaSection } from './admin/sections/AuditoriaSection'
 import { SettingsSection } from './admin/sections/SettingsSection'
 import { ConversaModal } from './admin/modals/ConversaModal'
+import { GlobalSearch, SECCAO_BUSCA } from './admin/GlobalSearch'
+import type { ItemBusca } from './admin/GlobalSearch'
 import { IconAlert, IconBell, IconChat, IconClock, IconDownload, IconGear, IconHourglass, IconKey, IconLock, IconPen, IconPhone, IconRepeat, IconTarget, IconThumb, IconUnlock, IconUsers } from './components/animIcons'
 import SystemTour, { marcarTour, tourFeito } from './SystemTour'
 // Code-splitting: o pop-up de upgrade só carrega motion quando abre (a lib sai do chunk do painel e o aviso de 500kb morre)
@@ -333,6 +335,8 @@ export default function AdminDashboard() {
   const [showServiceForm, setShowServiceForm] = useState<Service | false | null>(false)
   const [dragActive, setDragActive] = useState(false)
   const [search, setSearch] = useState('')
+  // Pesquisa global (⌘K) — paleta Productividade admin (Parte A)
+  const [buscaAberta, setBuscaAberta] = useState(false)
   const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null)
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null)
   const [deletingContactId, setDeletingContactId] = useState<string | null>(null)
@@ -1621,6 +1625,26 @@ export default function AdminDashboard() {
     } catch { setFicha360Aberta(false) }
   }
 
+  // Pesquisa global (⌘K) — abre a secção certa e aproveita filtros/fichas já existentes
+  const navegarBusca = (item: ItemBusca) => {
+    setBuscaAberta(false)
+    if (item.tipo === 'chamados' && item.chamado) {
+      setActiveSection('chamados')
+      void abrirConversa({ ...item.chamado, id: item.id } as unknown as Chamado)
+      return
+    }
+    if (item.tipo === 'portal' && item.nif) {
+      setActiveSection('portal')
+      void abrirFicha360(item.nif)
+      return
+    }
+    if (item.tipo === 'licencas') setLicenseQuery(item.titulo)
+    if (item.tipo === 'parceiros') setPartnerQuery(item.titulo)
+    if (item.tipo === 'wiki') setWikiSearch(item.titulo)
+    const seccao = SECCAO_BUSCA[item.tipo] as AdminSection | undefined
+    if (seccao) setActiveSection(seccao)
+  }
+
   // Parte 7.7 — exportação CSV (client-side; `;` + BOM para abrir bem no Excel pt-PT)
   const exportarCSV = (nome: string, colunas: string[], linhas: (string | number | null)[][]) => {
     const esc = (v: string | number | null) => { const s = v == null ? '' : String(v); return /[";\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s }
@@ -2254,6 +2278,7 @@ export default function AdminDashboard() {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
+      if (buscaAberta) return // a paleta (GlobalSearch) trata o próprio Esc
       if (deletingServiceId) setDeletingServiceId(null)
       else if (deletingOrderId) setDeletingOrderId(null)
       else if (deletingContactId) setDeletingContactId(null)
@@ -2274,7 +2299,7 @@ export default function AdminDashboard() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [deletingServiceId, deletingOrderId, deletingContactId, deletingSoftwareId, deletingLicenseId, deletingPartnerId, deletingUserId, deletingDestaqueId, deletingBlogId, notifOpen, showServiceForm, showUserForm, pwResetUser, showLicenseForm, showDestaqueForm, showBlogForm, showSoftwareForm])
+  }, [deletingServiceId, deletingOrderId, deletingContactId, deletingSoftwareId, deletingLicenseId, deletingPartnerId, deletingUserId, deletingDestaqueId, deletingBlogId, notifOpen, showServiceForm, showUserForm, pwResetUser, showLicenseForm, showDestaqueForm, showBlogForm, showSoftwareForm, buscaAberta])
 
   // Blog / CMS
   const openBlogForm = (post: BlogPost | null) => {
@@ -2988,7 +3013,7 @@ export default function AdminDashboard() {
     </aside>
 
     <div className="admin-main">
-      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel..." /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><button className="admin-icon-btn admin-help-btn" aria-label="Guia de Uso" title="Guia de Uso do Sistema" onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button><button className="admin-icon-btn admin-tema-btn" aria-label="Alternar tema" title={tema === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'} onClick={() => setTema(t => t === 'dark' ? 'light' : 'dark')}>{tema === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">{(adminUser?.name || 'Admin CFTEC').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}<i className="admin-presence" aria-hidden /></span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'}</small></div><i className="admin-role-chip">{labelRole(adminUser?.level || 'super_admin')}</i><ChevronRight size={14} /></div></div></header>
+      <header className="admin-topbar"><div className="admin-topbar-left"><button className="admin-menu" onClick={() => setSidebarOpen(true)} aria-label="Abrir menu"><Menu size={21} /></button><div className="admin-breadcrumb"><span>Painel Admin</span><ChevronRight size={13} /><strong>{sectionTitle}</strong></div></div><div className="admin-topbar-actions"><div className="admin-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Pesquisar no painel... (⌘K)" /></div><div className="admin-notif"><button className="admin-icon-btn" aria-label="Notificações" onClick={() => setNotifOpen(v => !v)}><Bell size={17} />{unreadContacts.length > 0 && <i />}</button>{notifOpen && <div className="admin-notif-popover"><div className="admin-notif-head"><strong>Novos pedidos</strong><button onClick={() => setNotifOpen(false)} aria-label="Fechar"><X size={15} /></button></div>{unreadContacts.length === 0 ? <p className="admin-notif-empty">Sem pedidos não lidos.</p> : unreadContacts.slice(0, 4).map((c) => <div className="admin-notif-item" key={c.id}><div className="contact-main"><strong>{c.name}</strong><span>{c.service_interest || 'Pedido geral'}</span></div><button className="icon-btn" title="Marcar como lido" onClick={() => handleContactStatus(c, 'read')}><Check size={15} /></button></div>)}<button className="admin-notif-all" onClick={() => { setNotifOpen(false); setActiveSection('contactos') }}>Ver todos os contactos <ChevronRight size={14} /></button></div>}</div><button className="admin-icon-btn admin-help-btn" aria-label="Guia de Uso" title="Guia de Uso do Sistema" onClick={() => setTourOpen(true)}><CircleHelp size={17} /></button><button className="admin-icon-btn admin-tema-btn" aria-label="Alternar tema" title={tema === 'dark' ? 'Mudar para tema claro' : 'Mudar para tema escuro'} onClick={() => setTema(t => t === 'dark' ? 'light' : 'dark')}>{tema === 'dark' ? <Sun size={17} /> : <Moon size={17} />}</button><span className="admin-separator" /><button className="admin-icon-btn" aria-label="Terminar sessão" title="Terminar sessão" onClick={handleLogout}><LogOut size={17} /></button><div className="admin-profile"><span className="admin-avatar">{(adminUser?.name || 'Admin CFTEC').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()}<i className="admin-presence" aria-hidden /></span><div><strong>{adminUser?.name || 'Admin CFTEC'}</strong><small>{adminUser?.email || 'Administrador'}</small></div><i className="admin-role-chip">{labelRole(adminUser?.level || 'super_admin')}</i><ChevronRight size={14} /></div></div></header>
       <main className="admin-content">
         {(ehDev || sysLic.bypassActivo || (sysLic.licencaAtiva !== false && sysLic.licencaEfetiva !== false)) ? null : <div className="licenca-suspensa"><span className="licenca-suspensa-icon"><Power size={44} /></span><h2>{sysLic.expirada ? 'Licença expirada' : 'Plataforma suspensa'}</h2><p>{sysLic.expirada && !sysLic.mensagem ? 'A licença de manutenção venceu-se — a plataforma entrou em suspensão automática.' : sysLic.mensagem}</p><small>Licença de uso do software — contacte o Developer da plataforma (Nexora Systems) para reactivar.</small>
           {sysLic.bypassActivo ? <small className="licenca-bypass-activo"><IconUnlock size={13} /> Acesso de emergência activo — as suas acções estão desbloqueadas temporariamente.</small> : <>
@@ -3362,6 +3387,9 @@ export default function AdminDashboard() {
         {activeSection === 'auditoria' && <AuditoriaSection audit={audit} auditSearch={auditSearch} setAuditSearch={setAuditSearch} loadAudit={loadAudit} />}
 
         {activeSection === 'settings' && <SettingsSection adminUser={adminUser} ehDev={ehDev} upgradePedidos={upgradePedidos} setShowUpgrade={setShowUpgrade} users={users} ROLES={ROLES} labelRole={labelRole} updateUser={updateUser} setShowUserForm={setShowUserForm} setDeletingUserId={setDeletingUserId} setPwResetUser={setPwResetUser} setPwResetForm={setPwResetForm} portalSettings={portalSettings} setPortalSettings={setPortalSettings} savingPortal={savingPortal} handlePortalSave={handlePortalSave} testarWhatsapp={testarWhatsapp} logErrosVer={logErrosVer} setLogErrosVer={setLogErrosVer} carregarLogErros={carregarLogErros} logErros={logErros} logErrosAResolvidos={logErrosAResolvidos} resolverLogErros={resolverLogErros} profileName={profileName} setProfileName={setProfileName} savingProfile={savingProfile} handleProfileSave={handleProfileSave} pwCurrent={pwCurrent} setPwCurrent={setPwCurrent} pwNew={pwNew} setPwNew={setPwNew} pwConfirm={pwConfirm} setPwConfirm={setPwConfirm} savingPassword={savingPassword} handlePasswordChange={handlePasswordChange} twofaEstado={twofaEstado} busy2fa={busy2fa} setup2fa={setup2fa} setSetup2fa={setSetup2fa} codigo2fa={codigo2fa} setCodigo2fa={setCodigo2fa} pw2fa={pw2fa} setPw2fa={setPw2fa} desactivar2fa={desactivar2fa} activar2fa={activar2fa} iniciar2fa={iniciar2fa} sessoes={sessoes} revogando={revogando} revogarOutras={revogarOutras} revogarSessao={revogarSessao} formatDate={formatDate} />}
+
+        {/* Pesquisa global ⌘K / Ctrl+K — Productividade admin (Parte A) */}
+        <GlobalSearch aberta={buscaAberta} setAberta={setBuscaAberta} navegar={navegarBusca} />
       </main>
     </div>
 
