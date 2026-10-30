@@ -785,6 +785,32 @@ function clientIp(req: IncomingMessage): string {
 }
 
 // ============================================================
+// THROTTLE DOS FORMS PÚBLICOS — defesa no lado da app contra spam
+// e bots de baixa escala em /api/contact, /api/license-orders,
+// /api/chamados, /api/partners-apply e /api/log-erro. Contador por
+// IP+rota na mesma tabela `login_rate` (sobrevive a cold-starts em
+// server-less). Excedido o limite dentro da janela → o handler
+// responde 429 até a janela expirar. Não bloqueia IPs legítimos
+// para sempre — a janela desliza sozinha.
+// ============================================================
+const PUB_MAX_REQ = 4                              // pedidos por IP+rota dentro da janela
+const PUB_JANELA_MS = 10 * 60 * 1000               // janela de 10 min
+async function throttlePublico(req: IncomingMessage, rota: string, max = PUB_MAX_REQ): Promise<boolean> {
+  const chave = `pub|${clientIp(req)}|${rota}`
+  const atual = await rateGet(chave)
+  const agora = Date.now()
+  const viva = atual.janela_inicio > 0 && agora - atual.janela_inicio <= PUB_JANELA_MS
+  const falhas = viva ? atual.falhas : 0
+  if (falhas >= max) {
+    // mantém o relógio da janela vivo e recusa — sem log de auditoria (spam não merece rastros)
+    await rateSave({ ...atual, chave, falhas, janela_inicio: viva ? atual.janela_inicio : agora, bloqueado_ate: 0 })
+    return true
+  }
+  await rateSave({ ...atual, chave, falhas: falhas + 1, janela_inicio: viva ? atual.janela_inicio : agora, bloqueado_ate: 0 })
+  return false
+}
+
+// ============================================================
 // 2FA — TOTP (RFC 6238): HMAC-SHA1, 6 dígitos, janelas de 30 s,
 // tolerância de ±1 intervalo. Implementado sobre node:crypto
 // para não introduzir dependências no backend.
@@ -1145,6 +1171,20 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
         if (!req.url?.startsWith('/api/')) return next()
         
         try {
+          // HEADERS DE SEGURANÇA — aplicados a TODAS as respostas da API antes
+          // de qualquer handler. frame-ancestors/X-Frame-Options impedem que o
+          // painel/portal seja embrulhado em <iframe> de terceiros (clickjacking);
+          // nosniff evita MIME sniffing; HSTS só em produção (HTTPS da Vercel).
+          // Sem CSP <default-src> aqui: PDFs (proforma/fatura) abrem em nova tab
+          // e a restrição estrita aconteceria no lado das páginas estáticas (vercel.json).
+          const isProdHeaders = process.env.NODE_ENV === 'production'
+          res.setHeader('X-Content-Type-Options', 'nosniff')
+          res.setHeader('X-Frame-Options', 'DENY')
+          res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin')
+          res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()')
+          res.setHeader('Content-Security-Policy', "frame-ancestors 'none'")
+          if (isProdHeaders) res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains')
+
           const path = req.url.split('?')[0]
 
           // server-less: a instância pode ser nova → repõe o jti da sessão do Supabase
@@ -1551,6 +1591,8 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           // REPORT DE ERROS DO BROWSER (público, fire-and-forget — o formato é
           // o mais simples possível para nunca rebentar com o próprio reporter)
           if (path === '/api/log-erro' && req.method === 'POST') {
+            // janela mais larga: erros reais do browser podem vir em rajada, mas bots também abusam
+            if (await throttlePublico(req, 'log-erro', 12)) return json(res, 204, { ok: false })
             const corpo = await readBody(req) as { mensagem?: string; detalhe?: string; pagina?: string; contexto?: unknown }
             const user_agent = (req.headers['user-agent'] as string) || null
             logErro({ origem: 'client', mensagem: String(corpo.mensagem || 'erro desconhecido').slice(0, 500), detalhe: corpo.detalhe ? String(corpo.detalhe).slice(0, 4000) : null, pagina: corpo.pagina ? String(corpo.pagina).slice(0, 300) : null, user_agent, contexto: corpo.contexto })
@@ -1559,6 +1601,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
 
           // PUBLIC CONTACT (no auth required)
           if (path === '/api/contact' && req.method === 'POST') {
+            if (await throttlePublico(req, 'contact')) return json(res, 429, { ok: false, error: 'Demasiadas submissões. Tente novamente daqui a alguns minutos.' })
             const payload = await readBody(req) as ContactPayload
             const name = payload.name?.trim()
             const email = payload.email?.trim()
@@ -1588,6 +1631,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           
           // CANDIDATURA A SUB-PARCEIRO (formulário do site — sem auth)
           if (path === '/api/partners-apply' && req.method === 'POST') {
+            if (await throttlePublico(req, 'partners')) return json(res, 429, { ok: false, error: 'Demasiadas candidaturas. Tente novamente daqui a alguns minutos.' })
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             const payload = await readBody(req) as { nome_responsavel?: string; empresa_nif?: string; telefone_whatsapp?: string; provincia?: string; modalidade?: string; nota?: string }
             const nome = String(payload.nome_responsavel || '').trim()
@@ -1614,6 +1658,7 @@ export async function cftecApi(req: IncomingMessage, res: ServerResponse, next: 
           // PEDIDO DE LICENÇA B2B (checkout PalancaSoft / Negomil — sem auth)
           // CHAMADOS DE SUPORTE — formulário público do site (alimentação directa ao painel do técnico)
           if (path === '/api/chamados' && req.method === 'POST') {
+            if (await throttlePublico(req, 'chamados', 8)) return json(res, 429, { ok: false, error: 'Demasiadas aberturas de chamados. Tente novamente daqui a alguns minutos.' })
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             // módulo técnico suspenso pelo developer → formulário público encerrado
             if (!(await licencaAtual()).moduloTecnico)
@@ -2127,6 +2172,7 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
           }
 
           if (path === '/api/license-orders' && req.method === 'POST') {
+            if (await throttlePublico(req, 'pedidos')) return json(res, 429, { ok: false, error: 'Demasiados pedidos seguidos. Tente novamente daqui a alguns minutos.' })
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             // módulo comercial suspenso pelo developer → checkout encerrado
             if (!(await licencaAtual()).moduloComercial)
