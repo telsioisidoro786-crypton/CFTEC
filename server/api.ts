@@ -2622,6 +2622,30 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               return json(res, 200, { ok: true })
             }
 
+            // PRODUCTIVIDADE ADMIN (Parte B) — acções em massa: mudar estado / apagar N contactos de uma vez
+            if (path === '/api/admin/contacts/lote' && req.method === 'POST') {
+              const adminLote = currentAdmin(req)
+              if (!adminLote) return json(res, 401, { ok: false, error: 'Sessão expirada. Entre novamente.' })
+              const payload = await readBody(req) as { acao?: string; estado?: string; ids?: string[] }
+              const acao = String(payload.acao || '')
+              if (!['estado', 'apagar'].includes(acao)) return json(res, 400, { ok: false, error: 'Acção inválida. Use: estado ou apagar.' })
+              const IDS = (Array.isArray(payload.ids) ? payload.ids : []).map(x => String(x).trim()).filter(x => /^[0-9a-fA-F-]{6,64}$/.test(x)).slice(0, 60)
+              if (!IDS.length) return json(res, 400, { ok: false, error: 'Nenhum contacto seleccionado.' })
+              if (acao === 'estado') {
+                const novoEstado = String(payload.estado || '')
+                if (!['unread', 'read', 'archived', 'em_contacto', 'proposta', 'fechado'].includes(novoEstado))
+                  return json(res, 400, { ok: false, error: 'Estado inválido. Use: unread, read, archived, em_contacto, proposta ou fechado.' })
+                const { error, data: afetados } = await supabase.from('contacts').update({ status: novoEstado }).in('id', IDS).select('id')
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(adminLote, 'contacto_estado', 'contacto', null, { em_massa: true, total: (afetados || []).length, estado: novoEstado })
+                return json(res, 200, { ok: true, total: (afetados || []).length })
+              }
+              const { error, data: apagados } = await supabase.from('contacts').delete().in('id', IDS).select('id')
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(adminLote, 'contacto_apagado', 'contacto', null, { em_massa: true, total: (apagados || []).length })
+              return json(res, 200, { ok: true, total: (apagados || []).length })
+            }
+
             // GUARD COMERCIAL — licenças, pedidos e parceiros são área super_admin + gestor
             // (colocado antes de qualquer handler destes paths, senão a cadeia de ifs devolve antes)
             // GUARD COMERCIAL — licenças, parceiros e pedidos: super_admin + gestor.
@@ -2978,6 +3002,31 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (error) return json(res, 500, { ok: false, error: error.message })
               logAuditoria(currentAdmin(req), 'pedido_apagado', 'pedido', id)
               return json(res, 200, { ok: true })
+            }
+
+            // PRODUCTIVIDADE ADMIN (Parte B) — acções em massa de pedidos: estado operacional / apagar N de uma vez.
+            // Aprovado/Rejeitado ficam FORA do lote: no individual dispara e-mail/WhatsApp ao cliente com IBAN/motivo.
+            if (path === '/api/admin/license-orders/lote' && req.method === 'POST') {
+              const adminLote = currentAdmin(req)
+              if (!adminLote) return json(res, 401, { ok: false, error: 'Sessão expirada. Entre novamente.' })
+              const payload = await readBody(req) as { acao?: string; estado?: string; ids?: string[] }
+              const acao = String(payload.acao || '')
+              if (!['estado', 'apagar'].includes(acao)) return json(res, 400, { ok: false, error: 'Acção inválida. Use: estado ou apagar.' })
+              const IDS = (Array.isArray(payload.ids) ? payload.ids : []).map(x => String(x).trim()).filter(x => /^[0-9a-fA-F-]{6,64}$/.test(x)).slice(0, 60)
+              if (!IDS.length) return json(res, 400, { ok: false, error: 'Nenhum pedido seleccionado.' })
+              if (acao === 'estado') {
+                const novoEstado = String(payload.estado || '')
+                if (!['Pendente', 'Em Verificação', 'Pago'].includes(novoEstado))
+                  return json(res, 400, { ok: false, error: 'Estado de lote inválido. Use: Pendente, Em Verificação ou Pago (Aprovado/Rejeitado são individuais, com e-mail ao cliente).' })
+                const { error, data: afetados } = await supabase.from('pedidos_licencas').update({ status: novoEstado }).in('id', IDS).select('id')
+                if (error) return json(res, 500, { ok: false, error: error.message })
+                logAuditoria(adminLote, 'pedido_estado', 'pedido', null, { em_massa: true, total: (afetados || []).length, estado: novoEstado })
+                return json(res, 200, { ok: true, total: (afetados || []).length })
+              }
+              const { error, data: apagados } = await supabase.from('pedidos_licencas').delete().in('id', IDS).select('id')
+              if (error) return json(res, 500, { ok: false, error: error.message })
+              logAuditoria(adminLote, 'pedido_apagado', 'pedido', null, { em_massa: true, total: (apagados || []).length })
+              return json(res, 200, { ok: true, total: (apagados || []).length })
             }
 
             // LICENÇAS PALANCASOFT

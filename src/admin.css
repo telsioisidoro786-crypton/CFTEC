@@ -1773,3 +1773,24 @@ html[data-theme='dark'] .admin-palette-item-sub{color:#8ba0b9}
 html[data-theme='dark'] .admin-palette-item-badge{color:#67e8f9;background:rgba(34,211,238,.12)}
 html[data-theme='dark'] .admin-palette-foot{border-top-color:#1d2a44;color:#5d7089}
 html[data-theme='dark'] .admin-palette-foot kbd{color:#8ba0b9;background:#131f33;border-color:#22304e}
+
+/* ===== Acções em massa (Productividade admin — Parte B) ===== */
+.lote-topo{display:flex;justify-content:flex-end;margin:2px 14px 6px}
+.lote-todos{display:flex;align-items:center;gap:7px;font-size:.78rem;font-weight:600;color:#475569;cursor:pointer}
+.lote-bar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 14px 10px;padding:9px 14px;border:1px solid #dbe3ff;background:#eef2ff;border-radius:12px;animation:palettePop .16s ease}
+.lote-bar strong{font-size:.85rem;color:#3b3f8f;white-space:nowrap}
+.lote-bar select{border:1px solid #c7d2fe;border-radius:8px;padding:6px 10px;background:#fff;color:#0f172a;font-family:inherit;font-size:.85rem}
+.lote-bar .lote-nota{flex:1 1 100%;font-size:.72rem;color:#6b7280}
+.lote-td{width:34px;text-align:center;padding-right:2px}
+.lote-th{width:34px;text-align:center}
+.lote-th input,.lote-check{width:15px;height:15px;accent-color:#4f46e5;cursor:pointer}
+.contact-item{position:relative;display:flex;align-items:flex-start;gap:8px}
+.contact-item .lote-check{position:static;margin:15px 0 0 6px;flex:none}
+
+html[data-theme='dark'] .lote-topo{color:#8ba0b9}
+html[data-theme='dark'] .lote-todos{color:#aebdcd}
+html[data-theme='dark'] .lote-bar{border-color:#263454;background:#16223a}
+html[data-theme='dark'] .lote-bar strong{color:#cdd9ea}
+html[data-theme='dark'] .lote-bar select{background:#0d1730;border-color:#263454;color:#eef4fb}
+html[data-theme='dark'] .lote-bar .lote-nota{color:#8ba0b9}
+html[data-theme='dark'] .lote-th input,html[data-theme='dark'] .lote-check{accent-color:#22d3ee}
