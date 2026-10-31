@@ -1,17 +1,20 @@
 import { type FormEvent, useState } from 'react'
-import { ArrowRight, BadgeCheck, Building2, Check, Copy, Landmark, LockKeyhole, UserRound, X } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Building2, Check, CircleCheck, Copy, Landmark, Loader2, LockKeyhole, Paperclip, Smartphone, UserRound, X } from 'lucide-react'
 import { Button } from './ui/button'
 
 type OrderProduct = { name: string; category?: string | null; price?: number | null }
 
 type Confirmed = {
   id: string
+  ref: string
   empresa: string
   nif: string
   forma: string
   iban: string
   whatsapp: string
 }
+
+type UploadState = 'idle' | 'uploading' | 'ok' | 'erro'
 
 const digits = (v: string) => v.replace(/[^\d]/g, '')
 
@@ -25,6 +28,8 @@ export default function OrderModal({ product, onClose }: { product: OrderProduct
   const [error, setError] = useState('')
   const [confirmed, setConfirmed] = useState<Confirmed | null>(null)
   const [copied, setCopied] = useState(false)
+  const [compEstado, setCompEstado] = useState<UploadState>('idle')
+  const [compErro, setCompErro] = useState('')
 
   if (!product) return null
 
@@ -43,16 +48,46 @@ export default function OrderModal({ product, onClose }: { product: OrderProduct
       if (!response.ok || !body.ok) throw new Error(body.error || 'Não foi possível registar o pedido.')
       setConfirmed({
         id: String(body.pedido_id || ''),
+        ref: String(body.ref || 'CF-' + String(body.pedido_id || '').replace(/-/g, '').slice(0, 6).toUpperCase()),
         empresa: data.nome_empresa || '',
         nif: data.nif || '',
         forma: body.payment?.forma || 'Transferência Bancária / IBAN',
         iban: body.payment?.iban || '',
         whatsapp: body.payment?.whatsapp || '',
       })
+      setCompEstado('idle')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro inesperado. Tente novamente.')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Anexo do comprovativo — print/PDF do pagamento vai directo ao painel (sem gateway)
+  const handleComprovativo = async (file: File | null) => {
+    if (!file || !confirmed) return
+    setCompEstado('uploading')
+    setCompErro('')
+    try {
+      const b64 = ((await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () => resolve(String(reader.result || ''))
+        reader.onerror = () => reject(new Error('ficheiro'))
+        reader.readAsDataURL(file)
+      })).split(',')[1] || '')
+      if (!b64) throw new Error('Não foi possível ler o ficheiro.')
+      if (b64.length > 2800000) throw new Error('O ficheiro passa de ~2 MB — comprima o print e tente de novo.')
+      const response = await fetch(`/api/license-orders/${confirmed.id}/comprovativo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comprovativo_nome: file.name.slice(0, 200), comprovativo_b64: b64 }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (!response.ok || !body.ok) throw new Error(body.error || 'O envio do comprovativo falhou.')
+      setCompEstado('ok')
+    } catch (err) {
+      setCompEstado('erro')
+      setCompErro(err instanceof Error ? err.message : 'O envio do comprovativo falhou.')
     }
   }
 
@@ -67,7 +102,7 @@ export default function OrderModal({ product, onClose }: { product: OrderProduct
   }
 
   const waMessage = confirmed
-    ? `Olá CFTEC! Acabei de fazer o pedido de licença para a empresa ${confirmed.empresa} (NIF: ${confirmed.nif}). Segue o comprovativo para validação.`
+    ? `Olá CFTEC! Comprovativo do pedido de licença ${confirmed.ref} para a empresa ${confirmed.empresa} (NIF: ${confirmed.nif}). Segue o anexo para validação.`
     : ''
 
   return (
@@ -80,30 +115,42 @@ export default function OrderModal({ product, onClose }: { product: OrderProduct
             <div className="order-success-icon"><BadgeCheck size={34} /></div>
             <span className="section-kicker">CHECKOUT B2B</span>
             <h3>Pedido de Licença Registado com Sucesso!</h3>
-            <p>Guarde o número do pedido — indique-o sempre nas comunicações com a CFTEC.</p>
-            <div className="order-ref"><span>Número do pedido</span><strong>{confirmed.id.slice(0, 8).toUpperCase()}</strong></div>
+            <p>Guarde a referência — indique-a sempre no comprovativo de transferência e nas comunicações com a CFTEC.</p>
+            <div className="order-ref"><span>Referência do pedido</span><strong>{confirmed.ref}</strong></div>
 
             {confirmed.forma.includes('IBAN') && (
               <div className="order-payment">
-                <div className="order-payment-head"><Landmark size={16} /> Pagamento por transferência</div>
+                <div className="order-payment-head"><Landmark size={16} /> 1.º — Pagar por transferência</div>
                 <div className="order-iban">
                   <div><small>IBAN da CFTEC</small><strong>{confirmed.iban || '(a confirmar pelo WhatsApp)'}</strong></div>
                   <button onClick={copyIban} title="Copiar IBAN">{copied ? <Check size={15} /> : <Copy size={15} />}</button>
                 </div>
-                <p>Após a transferência, envie o comprovativo pelo WhatsApp para confirmarmos em minutos. Indique sempre o número do pedido.</p>
+                <p>No descritivo da transferência escreva <b>{confirmed.ref}</b> — assim o extracto do banco valida-se contra o painel num relance.</p>
               </div>
             )}
-            {confirmed.forma === 'Multicaixa Express' && (
+            {confirmed.forma.includes('Multicaixa') && (
               <div className="order-payment">
-                <div className="order-payment-head"><Landmark size={16} /> Pagamento por Multicaixa Express</div>
-                <p>A equipa comercial envia o número de e-mail da conta CFTEC pelo WhatsApp. Indique sempre o número do pedido no campo de perfil do pagamento.</p>
+                <div className="order-payment-head"><Smartphone size={16} /> 1.º — Pagar por Multicaixa Express</div>
+                <p>A equipa CFTEC envia para o seu Multicaixa Express (número <b>{confirmed.whatsapp ? `+${digits(confirmed.whatsapp)}` : 'do contacto registado'}</b>) o pedido de pagamento <b>{confirmed.ref}</b>. Autorize no seu telemóvel — não precisa de ir ao banco nem de transferência.</p>
               </div>
             )}
 
+            <label className="order-upload">
+              <input type="file" accept="image/png,image/jpeg,image/webp,application/pdf" disabled={compEstado === 'uploading' || compEstado === 'ok'} onChange={(e) => { void handleComprovativo(e.target.files?.[0] || null) }} />
+              <span className="order-upload-btn">
+                {compEstado === 'uploading' ? <Loader2 size={15} className="animate-spin" /> : compEstado === 'ok' ? <CircleCheck size={15} /> : <Paperclip size={15} />}
+                {compEstado === 'ok' ? 'Comprovativo recebido pela equipa ✓' : '2.º — Anexar o comprovativo (print/foto/PDF · máx. 2 MB)'}
+              </span>
+              {compEstado === 'ok' ? <small>O pedido passou automaticamente a «Em Verificação» no painel da CFTEC — aguarde a emissão da licença.</small>
+                : compEstado === 'erro' ? <small className="order-upload-erro">{compErro || 'Tente novamente ou envie pelo WhatsApp.'}</small>
+                : compEstado === 'uploading' ? <small>A enviar com segurança…</small>
+                : <small>Directo ao painel da CFTEC — evita o WhatsApp e chega ao comercial em segundos.</small>}
+            </label>
+
             <a className="order-whatsapp-btn" href={waLink(confirmed.whatsapp, waMessage)} target="_blank" rel="noreferrer noopener">
-              Enviar comprovativo no WhatsApp <ArrowRight size={16} />
+              Ou envie o comprovativo no WhatsApp <ArrowRight size={16} />
             </a>
-            <p className="order-success-note">O acesso de licença é emitido após confirmação do pagamento pela equipa CFTEC.</p>
+            <p className="order-success-note">A licença é emitida após a confirmação do pagamento pela equipa CFTEC.</p>
           </div>
         ) : (
           <>

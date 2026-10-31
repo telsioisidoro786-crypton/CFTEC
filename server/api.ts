@@ -183,6 +183,10 @@ function precoCatalogo(catalogo: { name: string; price: number }[] | null, nome:
 // ================= PROFORMA PDF (sem dependências — PDF 1.4 manual) =================
 const escPdf = (t: string) => t.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
 
+// Referência curta do pedido (ex. CF-A775EF) — alinha o extracto do banco com o painel:
+// entra na proforma/cfatura, no e-mail, no WhatsApp e no comprovativo do cliente.
+const refPedido = (id: string): string => 'CF-' + String(id || '').replace(/-/g, '').slice(0, 6).toUpperCase()
+
 function buildProformaPdf(o: {
   numero: string; pedido: string; data: string
   empresa: string; nif: string; responsavel: string; email: string; provincia: string
@@ -1845,7 +1849,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               const { data: ibanRowPf } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
               const pdfPf = buildProformaPdf({
                 numero: numeroPf,
-                pedido: String(orderPf.id).slice(0, 8).toUpperCase(),
+                pedido: refPedido(orderPf.id),
                 data: new Date(String(orderPf.created_at)).toLocaleDateString('pt-PT'),
                 empresa: orderPf.nome_empresa, nif: orderPf.nif, responsavel: orderPf.nome_responsavel,
                 email: orderPf.email || '—', provincia: orderPf.provincia || '—',
@@ -1877,7 +1881,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
                 return json(res, 404, { ok: false, error: 'A Fatura Definitiva ainda não foi emitida.' })
               const pdfFt = buildFaturaPdf({
                 numero: String(reciboP.numero),
-                pedido: String(orderFt.id).slice(0, 8).toUpperCase(),
+                pedido: refPedido(orderFt.id),
                 data: new Date().toLocaleDateString('pt-PT'),
                 empresa: orderFt.nome_empresa, nif: orderFt.nif, responsavel: orderFt.nome_responsavel,
                 email: orderFt.email || '—', provincia: orderFt.provincia || '—',
@@ -2236,22 +2240,56 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
             fireAdminEmail(
               `Pedido de licença — ${nomeEmpresa} (${softwareNome})`,
               emailShell('Novo pedido de licença (checkout B2B)', `<p>Um cliente acabou de submeter o checkout do site:</p>
-<table style="border-collapse:collapse">${emailLinha('Software', escHtml(softwareNome))}${emailLinha('Empresa', escHtml(nomeEmpresa))}${emailLinha('NIF', escHtml(nif))}${emailLinha('Responsável', escHtml(responsavel))}${emailLinha('WhatsApp', escHtml(telefone))}${emailLinha('E-mail', email ? `<a href="mailto:${escHtml(email)}" style="color:#1d4ed8">${escHtml(email)}</a>` : '—')}${emailLinha('Província', escHtml(provincia))}${emailLinha('Forma de pagamento', escHtml(formaPagamento))}${emailLinha('Observações', observacoes ? escHtml(observacoes).slice(0, 600).replace(/\n/g, '<br />') : '—')}${emailLinha('Ref.', `<code>#${String(data.id).slice(0, 8).toUpperCase()}</code>`)}</table>
+<table style="border-collapse:collapse">${emailLinha('Ref.', `<code>${refPedido(data.id)}</code>`)}${emailLinha('Software', escHtml(softwareNome))}${emailLinha('Empresa', escHtml(nomeEmpresa))}${emailLinha('NIF', escHtml(nif))}${emailLinha('Responsável', escHtml(responsavel))}${emailLinha('WhatsApp', escHtml(telefone))}${emailLinha('E-mail', email ? `<a href="mailto:${escHtml(email)}" style="color:#1d4ed8">${escHtml(email)}</a>` : '—')}${emailLinha('Província', escHtml(provincia))}${emailLinha('Forma de pagamento', escHtml(formaPagamento))}${emailLinha('Observações', observacoes ? escHtml(observacoes).slice(0, 600).replace(/\n/g, '<br />') : '—')}</table>
 <p style="margin:18px 0 0">Trate no painel CFTEC → Secção «Pedidos de Licença».</p>`),
             )
             // Web Push ao comercial (fire-and-forget)
             void pushNotifyEquipa('pedido', '📋 Novo pedido de licença', `${nomeEmpresa} pediu ${softwareNome} — verifique no painel.`)
-            fireAdminAlert(`📋 Novo pedido: ${nomeEmpresa} — ${softwareNome} (${formaPagamento}). Painel → Pedidos.`)
+            fireAdminAlert(`📋 Novo pedido ${refPedido(data.id)}: ${nomeEmpresa} — ${softwareNome} (${formaPagamento}). Painel → Pedidos.`)
             logAuditoria(null, 'pedido_recebido', 'pedido', data.id, { empresa: nomeEmpresa, software: softwareNome, forma_pagamento: formaPagamento })
             return json(res, 201, {
               ok: true,
               pedido_id: data.id,
+              ref: refPedido(data.id),
               payment: {
                 iban: getCfg('iban_cftec'),
                 whatsapp: getCfg('whatsapp_comercial'),
                 forma: formaPagamento,
               },
             })
+          }
+
+          // COMPROVATIVO DO PAGAMENTO (checkout público do site):
+          // o cliente anexa o print/PDF do pagamento na confirmação do pedido.
+          // Mesma mecânica do portal (Parte 7.1): ficheiro em base64 (máx. ~2 MB)
+          // nas colunas existentes do pedido — zero gateway, zero gateway fees.
+          // O pedido sobe automaticamente de «Pendente» para «Em Verificação».
+          if (path.match(/^\/api\/license-orders\/([a-f0-9-]+)\/comprovativo$/) && req.method === 'POST') {
+            if (await throttlePublico(req, 'comprovativo')) return json(res, 429, { ok: false, error: 'Demasiados envios. Tente novamente daqui a alguns minutos.' })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const idComp = path.split('/')[3]
+            const payloadComp = await readBody(req) as { comprovativo_nome?: string; comprovativo_b64?: string }
+            const b64Comp = String(payloadComp.comprovativo_b64 || '').trim()
+            const nomeComp = String(payloadComp.comprovativo_nome || 'comprovativo.pdf').slice(0, 200)
+            if (!b64Comp) return json(res, 400, { ok: false, error: 'Falta o ficheiro do comprovativo.' })
+            if (b64Comp.length > 2800000)
+              return json(res, 413, { ok: false, error: 'O comprovativo passa de ~2 MB. Comprima a imagem ou envie só a página relevante.' })
+            const { data: pedComp } = await supabase.from('pedidos_licencas').select('id, nome_empresa, status, email').eq('id', idComp).maybeSingle()
+            if (!pedComp) return json(res, 404, { ok: false, error: 'Pedido não encontrado — confirme a referência do comprovativo.' })
+            if (!(pedComp.status === 'Pendente' || pedComp.status === 'Em Verificação'))
+              return json(res, 409, { ok: false, error: 'Este pedido já não aceita comprovativo (estado atual: ' + pedComp.status + ').' })
+            const updatesComp: Record<string, unknown> = { comprovativo_b64: b64Comp, comprovativo_nome: nomeComp }
+            if (pedComp.status === 'Pendente') updatesComp.status = 'Em Verificação'
+            const { error: errComp } = await supabase.from('pedidos_licencas').update(updatesComp).eq('id', idComp)
+            if (errComp) {
+              if (String(errComp.message).includes('comprovativo'))
+                return json(res, 503, { ok: false, error: 'O anexo de comprovativos activa-se em breve — envie o seu pelo WhatsApp por agora.' })
+              return json(res, 500, { ok: false, error: errComp.message })
+            }
+            logAuditoria({ email: pedComp.email || 'site', level: 'portal' }, 'comprovativo_recebido', 'pedido', idComp, { nome: nomeComp, ref: refPedido(idComp) })
+            fireAdminAlert(`📄 Comprovativo recebido ${refPedido(idComp)} — ${pedComp.nome_empresa}. Painel → Pedidos.`)
+            void pushNotifyEquipa('pedido', '📄 Comprovativo recebido', `${pedComp.nome_empresa} anexou o comprovativo do pedido ${refPedido(idComp)}.`)
+            return json(res, 200, { ok: true, ref: refPedido(idComp) })
           }
 
           // REGISTO DE DOWNLOAD PÚBLICO (incrementa contador + evento para métricas)
@@ -2840,7 +2878,7 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               const { data: ibanRow } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
               const pdf = buildProformaPdf({
                 numero,
-                pedido: String(order.id).slice(0, 8).toUpperCase(),
+                pedido: refPedido(order.id),
                 data: new Date(order.created_at).toLocaleDateString('pt-PT'),
                 empresa: order.nome_empresa, nif: order.nif, responsavel: order.nome_responsavel,
                 email: order.email || '—', provincia: order.provincia || '—',
@@ -2849,6 +2887,18 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               })
               res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Disposition': `inline; filename="proforma-${numero}.pdf"` })
               return res.end(pdf)
+            }
+
+            // VER COMPROVATIVO DO CLIENTE (o anexo do checkout ou do portal, isolado para o admin)
+            const comprovMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/comprovativo$/)
+            if (comprovMatch && req.method === 'GET') {
+              const { data: rowCx } = await supabase.from('pedidos_licencas').select('comprovativo_b64, comprovativo_nome').eq('id', comprovMatch[1]).maybeSingle()
+              if (!rowCx?.comprovativo_b64) return json(res, 404, { ok: false, error: 'Este pedido ainda não tem comprovativo anexado.' })
+              const extCx = String(rowCx.comprovativo_nome || '').split('.').pop()?.toLowerCase() || ''
+              const mimeCx = extCx === 'pdf' ? 'application/pdf' : extCx === 'png' ? 'image/png' : extCx === 'webp' ? 'image/webp' : (extCx === 'jpg' || extCx === 'jpeg') ? 'image/jpeg' : 'application/octet-stream'
+              const bufCx = Buffer.from(String(rowCx.comprovativo_b64), 'base64')
+              res.writeHead(200, { 'Content-Type': mimeCx, 'Cache-Control': 'no-store', 'Content-Disposition': `inline; filename="${String(rowCx.comprovativo_nome || 'comprovativo').replace(/["\\]/g, '')}"` })
+              return res.end(bufCx)
             }
 
             // CONFIRMAR LIQUIDAÇÃO (Ponto 5): proforma → Paga, com comprovativo + IBAN + nº FT automático
@@ -2963,7 +3013,7 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               const { data: ibanRowF } = await supabase.from('settings').select('value').eq('key', 'iban_cftec').maybeSingle()
               const pdfF = buildFaturaPdf({
                 numero: numeroF,
-                pedido: String(order.id).slice(0, 8).toUpperCase(),
+                pedido: refPedido(order.id),
                 data: new Date().toLocaleDateString('pt-PT'),
                 empresa: order.nome_empresa, nif: order.nif, responsavel: order.nome_responsavel,
                 email: order.email || '—', provincia: order.provincia || '—',
