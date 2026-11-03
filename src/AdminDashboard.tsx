@@ -1710,7 +1710,7 @@ export default function AdminDashboard() {
   }
 
   // Parte 7.7 — máquina de renovações: preview → gerar pedidos + e-mails
-  type LoteAlvo = { licenca_id: string; nif: string; empresa: string; chave_licenca: string; expira: string; dias: number | null; software: string; email: string | null; whatsapp: string | null; responsavel: string | null; emCurso: boolean }
+  type LoteAlvo = { licenca_id: string; nif: string; empresa: string; chave_licenca: string; expira: string; dias: number | null; software: string; email: string | null; whatsapp: string | null; responsavel: string | null; emCurso: boolean; renovacao_ref?: string | null; renovacao_status?: string | null }
   type LoteRes = { gerados: number; saltados: number; emails: { enviados: number; falhados: number } }
   const [loteAberto, setLoteAberto] = useState(false)
   const [loteJanela, setLoteJanela] = useState<7 | 30 | 60>(30)
@@ -2014,10 +2014,33 @@ export default function AdminDashboard() {
 
   // Pedidos de licença B2B (Super Admin + Gestor Comercial)
   const orderLabelStatus = (status: string) => ({ Pendente: 'Pendente', 'Em Verificação': 'Em verificação', Aprovado: 'Aprovado', Pago: 'Pago', Rejeitado: 'Rejeitado' } as Record<string, string>)[status] || status
+  // Referência curta do pedido no cliente (espelha refPedido do servidor)
+  const refPed = (id: string) => 'CF-' + String(id || '').replace(/-/g, '').slice(0, 6).toUpperCase()
   const waLinkAdmin = (phone: string, order: LicenseOrder) => {
-    const num = phone.replace(/[^\d]/g, '')
-    const full = num.startsWith('244') ? num : '244' + num
-    return `https://wa.me/${full}?text=${encodeURIComponent(`Olá ${order.nome_responsavel}! Falamos da CFTEC sobre o pedido de licença ${order.id.slice(0, 8).toUpperCase()} (${order.software_nome}) para ${order.nome_empresa}.`)}`.replace(/'/g, '%27')
+    const num = String(phone || '').replace(/[^\d]/g, '')
+    const full = num.startsWith('244') ? num : num ? '244' + num : ''
+    const ref = refPed(order.id)
+    const saida = order.status === 'Em Verificação' ? 'Recebemos o seu comprovativo — validamos em minutos e a licença/FT sai logo.'
+      : order.status === 'Aprovado' ? 'A proforma do seu pedido está pronta para pagamento — conta-nos logo que liquidar para emitirmos a licença.'
+      : order.status === 'Pago' ? 'Pagamento chegado ao painel — a fatura FT e a activação da licença seguem hoje.'
+      : order.status === 'Rejeitado' ? 'Falamos sobre o seu pedido — é só responder aqui que ajustamos na hora.'
+      : 'Aguardamos o comprovativo: pode pagar por Multicaixa Express (enviamos a Fatura com esta ref) ou transferência com a ref no descritivo — e anexar o print aqui mesmo.'
+    return `https://wa.me/${full}?text=${encodeURIComponent(`Olá ${order.nome_responsavel}! CFTEC aqui — pedido ${ref} (${order.software_nome}) para ${order.nome_empresa}. ${saida}`)}`.replace(/'/g, '%27')
+  }
+  // Follow-up proactivo de renovações: deep-link WhatsApp por alvo da Máquina de Renovações.
+  // Humano clica, o texto já vem pronto conforme o estado (renovação em curso ou aviso de vencimento).
+  const waLote = (phone: string | null, a: LoteAlvo) => {
+    const num = String(phone || '').replace(/[^\d]/g, '')
+    const full = num.startsWith('244') ? num : num ? '244' + num : ''
+    if (a.emCurso && a.renovacao_ref) {
+      const pronto = a.renovacao_status === 'Em Verificação' ? 'Já recebemos o comprovativo — validamos e estendemos a licença logo de seguida.'
+        : a.renovacao_status === 'Aprovado' ? 'A proforma está pronta no seu portal do cliente — quando liquidar, a licença estende-se no mesmo dia.'
+        : a.renovacao_status === 'Pago' ? 'Pagamento confirmado — a FT e a extensão da licença seguem hoje.'
+        : `A proforma da renovação ${a.renovacao_ref} está à sua espera no portal do cliente. Pode pagar por Multicaixa Express (enviamos o pedido "Faturas" com esta ref) ou transferência bancária — escreva ${a.renovacao_ref} no descritivo, e o comprovativo pode anexar no portal ou enviar aqui.`
+      return `https://wa.me/${full}?text=${encodeURIComponent(`Olá${a.responsavel ? ' ' + a.responsavel : ''}! CFTEC aqui. A renovação da licença ${a.software} da ${a.empresa} está em curso (ref ${a.renovacao_ref}). ${pronto}`)}`
+    }
+    const diaVence = new Date(`${a.expira}T00:00:00Z`).toLocaleDateString('pt-PT')
+    return `https://wa.me/${full}?text=${encodeURIComponent(`Olá${a.responsavel ? ' ' + a.responsavel : ''}! CFTEC aqui. A licença ${a.software} da ${a.empresa} vence a ${diaVence} — preparamos a renovação para não ficar parada: quando quiserem avançamos com a proforma no portal (Multicaixa Express ou transferência, com a referência da renovação no comprovativo).`)}`
   }
 
   const updateOrderStatus = async (order: LicenseOrder, status: string) => {
@@ -3113,7 +3136,7 @@ export default function AdminDashboard() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}><strong style={{ fontSize: '.78rem' }}>{loteAlvos!.filter(a => !a.emCurso).length} empresa(s) alvo</strong><span style={{ fontSize: '.68rem', color: 'var(--muted)' }}>{loteAlvos!.filter(a => a.emCurso).length} já em curso (não duplica)</span></div>
             <div className="admin-table-wrap" style={{ marginBottom: 14, maxHeight: 340, overflowY: 'auto' }}><table className="admin-table"><thead><tr><th>Empresa</th><th>Software</th><th>Expira</th><th>Contacto</th></tr></thead><tbody>{loteAlvos!.map(a => {
               const dias = a.dias
-              return <tr key={a.licenca_id} style={a.emCurso ? { opacity: .55 } : undefined}><td><strong>{a.empresa}</strong><div style={{ fontSize: '.62rem', color: 'var(--muted)' }}>{a.nif !== a.empresa ? a.nif : ''}{a.emCurso && <> · <IconHourglass size={11} /> renovação em curso</>}</div></td><td>{a.software}<div style={{ fontSize: '.62rem', color: 'var(--muted)' }}>{a.chave_licenca}</div></td><td>{new Date(`${a.expira}T00:00:00Z`).toLocaleDateString('pt-PT')}{dias !== null ? <span style={{ fontSize: '.64rem', marginLeft: 6, color: dias < 0 ? '#ef4444' : dias <= 7 ? '#f59e0b' : 'var(--muted)' }}>{dias < 0 ? <><IconAlert size={11} /> vencida {-dias}d</> : dias === 0 ? <><IconClock size={11} /> hoje</> : `${dias}d`}</span> : null}</td><td>{a.email || '—'}</td></tr>
+              return <tr key={a.licenca_id} style={a.emCurso ? { opacity: .55 } : undefined}><td><strong>{a.empresa}</strong><div style={{ fontSize: '.62rem', color: 'var(--muted)' }}>{a.nif !== a.empresa ? a.nif : ''}{a.emCurso && <> · <IconHourglass size={11} /> renovação em curso{a.renovacao_ref ? ` (${a.renovacao_ref})` : ''}</>}</div></td><td>{a.software}<div style={{ fontSize: '.62rem', color: 'var(--muted)' }}>{a.chave_licenca}</div></td><td>{new Date(`${a.expira}T00:00:00Z`).toLocaleDateString('pt-PT')}{dias !== null ? <span style={{ fontSize: '.64rem', marginLeft: 6, color: dias < 0 ? '#ef4444' : dias <= 7 ? '#f59e0b' : 'var(--muted)' }}>{dias < 0 ? <><IconAlert size={11} /> vencida {-dias}d</> : dias === 0 ? <><IconClock size={11} /> hoje</> : `${dias}d`}</span> : null}</td><td>{a.email || '—'}{a.whatsapp && <a className="kanban-wa" style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 5 }} data-tip="Follow-up proactivo no WhatsApp — o texto já vem pronto: renovação em curso com a referência, ou aviso de vencimento antes de expirar" href={waLote(a.whatsapp, a)} target="_blank" rel="noreferrer noopener"><MessageCircle size={12} /> WhatsApp</a>}{a.whatsapp && <span style={{ display: 'block', fontSize: '.58rem', color: 'var(--muted)', marginTop: 4 }}>o WhatsApp abre no seu telemóvel — o texto já vem pronto</span>}</td></tr>
             })}</tbody></table></div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '.66rem', color: 'var(--muted)' }}>Cada pedido fica com a nota «Parte 7.7 — gerada em lote» na observação · auditoria regista tudo</span>

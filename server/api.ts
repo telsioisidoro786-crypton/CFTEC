@@ -4107,14 +4107,20 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 .order('data_expiracao', { ascending: true }).limit(200)
               if (licLotErr) return json(res, 500, { ok: false, error: licLotErr.message })
               const licAlvo = (licLotData || []) as unknown as { id: string; nif: string | null; cliente_nome: string | null; chave_licenca: string; data_expiracao: string; status: string }[]
-              // por NIF: renovação já em curso? · contacto do portal? · último software?
+              // por NIF: renovação já em curso · contacto do portal? · último software?
               const nifsLot = Array.from(new Set(licAlvo.map(l => (l.nif || '').trim()).filter(Boolean)))
               const [emCursoLot, portalLot, sempreLot] = await Promise.all([
-                nifsLot.length ? supabase.from('pedidos_licencas').select('nif, created_at').eq('tipo', 'renovacao').in('status', ['Pendente', 'Em Verificação', 'Aprovado']).in('nif', nifsLot) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; created_at: string }[] }),
+                nifsLot.length ? supabase.from('pedidos_licencas').select('nif, id, status, created_at').eq('tipo', 'renovacao').in('status', ['Pendente', 'Em Verificação', 'Aprovado']).in('nif', nifsLot).order('created_at', { ascending: false }) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; id: string; status: string; created_at: string }[] }),
                 nifsLot.length ? supabase.from('clientes_portal').select('nif, nome_empresa, email, telefone_whatsapp, nome_responsavel').in('nif', nifsLot) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; nome_empresa: string; email: string; telefone_whatsapp: string; nome_responsavel: string | null }[] }),
                 nifsLot.length ? supabase.from('pedidos_licencas').select('nif, software_nome, tipo, created_at').in('nif', nifsLot).order('created_at', { ascending: false }).limit(500) : Promise.resolve({ data: [] } as unknown as { data: { nif: string; software_nome: string | null; tipo: string | null; created_at: string }[] }),
               ])
               const emCursoSet = new Set(((emCursoLot.data || []) as { nif: string }[]).map(r => (r.nif || '').trim()))
+              const emCursoInfo = new Map<string, { id: string; status: string }>()
+              for (const r of ((emCursoLot.data || []) as { nif: string; id: string; status: string }[])) {
+                const k = (r.nif || '').trim()
+                if (!k || emCursoInfo.has(k)) continue // o mais recente por NIF (ordem desc)
+                emCursoInfo.set(k, { id: r.id, status: r.status })
+              }
               const portalPorNif = new Map(((portalLot.data || []) as { nif: string; nome_empresa: string; email: string; telefone_whatsapp: string; nome_responsavel: string | null }[]).map(p => [(p.nif || '').trim(), p]))
               const softPorNif = new Map<string, string>()
               for (const p of ((sempreLot.data || []) as { nif: string; software_nome: string | null; tipo: string | null }[])) {
@@ -4131,6 +4137,8 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   software: softPorNif.get(nif) || 'PalancaSoft Suite',
                   email: p?.email || null, whatsapp: p?.telefone_whatsapp || null, responsavel: p?.nome_responsavel || null,
                   emCurso: nif ? emCursoSet.has(nif) : false,
+                  renovacao_ref: emCursoInfo.get(nif) ? refPedido(emCursoInfo.get(nif)!.id) : null,
+                  renovacao_status: emCursoInfo.get(nif)?.status || null,
                 }
               })
               if (req.method === 'GET')
@@ -4156,10 +4164,12 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   tipo: 'renovacao',
                 }).select('id').single()
                 if (errLot || !novoLot) { emailsLot.push({ empresa: a.empresa, ok: false, detalhe: `falhou insert: ${errLot?.message || '?'}` }); continue }
-                criadosLot.push({ nif: a.nif, empresa: a.empresa, pedido: String(novoLot.id).slice(0, 8).toUpperCase() })
+                criadosLot.push({ nif: a.nif, empresa: a.empresa, pedido: refPedido(novoLot.id) })
+                void pushNotifyEquipa('pedido', `🔁 Renovação ${refPedido(novoLot.id)} gerada`, `${a.empresa} — ${a.software}. Follow-up por WhatsApp disponível no painel.`)
                 if (a.email) {
-                  const htmlLot = `<p style="margin:0 0 14px">Exmo. responsável pela <b>${a.empresa}</b>,</p><p style="margin:0 0 14px">A licença <b>${a.software}</b> utilizada pela sua empresa <b>expira em ${diasTxt}</b> (chave <b>${a.chave_licenca}</b>). Para garantir a continuidade do software, preparamos já o pedido de renovação — está <b>disponível no seu portal do cliente</b> com a proforma de pagamento.</p><table style="margin:0 0 12px;border-collapse:collapse">${emailLinha('Software', a.software)}${emailLinha('Licença', a.chave_licenca)}${emailLinha('Validade até', diasTxt)}</table><p style="margin:0">Assim que efectuarmos a liquidação, a licença é estendida automaticamente. Qualquer dúvida, responda ao e-mail da equipa comercial.</p>`
-                  const rLot = await sendEmailRaw(a.email, `A licença ${a.software} expira em ${diasTxt} — renovação preparada · CFTEC`, emailShell('Renovação da sua licença — validade até ' + diasTxt, htmlLot))
+                  const refLot = refPedido(novoLot.id)
+                  const htmlLot = `<p style="margin:0 0 14px">Exmo. responsável pela <b>${a.empresa}</b>,</p><p style="margin:0 0 14px">A licença <b>${a.software}</b> utilizada pela sua empresa <b>expira em ${diasTxt}</b> (chave <b>${a.chave_licenca}</b>). Para garantir a continuidade do software, preparamos já o pedido de renovação <b>${refLot}</b> — está <b>disponível no seu portal do cliente</b> com a proforma de pagamento. Pode liquidar por transferência bancária (indique <b>${refLot}</b> no descritivo do comprovativo) ou por Multicaixa Express — a equipa envia-lhe o pedido "Faturas" com a mesma referência.</p><table style="margin:0 0 12px;border-collapse:collapse">${emailLinha('Referência', refLot)}${emailLinha('Software', a.software)}${emailLinha('Licença', a.chave_licenca)}${emailLinha('Validade até', diasTxt)}</table><p style="margin:0">Assim que efectuarmos a liquidação, a licença é estendida automaticamente. Qualquer dúvida, responda ao e-mail da equipa comercial.</p>`
+                  const rLot = await sendEmailRaw(a.email, `A licença ${a.software} expira em ${diasTxt} — renovação ${refLot} preparada · CFTEC`, emailShell('Renovação da sua licença — validade até ' + diasTxt, htmlLot))
                   emailsLot.push({ empresa: a.empresa, ok: rLot.enviado, detalhe: rLot.detalhe })
                 } else emailsLot.push({ empresa: a.empresa, ok: false, detalhe: 'sem e-mail no portal' })
               }
