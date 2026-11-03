@@ -1,184 +1,295 @@
-# RELATÓRIO FINAL — Plataforma Web CFTEC (site React + painel Admin)
-_Desde a criação (15 Out 2026) até à finalização (21 Out 2026) · repo `telsioisidoro786-crypton/CFTEC` · branch `master`_
+<div align="center">
 
----
+# CFTEC — Plataforma Comercial B2B
 
-## 1. Síntese executiva
+**Site React + Painel multi-nível + Portal do cliente · Angola · custo zero de infra-estrutura de pagamento**
 
-Em **7 dias de trabalho** (de 15/10 a 21/10/2026, **38 commits**) passou de um site React com painel admin embrionário (CRUD de serviços/mídias + Supabase sync) para uma **plataforma comercial completa**:
+[![React](https://img.shields.io/badge/React-18.3-0ea5e9?logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-6-646cff?logo=vite&logoColor=white)](https://vitejs.dev)
+[![Supabase](https://img.shields.io/badge/Supabase-Postgres%20+%20Storage-3ecf8e?logo=supabase&logoColor=white)](https://supabase.com)
+[![Vercel](https://img.shields.io/badge/Deploy-Vercel-black?logo=vercel&logoColor=white)](https://vercel.com)
+[![PWA](https://img.shields.io/badge/PWA-inst%C3%A1vel-5a0fc8?logo=pwa&logoColor=white)](https://developer.mozilla.org/docs/Web/Progressive_web_apps)
+[![Tests](https://img.shields.io/badge/Smoke-30%20checks-22c55e)](tests/smoke.cjs)
 
-| Área | Início (15 Out) | Fim (21 Out) |
+*3 aplicações num só codebase — roteadas por pathname no `main.tsx`:*
+
+| Rota | App | Para quem |
 |---|---|---|
-| Site público | SPA estática com hero 3D | Site dinâmico (serviços, softwares, destaques, blog, banners) + checkout B2B + suporte público + PWA |
-| Painel | 4 secções, 1 nível | **17 secções**, 4 níveis (super_admin/gestor/tecnico/**developer**), dashboard por papel |
-| Comercial | — | Pedidos de licença (kanban 5 colunas), proforma PF, fatura interna FT, relatórios & metas, licenças PalancaSoft com chaves |
-| Revenda | Form. de candidatura | Carteira de sub-parceiros com ficha completa, filtros, métricas e **licenças ligadas ao parceiro** |
-| Suporte | — | Helpdesk (chamados + prioridades + wiki interna) e canal público |
-| Plataforma | — | Licenciamento por módulos (só o developer Master admin), audit log completo, backups .json exclusivos |
-| Informação | — | ~24 mutações auditadas, e-mails automáticos (Resend), Web Push grátis (VAPID) |
-| Performance | bundle único **1 110 KB** | entrada **~350 KB** (code-splitting; three.js lazy) |
+| `/` | **Site público** | Visitante B2B (serviços, catálogo, checkout, suporte, parcerias) |
+| `/admin` | **Painel Admin** | Equipa CFTEC — 4 níveis de acesso, 17 secções |
+| `/cliente` | **Portal do Cliente** | Empresas B2B — auto-serviço completo |
+
+</div>
 
 ---
 
-## 2. Cronologia completa
+## 📑 Índice
 
-### 2.1. Criação — 15 Out
-- **`950c9bb`** — baseline: site React completo com painel admin e sync Supabase (**49 ficheiros, 9 599 linhas**). Um único `main.tsx` roteava o site (`App`) ou o painel (`AdminDashboard`); o "backend" já vivia no plugin do `vite.config.ts` (middleware Node com JWT + bcrypt + service role), `db/schema.sql` inicial.
-
-### 2.2. Consolidação do admin — 19 Out (maior dia: ~13 commits)
-- **`c2e3aaa`** — *o salto central* (45 ficheiros, **6 185 linhas**): CRUDs completos (licenças, parceiros/CRM com estados, softwares, contactos), utilizadores com níveis (super/gestor/tecnico), tabela `settings` ligada ao painel e ao site. CRUD de contactos (lido/arquivar/eliminar), licenças `PS-XXXX-XXXX-XXXX` anti-colisão, candidaturas Negomil, downloads/30 dias.
-- **`037903d`** — gráfico de downloads no dashboard + avisos de backlog no health.
-- **`21f2b77`** — fix: modal de Software remontava a cada tecla (React re-criava o tipo a cada render; agora invocado como função — foco/ficheiro sobrevivem à escrita).
-- **`c67a48b`** — fix crítico: parser **multipart corrompia binários** (.exe/.zip) — novo parser byte-a-byte (`Buffer` + `subarray`), provado com SHA-256 idêntico num ficheiro com os 256 valores de byte; bucket `software` tornado público para os downloads do site.
-- **`b92ab71`** - upload directo do browser via **URL assinado** com barra de progresso real; limite de 50 MB (plano Free do Supabase); fim dos timeouts nos ficheiros grandes.
-- **`2ecd087`/`2d7ef5f`/`542b2d8`/`c3eda23`** — **Checkout B2B**: tabela `pedidos_licencas`, `OrderModal` (Empresa/Responsável/Licença) no site com **IBAN copiável** + WhatsApp pré-formatado; gestão no painel; **polling 20 s** com indicador em tempo real; botão Adquirir Licença em todos os cards.
-- **`e649b08`/`9fcd9e4`/`8b529b7`** — visão geral com dados reais + bolhas de notificação; depois **4 KPIs animados** (count-up + barra) e timeline multidisciplinares; polimento global de modais (ESC, scroll-lock, footer pegajoso, bottom-sheet no telemóvel, autofoco).
-- **`1bc37aa`/`ee01d81`/`6a24fc9`/`bfe4fc1`** — **fluxo total admin↔site** (Definições do portal: WhatsApp, e-mail, IBAN, redes, banner → rodapé/contactos/checkout com `is_public` automático); **Destaques & Novidades** (tabela + CRUD + `NewsSlider`); **e-mails Resend** (contacto/pedido → admin, aprovação/rejeição → cliente, destino editável no painel).
-- **`5fd4c49`/`fa05dd9`** — Área do Cliente removida (era placeholder) e relatório reflectindo.
-
-### 2.3. Equipa por níveis & operação — 20 Out (12 commits)
-- **`f988bb1`** - **sessões revogáveis (jti)**: logout mata o token de verdade; mudar a password, desactivar ou eliminar um utilizador mata as sessões dele; interceptor 401 client-side.
-- **`7b51ba6`/`32bcb37`** — **Blog/CMS** (tabela, APIs público+admin, rascunho/publicar) + secção #blog no site com modal de leitura.
-- **`f600987`/`c9e71b4`** — tooltips estilizados globais; **dashboard adapta-se ao papel** (gestor/técnico/super vêem conjuntos diferentes), limpeza de guias por nível (o técnico chegava a 200 em licenças!), settings GET não ve icing over super.
-- **`a1aa967`** — **Helpdesk do técnico**: chamados com flow (Pendente → Em Resolução → Resolvido) e prioridades, consulta read-only de licenças/chaves (para suporte telefónico), badges + cards próprios.
-- **`d9079ee`** — **área do gestor**: Fatura Proforma **PDF** (nº sequencial PF-AAAA-####, sem dependências), Relatórios & Metas (KPIs, receita estimada, conversão, top softwares), alerta de renovações ≤15 dias; uploads de software **bloqueados ao gestor** (UI + 403).
-- **`b4e01c8`** — **canal público de suporte**: formulário de chamados, WhatsApp técnico, FAQ, landing por papel.
-- **`aa178a8`** — **Web Push VAPID** (100% grátis, sem Firebase): service worker, banner de activação, push automático (pedido→comercial, chamado→técnico), alerta local com som.
-- **`8e66ac3`** — **kanban arrastável** com meta mensal editável + barra de progresso; **wiki técnica interna** consultável a partir dos chamados; guia de produção no painel (HTTPS/Resend).
-- **`adcad2f`** — **PWA instalável** conservador (manifest + ícones; cache só de produção, network-first em `/assets`, **APIs nunca** cacheadas).
-- **`68ff590`** — **fatura interna FT** (Aprovado → Pago): botão Confirmar pagamento, PDF FT-AAAA-#### sequencial, 5.ª coluna *Pagos* no kanban; receita e meta passam a somar só pagos.
-
-### 2.4. Plataforma, performance e governança — 21 Out (6 commits)
-- **`730a20c`** — **licenciamento da plataforma**: 4.º papel **developer (Master Admin, Nexora Systems)** com painel exclusivo — licença activa/suspensa + módulos comercial/técnico/novidades em switches, validade + mensagem de bloqueio; suspensão fecha o painel (excepto developers) **e** os formulários públicos; chaves de licenciamento invisíveis ao super (PATCH → 403).
-- **`7f99b53`** — **code-splitting**: `App` e `AdminDashboard` lazy por rota com Suspense/antecâmara; three/gsap/ScrollTrigger/animejs via `import()` dinâmico **com fallback** (site visível mesmo se as libs falharem) — entrada cai de 1.11 MB para ~350 KB.
-- **`5f63569`** — modal da **Wiki Técnica** melhorado (dlg largo, fieldsets Identificação/Diagnóstico, datalists de sugestões, contadores de caracteres com avisos, guard anti duplo-submit).
-- **`8c39e40`** — **audit log** («Registo de actividades»): tabela `audit_log` (RLS sem políticas — só service-role), helper fire-and-forget no middleware para **~24 mutações** (logins falhados incl.), endpooint de leitura restrito a super+developer, secção no painel com selos coloridos/pesquisa/polling.
-- **`04aa764`** — **cópias de segurança**: `GET /api/admin/backup` exclusivo do developer — 14 tabelas num `.json` (sem `password_hash`), download directo (nada no servidor), cada exportação auditada.
-- **`840f5e6`** — **revenda Negomil melhorada**: ficha completa do parceiro (8 campos + nota interna), filtros com contagem + pesquisa, **inscrição manual** no painel e **licenças ligadas ao parceiro** (`parceiro_id` FK on-delete-set-null, atribuição/devolução na ficha, auditoria `licenca_atribuida`).
-- **`3be59de`** — documentação: relatório técnico actualizado (§10–§24).
+1. [Visão geral](#1-visão-geral)
+2. [Arranque rápido](#2-arranque-rápido)
+3. [Arquitectura](#3-arquitectura)
+4. [Site público](#4-site-público-visitante-b2b)
+5. [Painel admin](#5-painel-admin--17-secções--4-níveis)
+6. [Portal do cliente](#6-portal-do-cliente--auto-serviço)
+7. [Comercial & pagamento (custo zero)](#7-comercial--pagamento-custo-zero)
+8. [Segurança](#8-segurança)
+9. [Notificações](#9-notificações)
+10. [Backups & governança](#10-backups--governança)
+11. [Dados — migrations & tabelas](#11-dados--migrations--tabelas)
+12. [Qualidade](#12-qualidade)
+13. [Deploy na Vercel](#13-deploy-na-vercel)
+14. [Documentação & roadmap](#14-documentação--roadmap)
 
 ---
 
-## 3. Inventário funcional final
+## 1. Visão geral
 
-### 3.1. Site público (visitante B2B)
-- Hero 3D (three.js lazy, com fallback estático), serviços da BD, catálogo de softwares com categoria/changelog/download real, **carrossel de destaques**, **blog** com modal de leitura, banner de avisos controlado nas Definições.
-- **Checkout B2B**: modal de pedido (empresa/responsável/licença) → número de pedido + IBAN copiável + WhatsApp pré-formatado; e-mail automático na aprovação/rejeição.
-- **Suporte**: formulário de chamados (NIF + WhatsApp + software) e FAQ/landing por papel com WhatsApp técnico.
-- **Parcerias**: formulário de candidatura Negomil (Individual/Profissional/Empresa).
-- Rodapé/contacto alimentados pelas Definições (publicação em ~20 s).
+Plataforma **todo-em-um** para a operação comercial da CFTEC (PalancaSoft · Negomil · AGT):
 
-### 3.2. Painel Admin (por nível)
+- **Sem gateway de pagamento** — transferência IBAN + Multicaixa Express «Faturas» + comprovativo anexado no browser. Referência curta `CF-XXXXXX` alinha extracto bancário ↔ painel num relance.
+- **Sem custo de API de mensagens** — notificações via Resend (e-mail), Web Push VAPID (grátis, sem Firebase), WhatsApp por deep-link `wa.me` com texto pré-preenchido.
+- **Sem dependências exóticas** — PDFs (proforma/fatura) gerados sem bibliotecas, uma lógica Node só.
+- **Todo o código está no TypeScript estrito** — builds verdes obrigatórios, **30 smoke checks** a cada passo.
+
+---
+
+## 2. Arranque rápido
+
+```bash
+npm install
+npm run dev        # http://localhost:3000 (site · /admin · /cliente)
+npm run build      # tsc -b + vite build → dist/
+npm run smoke      # 30 verificações de endpoints (BASE_URL configurável)
+```
+
+> **Nota dev:** o backend corre no middleware do `vite.config.ts` (Node + `.env` local). Editar
+> `.env` ou `vite.config.ts` reinicia o dev-server e revoga sessões (re-login).
+
+Contas por papel: credenciais ficam em `.env` / BD (`admin_users`) — **nunca commitadas**.
+
+---
+
+## 3. Arquitectura
+
+```mermaid
+graph TB
+    subgraph Browser
+        A["React 18 + Vite 6<br/>site / · painel /admin · portal /cliente"]
+        B["sw.js — PWA + Web Push VAPID"]
+    end
+    subgraph Servidor["server/api.ts (dev) · api/[...path].ts (Vercel)"]
+        C["Auth: bcrypt + JWT (jti revogável) + 2FA TOTP"]
+        D["Guardas por níveis + guardas por módulo (SysLic)"]
+        E["Throttle por IP+rota · Headers de segurança"]
+        F["PDF proforma/fatura (sequenciais, sem deps)"]
+        G["E-mail (Resend) · Push · fila alertas_fila"]
+        H["Audit log fire-and-forget"]
+    end
+    subgraph Supabase["Supabase"]
+        I[("Postgres — 20+ tabelas, RLS")]
+        J[("Storage — media 10 MB · software 50 MB")]
+    end
+    A -->|"/api/* cookie HttpOnly JWT 8h"| C
+    B -.push subscribe.-> C
+    C --> D --> E --> F & G & H
+    F & G & H --> I
+    I <--> J
+```
+
+- **O browser nunca fala com o Supabase directamente** — service-role só no servidor (RLS activo em todas as tabelas, sem políticas públicas).
+- Painéis novos **sem Tailwind**: `AdminDashboard.tsx` + `admin.css` partilham classes (light + dark completo).
+- Componentes shadcn em `components/ui`; modais globais com padrão comum (ESC, backdrop, footer sticky, bottom-sheet em telemóvel).
+- **Code-splitting**: entrada ~350 KB; three.js/gsap/animejs lazy com fallback estático; painel mitiga o pop-up de upgrade para chunk a pedido.
+
+---
+
+## 4. Site público (visitante B2B)
+
+| Área | Detalhes |
+|---|---|
+| **Hero + conteúdo** | Hero 3D (three.js lazy, fallback estático), serviços da BD, banner de avisos das Definições, rodapé/contactos em tempo real |
+| **Catálogo** | Softwares com categoria/changelog/download real; secção vazia honesta com CTA WhatsApp (sem conteúdo fictício) |
+| **Checkout B2B** | Modal de pedido → confirmação com **Referência `CF-XXXXXX`**, 1.º pagar (IBAN copiável com ref no descritivo, ou Multicaixa Express «Faturas»), 2.º **anexar comprovativo** inline (print/foto/PDF · máx. 2 MB, estados a-enviar/recebido/erro) + WhatsApp com a ref no texto |
+| **Suporte** | Formulário de chamados (NIF + WhatsApp + software), FAQ, WhatsApp técnico |
+| **Parcerias** | Candidatura Negomil (Individual/Profissional/Empresa) |
+| **SEO/PWA** | OG 1200×630 + Twitter Card, JSON-LD (Organization/WebSite/SoftwareApplication), robots + sitemap, PWA instalável |
+
+---
+
+## 5. Painel admin — 17 secções · 4 níveis
+
 | Secção | super_admin | gestor | tecnico | developer |
-|---|---|---|---|---|
-| Visão geral (KPIs, timeline, health) | ✓ | ✓ (comercial) | ✓ (suporte) | ✓ (tudo) |
-| Serviços / Mídias / Softwares / Blog / Destaques | ✓ | ✓ | ✓ (sempre uploads e softwares **não** — 403 ao gestor) | ✓ |
-| Pedidos de licença (kanban 5, proforma/fatura) | ✓ | ✓ | — | ✓ |
-| Licenças PalancaSoft (chaves) | ✓ | ✓ | **read-only** | ✓ |
-| Revenda Negomil (ficha, licenças ligadas ao parceiro) | ✓ | ✓ | — | ✓ |
-| Contactos / Partners | ✓ | ✓ | ✓ | ✓ |
-| Chamados / Wiki | ✓ | — | ✓ | ✓ |
-| Relatórios & Metas | ✓ | ✓ | — | ✓ |
-| Definições (portal) / Utilizadores | ✓ | — | — | ✓ |
-| **Registo de actividades (audit)** | ✓ | — | — | ✓ |
-| **Painel do Developer** (licença/módulos/backups) | — | — | — | ✓ |
+|---|:---:|:---:|:---:|:---:|
+| Visão geral (KPIs animados, timeline, health) | ✓ | ✓ comercial | ✓ suporte | ✓ tudo |
+| Serviços · Mídias · Softwares · Blog · Destaques | ✓ | ✓ (uploads não) | ✓ (softwares não) | ✓ |
+| Pedidos de licença (kanban 5 colunas, PF/FT PDFs) | ✓ | ✓ | — | ✓ |
+| Licenças PalancaSoft (chaves anti-colisão) | ✓ | ✓ | read-only | ✓ |
+| Revenda Negomil (ficha completa, licenças ligadas ao parceiro) | ✓ | ✓ | — | ✓ |
+| Contactos · Parceiros (funil, acções em massa) | ✓ | ✓ | ✓ | ✓ |
+| Chamados / Wiki Técnica | ✓ | — | ✓ | ✓ |
+| Relatórios & Metas (MRR/ARR, churn, CSV) | ✓ | ✓ | — | ✓ |
+| Definições · Utilizadores · 2FA · Sessões | ✓ | — | — | ✓ |
+| Registo de actividades (audit) | ✓ | — | — | ✓ |
+| **Painel do Developer** (licença/módulos/backups/alertas) | — | — | — | ✓ |
 
-### 3.3. Plataforma (governança)
-- **Licença activa + 3 módulos** em switches: efeitos em ≤20 s em todos os painéis e formulários públicos.
-- **Audit log**: ~24 códigos de acção (criar/actualizar/apagar/licença/atribuição/login), 300 registos visíveis, pesquisa instantânea.
-- **Backups .json** (14 tabelas, sem hashes) — download directo, registo auditado, restauro por bulk insert no SQL Editor.
+**Produtividade**: pesquisa global `⌘K` (8 tabelas, gating por nível) · multi-select com acções em massa em contactos e pedidos (estado/eliminar, máx. 60 IDs, auditado) · tour guiado do sistema · ícones SVG animados próprios (`animIcons.tsx`, 23 icones stroke) · dark mode completo · `prefers-reduced-motion` respeitado.
 
 ---
 
-## 4. Arquitectura técnica
+## 6. Portal do cliente — auto-serviço
+
+<div>
+<details open>
+<summary><b>Parte 2 → 7.7 — tudo o que a empresa cliente faz sem falar com a equipa</b></summary>
+
+- **Registo + aprovação**: criação de conta B2B (NIF único) pendente até aprovação do admin.
+- **Pedidos**: histórico com **proforma PDF e fatura FT** descarregáveis; pagamento via comprovativo anexado (base64) e referência `CF-XXXXXX`.
+- **Renovação 1-clique**: preço automático do catálogo → pedido no funil + proforma.
+- **Utilizadores extra**: pedido sob consulta (orçado pelo comercial).
+- **Downloads rastreados** por empresa (alimentam engajamento).
+- **Ajuda**: FAQ = wiki técnica pública («isto ajudou?» + chamado pré-preenchido com contexto).
+- **Conversa ao vivo** nos chamados (polling 4 s dos dois lados) + **CSAT** (avaliação «isto ajudou») ao fechar.
+- **Mudança de password** própria.
+
+</details>
+</div>
+
+---
+
+## 7. Comercial & pagamento (custo zero)
+
+**Fluxo do dinheiro sem gateway** (Multicaixa Express tem vocação para Faturas · IBAN para transferências):
+
+```mermaid
+graph LR
+    A["Checkout site<br/>ref CF-XXXXXX"] --> B["Pendente"]
+    B -->|comprovativo anexado| C["Em Verificação<br/>status sobe automático"]
+    B --> D["Rejeitado / Aprovado"]
+    C --> E["Pago · FT emitida"]
+    D --> E
+    E --> F["Ativação/extensão<br/>da licença"]
+```
+
+- `refPedido`/`refPed` — ref curta `CF-` + 6 hex entra no e-mail do admin, alerta, push, proforma (`PF-AAAA-####`), fatura (`FT-AAAA-####`), comprovativo e mensagens WhatsApp.
+- Comprovativo aceito **no checkout** e **no portal** (mesmas colunas, zero Storage buckets); na liquidação o comercial vê «Comprovativo do checkout» e o modal guarda-o no recibo.
+- **Máquina de Renovações em lote**: janelas 7/30/60 dias (vencidas incluídas), dedupe por renovação em curso, cria pedidos reais no funil, e-mail de aviso ao cliente + alerta ao comercial.
+- **Follow-up proactivo via WhatsApp**: deep-links `wa.me` no modal do lote e no funil — texto pronta conforme o estado (em curso: «a proforma CF-xxxx está à sua espera…»; sem pedido: aviso de vencimento) — humano clica, sem API paga.
+- **Pesquisa de gateways futuros** (se um dia o volume justificar): AppyPay (sandbox), ProxyPay via banco, DPO (sem setup fee) — todos documentados, nenhum onboard Angola hoje de graça.
+- **Relatórios**: KPIs comerciais, metas mensais editáveis com barra, funil kanban com pipeline ARR estimado, exportações **CSV** (SLA, analytics, monitorização).
+
+---
+
+## 8. Segurança
+
+| Camada | Mecanismo |
+|---|---|
+| Sessões | JWT HS256 8h em cookie `HttpOnly/SameSite=Lax` · **jti revogável** (logout, password mudada, utilizador desactivado mata sessões) · interceptor 401 client-side |
+| Passwords | bcrypt (10-12) · política mínima 8 chars · 2FA TOTP opcional por utilizador |
+| Acesso | Guardas por nível **antes** dos handlers (super/gestor/tecnico/developer) + guardas por módulo server-side (SysLic: comercial/técnico/novidades/faturação/relatórios) |
+| Rate limiting | Throttle por **IP+rota** nos 5 formulários públicos + login (ex. contactos 4/10 min → **429** com mensagem PT); estado em `login_rate` sobrevive a cold-start |
+| Headers | `X-Frame-Options: DENY` · `X-Content-Type-Options: nosniff` · CSP `frame-ancestors 'none'` · `Referrer-Policy` · `Permissions-Policy` · HSTS em prod |
+| Static CSP | `vercel.json`: `script-src` com hash SHA-256 do JSON-LD (sem `unsafe-inline`), `object-src 'none'`, fonts permitidas |
+| Dados | Service-role só no servidor · RLS sem políticas em tabelas sensíveis · backup nunca exporta `password_hash` |
+| Auditoria | `audit_log` para ~30 códigos de mutação incl. logins falhados; leitura restrita a super+developer |
+| Sigilo | `.env` gitignored · chaves VAPID/Resend/Supabase fora do repo |
+
+---
+
+## 9. Notificações
+
+| Canal | Como |
+|---|---|
+| **E-mail** | Resend, shells HTML tabelados o da marca; destino do admin editável nas Definições; falha de e-mail **nunca bloqueia** a resposta principal |
+| **Web Push** | VAPID grátis (sem Firebase) — service worker + banner de activação; pedido→comercial, chamado→técnico; assinaturas por utilizador |
+| **WhatsApp** | Deep-links `wa.me` com texto pronto (checkout, funil, renovações); CallMeBot/Telegram disponíveis nas Definições |
+| **Central de alertas** | Fila `alertas_fila` com estado de entrega (enviado/falhou/saltou + motivo), KPIs 30d, testes por canal (developer) |
+
+---
+
+## 10. Backups & governança
+
+- **Manual**: `GET /api/admin/backup` (developer only) — todas as tabelas num `.json` sem hashes, download directo, tudo auditado.
+- **Automático**: rotina diária grava cópia no bucket privado (rotação automática das cópias antigas) — lista clicável no painel com data/tamanho/acção.
+- **Restauração assistida 2.0**: pré-visualização de diferenças (cópia vs base por tabela) + dois modos — **«só faltam»** (nunca apaga) e **«substituir»** com confirmação `SUBSTITUIR` obrigatória.
+- **Licenciamento da plataforma**: developer Master administra licença activa/suspensa + 5 módulos; suspensão fecha o painel (excepto developer) e os formulários públicos com mensagem editável; chaves de bypass para emergências.
+- **Ficha Cliente 360**: junta 6 fontes (portal, licenças, pedidos, recibos, chamados, downloads) num modal.
+- **Log de erros**: capturas client+server com página/detalhe, cartão de resolução no painel.
+
+---
+
+## 11. Dados — migrations & tabelas
+
+Migrations idempotentes na raiz (executadas pelo dono no SQL Editor):
+
+<details>
+<summary><b>Lista completa das migrations</b></summary>
 
 ```
-Navegador (React 18 + Vite 6)
-  ├─ main.tsx ─ frontend do / admin? → <AdminDashboard/> (lazy chunk 264 KB)
-  │            └ caso contrário     → <App/> (lazy 56 KB)
-  ├─ sw.js  (PWA cache-só-produção; Web Push VAPID)
-  └─ fetch() → /api/*  (cookie HttpOnly JWT 8h)
-        │
-back-end no middleware do vite.config.ts (Node, dentro do dev-server)
-  ├─ auth: bcrypt + JWT(jti, sessões revogáveis em memória)
-  ├─ guardas por nível + guardas por módulo (licenciamento)
-  ├─ PDF (Proforma PF / Fatura FT, sequenciais com contadores)
-  ├─ e-mail Resend (fire-and-forget) · Web Push VAPID (fire-and-forget)
-  ├─ audit log fire-and-forget
-  └─ Supabase REST (**service role** — nunca no browser)
-        │
-Supabase (Postgres + Storage: media 10 MB · software 50 MB público)
+supabase-schema.sql / supabase-migration.sql        (base histórica)
+supabase-admin-ext.sql        (parceiros, licenças, downloads, settings)
+supabase-admin-users.sql      (4 níveis de administração)
+supabase-login-security.sql   (throttle login_rate, 2FA)
+supabase-pedidos-licencas.sql (checkout B2B + comprovativos)
+supabase-status-pago.sql      (FT / estado Pago)
+supabase-portal-cliente.sql   (clientes_portal)
+supabase-auto-servico.sql     (Parte 7.1 renovação/utilizadores)
+supabase-faq.sql              (Parte 7.2 wiki pública)
+supabase-chamados-suporte.sql (+v2) e supabase-chamados-sla.sql
+supabase-blog-posts.sql       supabase-novidades-destaques.sql
+supabase-parceiro-licencas.sql (revenda ligada ao parceiro)
+supabase-push-subscriptions.sql (VAPID)
+supabase-log-erros.sql        supabase-audit-log.sql
+supabase-alertas.sql          (fila alertas_fila)
+supabase-system-license.sql   (licenciamento SysLic)
 ```
 
-- **RLS activo em todas as tabelas**; o browser nunca fala directamente com o Supabase (a anon key está apenas no `.env` do servidor).
-- Novas secções do painel **sem Tailwind**: `AdminDashboard.tsx` + `admin.css` (partilham classes) — coerente com tudo o resto.
-- Componentes shadcn em `components/ui`; modais globais com padrão comum (ESC, backdrop, footer de acções).
+</details>
+
+Tabelas activas: `services · media · softwares · contacts · settings · parceiros_candidaturas · licencas_palancasoft · download_events · admin_users · pedidos_licencas · clientes_portal · chamados_suporte (+ mensagens) · wiki_tecnica · blog_posts · novidades_destaques · audit_log · log_erros · alertas_fila · push_subscriptions · login_rate · …`
 
 ---
 
-## 5. Segurança — ponto da situação
-- ✅ JWT HS256 (8h) em cookie HttpOnly/SameSite=Lax; **jti revogável** (logout, mudança de password, eliminação de utilizador mata as sessões).
-- ✅ bcrypt (10-12) para todas as contas; o backup nunca exporta o `password_hash` (filtrado no middleware).
-- ✅ 4 níveis com guardas **antes** dos handlers (bug do técnico ler licenças corrigido); gestor sem uploads; chaves de licenciamento só developer.
-- ✅ Service-role apenas no middleware; RLS sem políticas no `audit_log`.
-- ✅ Auditoria de tudo o que escreve, incluindo logins falhados.
-- ⚠️ Não incluído nesta fase (vai com a produção): **rate limiting no login** e cookies `Secure` em HTTPS.
+## 12. Qualidade
+
+- **Builds verdes em cada commit** — `npx tsc -b` obrigatório antes de `npm run build`.
+- **`npm run smoke` — 30 verificações**: páginas de entrada a responder; privados a devolver 401/403 sem sessão (pedidos, analytics, cliente360, renovações, backups, portal…); validações 400 nos públicos de escrita; PDFs do portal sem sessão fechados. Corre contra dev (`http://localhost:3000`) ou prod (`BASE_URL=…`).
+- **Provas no browser por feature** (login/ciclos de sessão, drag-and-drop do kanban, modais à mão, uploads com progresso, push/PWA, dark/light), dados de teste **sempre criados→eliminados** no fim (BD real intocada na carteira).
+- **Modularização do painel** (Fases 1–7): modais e secções extraídas para `src/admin/` (`types.ts` partilhado) com JSX byte-a-byte e props tipados — regressão visual validada em cada fase.
 
 ---
 
-## 6. Dados — migrations SQL (raiz, idempotentes, corridas pelo dono no SQL Editor)
-`supabase-admin-ext.sql` (parceiros/licenças/downloads/settings) · `supabase-admin-users.sql` (4 níveis) · `supabase-chamados-suporte.sql` (+v2) · `supabase-blog-posts.sql` · `supabase-novidades-destaques.sql` · `supabase-pedidos-licencas.sql` (checkout) · `supabase-push-subscriptions.sql` (VAPID) · `supabase-wiki-tecnica.sql` · `supabase-status-pago.sql` (FT) · `supabase-system-license.sql` (licenciamento) · `supabase-audit-log.sql` (auditoria) · `supabase-parceiro-licencas.sql` (revenda com licenças) · base: `supabase-schema.sql`/`supabase-migration.sql` · `db/schema.sql` (histórica).
+## 13. Deploy na Vercel
 
-Tabelas activas: `services, media, softwares, contacts, settings, parceiros_candidaturas, licencas_palancasoft (+parceiro_id), download_events, admin_users, pedidos_licencas, chamados_suporte, push_subscriptions, wiki_tecnica, blog_posts, novidades_destaques, audit_log`.
-
----
-
-## 7. Qualidade — o que foi validado (playbook E2E)
-- **Builds verdes em cada commit** (`npm run build`, TypeScript estrito).
-- **Navegador de verdade** em todas as features: login/ciclos de sessão, drag-and-drop do kanban, fichas/modais à mão, search/actualizar, upload com progresso, push/PWA, backup até ao toast.
-- **Dados reais protegidos**: todas as provas com prefixo `e2e.*` e apagadas no fim (pedidos/chamados/parceiros/licenças/wiki/audit); a carteira real foi vigiada — `Nexora Systems` 2× Aprovado jamais tocada.
-- **Provas de segurança** repetidas por fase: 401/403 por nível, 403 do super em backups/definições/chaves de developer, e nenhum `password_hash` no export.
+| Item | Detalhe |
+|---|---|
+| Rotas API | `{"src": "/api/(.*)", "dest": "/api/[...path].ts"}` **obrigatória** — sem ela os pedidos caem no rewrite SPA (server a pendurar até timeout → corrigido com fallback `next()` em `server/api.ts`) |
+| Estáticos | CSP/HSTS/etc via `vercel.json` · OG images 1200×630 · robots/sitemap |
+| Protecção | Previews de git têm Deployment Protection (SSO) — erros CORS no F12 de um *preview* são esperados; o domínio de produção não tem |
+| Checklist | Ver [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) · variáveis obrigatórias vs opcionais, buckets, domínio, verificação Resend, smoke pós-deploy |
 
 ---
 
-## 8. Estado do repo
-- 38 commits (`950c9bb` → `840f5e6`) publicados em `master`; worktree limpo; `.env` no `.gitignore`.
-- Docs: `RELATORIO-REACT-ADMIN.md` (relatório técnico por fases, §10–§24), este `RELATORIO-FINAL.md`, `TODO.md`.
-- Assets opcionais fora do repo: `server.log`, `cookies.txt` (lixo local).
+## 14. Documentação & roadmap
+
+**Outros documentos** (na raiz): [`RELATORIO-REACT-ADMIN.md`](RELATORIO-REACT-ADMIN.md) (relatório técnico por fases) · [`RELATORIO-PORTAL.md`](RELATORIO-PORTAL.md) (portal de cliente) · [`DEPLOY-CHECKLIST.md`](DEPLOY-CHECKLIST.md) · [`docs/DEPLOY-PRODUCAO.md`](docs/DEPLOY-PRODUCAO.md) · [`docs/ANALISE-SISTEMA.md`](docs/ANALISE-SISTEMA.md) · [`TODO.md`](TODO.md).
+
+**Roadmap pendente** (ordem de prioridade operacional):
+
+1. **Produção hardening** — servidor Node próprio fora do dev-server; HTTPS + cookies `Secure`.
+2. **Resend** — verificar domínio (e-mails deixam de ir via sandbox).
+3. **CI + Playwright** — smoke avançado E2E em cada PR.
+4. **Migrations versionadas** — números sequenciais + registo de estado na BD.
+5. **Envelope `ApiResponse<T>`** — contrato tipado explícito para o cliente.
+6. **Recibos PDF automáticos para renovações** (a infra de PDF está pronta).
+7. **Drill de restauro de backup** — teste periódico do modo «substituir».
+8. **Cloudflare à frente do domínio** (decisão de infra pendente).
+
+**Gap conhecido:** o `Esc` não fecha a conversa de um chamado (modal aninhado) — detalhe de UX agendado.
 
 ---
+<div align="center">
 
-## 9. Manual de operação resumido
-- **Dev:** `npm run dev` (porto 3000); reiniciar ao editar `vite.config.ts`/`.env` (sessões revogam — re-login).
-- **Build:** `npm run build` → `dist/`.
-- **Produção (pendência):** extrair o middleware para um serviço Node próprio + HTTPS (cookies `Secure`, rate-limit) + domínio verificado na Resend.
-- **Rotina semanal do developer (Nexora):**
-  1. Painel do Developer → **Cópias de segurança** → Exportar (guardar `cftec-backup-*.json` em disco externo/nuvem privado — ~8 s).
-  2. Registo de actividades → conferir acções (todos os transições de estado, logins, atribuições).
-- **Módulo suspenso pelo dono:** licença off → painel fecha (excepto developer) e formulários públicos fecham, com mensagem editável.
+_110+ commits · `master` ↔ `main` sincronizados · CFTEC + Nexora Systems · Angola 🇦🇴_
 
----
-
-## 10. Contas reais em produção de testes
-| Papel | E-mail | Nota |
-|---|---|---|
-| Super Admin | `admin@cftec.co` | credenciais em `.env` (`CFTEC_ADMIN_*`) |
-| Técnico | `isidorotelsio@gmail.com` | conta real do técnico |
-| Gestor Comercial | `helder@gmail.com` | conta real |
-| **Developer (Nexora)** | `telsioisidoro786@gmail.com` | Master Admin — licenças/módulos/backups |
-
----
-
-## 11. Pendências (roadmap final)
-1. **Produção** — servidor Node próprio (o middleware sai do dev-server), HTTPS + cookies Secure + rate-limit no login.
-2. **Resend** — verificar domínio na resend.com (e-mails a clientes reais falam de texto sandbox hoje).
-3. **Web Push** — configurar VAPID nas Definições e operar o push no telemóvel (feature pronta e auditada).
-4. **Conteúdo** — substituir produtos fictícios (CFTEC Flow/Insight/Desk) pelo portfólio real (PalancaSoft/Negomil/AGT à medida do portal estático).
-5. Comissão % por parceiro (campo fica pronto a uma coluna) — sugerido mas não seleccionado nesta fase.
-
-### Nota de deploy (Vercel)
-- `vercel.json` (builds + routes): a rota `{"src": "/api/(.*)", "dest": "/api/[...path].ts"}` é **obrigatória** — a conversão build→Build Output API não regista funções *catch-all* sozinha; sem esta entrada os pedidos `/api/*` caem no rewrite SPA (HTML/405).
-- O servidor responde a **todos** os pedidos `/api/*` (fallback `return next()` interior): sem isso a function pendura até ao timeout de 300s. Corrigido em `server/api.ts`.
-- Previews de git têm **Deployment Protection (SSO)** — erros CORS no F12 de um preview são esperados; o domínio de produção `cftec.vercel.app` não tem protection.
-
-_Fim do relatório · gerado em 21 Out 2026 · CFTEC + Nexora Systems._
+</div>
