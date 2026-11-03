@@ -1792,5 +1792,15 @@ html[data-theme='dark'] .lote-todos{color:#aebdcd}
 html[data-theme='dark'] .lote-bar{border-color:#263454;background:#16223a}
 html[data-theme='dark'] .lote-bar strong{color:#cdd9ea}
 html[data-theme='dark'] .lote-bar select{background:#0d1730;border-color:#263454;color:#eef4fb}
+
+/* Ecrã de login — selo de segurança Nexora Systems: escudo que respira + nome com brilho lento */
+.admin-auth-shield{animation:admin-shield 3.4s ease-in-out infinite;transform-origin:center}
+@keyframes admin-shield{0%,100%{transform:scale(1)}10%{transform:scale(1.14) rotate(-4deg)}22%{transform:scale(1.07) rotate(3deg)}32%{transform:scale(1)}}
+.admin-auth-brand{font-weight:800;letter-spacing:.02em;background:linear-gradient(90deg,#0f172a,#0284c7,#00e5ff,#0284c7,#0f172a);background-size:220% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;color:#0f172a;animation:admin-brand-shimmer 4.6s linear infinite}
+@keyframes admin-brand-shimmer{to{background-position:220% center}}
+/* dark (se o tema apanhar o ecrã antes do login): brilho ciano sobre texto claro */
+html[data-theme='dark'] .admin-auth-brand{background:linear-gradient(90deg,#e6edf7,#67e8f9,#00e5ff,#67e8f9,#e6edf7);background-size:220% auto;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+html[data-theme='dark'] .admin-auth-shield{color:#bef264}
+@media (prefers-reduced-motion:reduce){.admin-auth-shield,.admin-auth-brand{animation:none}}
 html[data-theme='dark'] .lote-bar .lote-nota{color:#8ba0b9}
 html[data-theme='dark'] .lote-th input,html[data-theme='dark'] .lote-check{accent-color:#22d3ee}
