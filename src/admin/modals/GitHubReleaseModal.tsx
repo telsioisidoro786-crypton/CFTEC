@@ -13,9 +13,9 @@ const MB = 1024 * 1024
 const fmt = (b: number) => (b >= MB ? `${(b / MB).toFixed(1)} MB` : `${(b / 1024).toFixed(0)} KB`)
 type RespostaUpload = { ok: boolean; corpo: { asset?: { url: string; sha256: string; bytes: number }; error?: string } }
 
-type Props = { isOpen: boolean; onClose: () => void; onAviso: (msg: string) => void }
+type Props = { isOpen: boolean; onClose: () => void; onAviso: (msg: string) => void; onAsset?: (a: { url: string; sha256: string; bytes: number }) => void }
 
-export function GitHubReleaseModal({ isOpen, onClose, onAviso }: Props) {
+export function GitHubReleaseModal({ isOpen, onClose, onAviso, onAsset }: Props) {
   const [releases, setReleases] = useState<GhRelease[]>([])
   const [carregando, setCarregando] = useState(false)
   const [erro, setErro] = useState('')
@@ -206,11 +206,14 @@ export function GitHubReleaseModal({ isOpen, onClose, onAviso }: Props) {
                 <strong><Check size={12} className="inline" /> Publicado:</strong>
                 <div style={{ marginTop: 4 }}>{resultado.url}</div>
                 <div style={{ marginTop: 6, color: '#94a3b8' }}>SHA-256: <code>{resultado.sha256}</code> ({fmt(resultado.bytes)})</div>
-                <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                <div style={{ marginTop: 8, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <Button size="sm" variant="outline" onClick={() => void copiar('url', resultado.url)}><Copy size={12} /> {copiado === 'url' ? 'copiado!' : 'Copiar URL do asset'}</Button>
                   <Button size="sm" variant="outline" onClick={() => void copiar('sha', resultado.sha256)}>{copiado === 'sha' ? 'copiado!' : 'Copiar SHA-256'}</Button>
+                  {onAsset && (
+                    <Button size="sm" onClick={() => { onAsset({ url: resultado.url, sha256: resultado.sha256, bytes: resultado.bytes }) }}><Check size={12} /> Usar numa ficha nova</Button>
+                  )}
                 </div>
-                <p style={{ margin: '8px 0 0', color: '#94a3b8' }}>Cole o URL no campo «URL externo» da ficha do software.</p>
+                <p style={{ margin: '8px 0 0', color: '#94a3b8' }}>«Usar numa ficha nova» abre a ficha do software com este URL já colado — vem só preencher nome/versão/preço/descrição.</p>
               </div>
             )}
             <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
