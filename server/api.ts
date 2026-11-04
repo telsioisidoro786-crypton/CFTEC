@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
 import { createHmac, createHash as sha256Hash, randomBytes as cryptoRandomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { Transform, Readable } from 'node:stream'
 import dotenv from 'dotenv'
 import webpush from 'web-push'
 
@@ -1304,6 +1305,21 @@ async function s3Delete(objectPath: string): Promise<boolean> {
     const r = await fetch(s3Presign('DELETE', objectPath, 600), { method: 'DELETE' })
     return r.ok || r.status === 404
   } catch { return false }
+}
+
+// ─── GITHUB RELEASES — armazém de instaladores (automático) ─────
+// O Developer/Técnico publica .zip/.exe (até 2 GB) directamente da área
+// admin para uma Release da repo cftec-instaladores. O token mora no .env
+// (GITHUB_UPLOAD_TOKEN) — NUNCA commitado.
+const GH_API = 'https://api.github.com'
+const GH_UPLOADS = 'https://uploads.github.com'
+const GH_TOKEN = (process.env.GITHUB_UPLOAD_TOKEN || '').trim()
+const GH_REPO_NOME = (process.env.GITHUB_INSTALLERS_REPO || 'telsioisidoro786-crypton/cftec-instaladores').trim()
+function ghHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { Authorization: `Bearer ${GH_TOKEN}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', ...(extra || {}) }
+}
+function ghActivo(): boolean {
+  return !!GH_TOKEN
 }
 
 
@@ -5001,6 +5017,129 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const nivelCat = currentAdmin(req)?.level
               if (path.startsWith('/api/admin/software') && req.method !== 'GET' && nivelCat === 'gestor')
                 return json(res, 403, { ok: false, error: 'O catálogo e uploads de instaladores são geridos pelo Técnico de Suporte.' })
+            }
+
+            // ============================================================
+            // GITHUB RELEASES — publicação de instaladores da área admin
+            // (desativa-se a rota toda sem GITHUB_UPLOAD_TOKEN no .env)
+            // ============================================================
+            if (path.startsWith('/api/admin/github/') && req.method !== 'OPTIONS') {
+              const vezGh = currentAdmin(req)
+              if (!vezGh) return json(res, 401, { ok: false, error: 'Sessão de administrador inválida ou expirada.' })
+              if (!ghActivo()) return json(res, 501, { ok: false, error: 'Publicação no GitHub desligada — falta GITHUB_UPLOAD_TOKEN no .env.' })
+              if (vezGh.level === 'gestor') return json(res, 403, { ok: false, error: 'A publicação de instaladores é do Técnico/Developer.' })
+
+              const ghErro = async (r: Response) => {
+                let detalhe = ''
+                try { const j = await r.json() as Record<string, unknown>; detalhe = typeof j.message === 'string' ? j.message : '' } catch { detalhe = await r.text().catch(() => '') }
+                return json(res, r.status === 401 ? 500 : r.status, { ok: false, error: `GitHub: ${detalhe || r.status}` })
+              }
+
+              // Listar releases (drafts incluídos) com assets
+              if (path === '/api/admin/github/releases' && req.method === 'GET') {
+                const r = await fetch(`${GH_API}/repos/${GH_REPO_NOME}/releases?per_page=30`, { headers: ghHeaders() })
+                if (!r.ok) return ghErro(r)
+                const rels = await r.json() as Record<string, unknown>[]
+                return json(res, 200, {
+                  ok: true,
+                  repo: GH_REPO_NOME,
+                  releases: rels.map(rel => ({
+                    id: rel.id,
+                    tag: rel.tag_name,
+                    titulo: rel.name,
+                    descricao: rel.body,
+                    draft: rel.draft,
+                    publicado: rel.published_at,
+                    assets: ((rel.assets || []) as Record<string, unknown>[]).map(a => ({
+                      id: a.id, nome: a.name, bytes: a.size,
+                      url: a.browser_download_url, estado: a.state,
+                    })),
+                  })),
+                })
+              }
+
+              // Criar release (tag nova; publicada já de imediato — editável pelo UI do GitHub)
+              if (path === '/api/admin/github/releases' && req.method === 'POST') {
+                const b = await readBody(req) as { tag?: string; titulo?: string; descricao?: string; draft?: boolean }
+                const tag = String(b.tag || '').trim()
+                if (!/^[A-Za-z0-9][A-Za-z0-9._\-/]{0,60}$/.test(tag))
+                  return json(res, 400, { ok: false, error: 'Tag inválida — use letras, números, ponto, hífen ou underscore (ex.: filee-v2.2.1).' })
+                const r = await fetch(`${GH_API}/repos/${GH_REPO_NOME}/releases`, {
+                  method: 'POST', headers: ghHeaders(), body: JSON.stringify({
+                    tag_name: tag,
+                    target_commitish: 'main',
+                    name: String(b.titulo || tag).trim(),
+                    body: String(b.descricao || '').trim(),
+                    draft: !!b.draft,
+                    prerelease: false,
+                  }),
+                })
+                if (!r.ok) return ghErro(r)
+                const rel = await r.json() as Record<string, unknown>
+                logAuditoria(vezGh, 'github_release_criada', 'software', null, { tag, draft: !!b.draft })
+                return json(res, 201, { ok: true, release: { id: rel.id, tag: rel.tag_name, titulo: rel.name, draft: rel.draft, url: rel.html_url } })
+              }
+
+              // Enviar asset: o browser emite o ficheiro ao servidor, que re-streama
+              // para o GitHub (sem guardar em disco) e devolve URL + SHA-256
+              let mGh = path.match(/^\/api\/admin\/github\/releases\/(\d+)\/asset$/)
+              if (mGh && req.method === 'POST') {
+                const idRel = mGh[1]
+                const u = new URL(req.url || '/', 'http://x')
+                const nome = String(u.searchParams.get('name') || '').trim().replace(/\s+/g, '-')
+                if (!nome || !/^[A-Za-z0-9._\-()]{1,120}$/.test(nome))
+                  return json(res, 400, { ok: false, error: 'Nome de ficheiro inválido (letras, números, ponto, hífen).' })
+                const tamanhoMax = 2 * 1024 * 1024 * 1024
+                const hasher = sha256Hash('sha256')
+                let total = 0
+                const contador = new Transform({
+                  transform(ch: Buffer, _e, cb) {
+                    total += ch.length
+                    if (total > tamanhoMax) { cb(new Error('excede 2 GB')); return }
+                    hasher.update(ch)
+                    cb(null, ch)
+                  },
+                })
+                let rGh: Response
+                try {
+                  const cabec = ghHeaders({ 'Content-Type': 'application/octet-stream' })
+                  const cl = req.headers['content-length']
+                  if (cl) cabec['Content-Length'] = String(cl)
+                  rGh = await fetch(`${GH_UPLOADS}/repos/${GH_REPO_NOME}/releases/${idRel}/assets?name=${encodeURIComponent(nome)}`, {
+                    method: 'POST',
+                    headers: cabec,
+                    body: Readable.toWeb(req.pipe(contador)) as unknown as ReadableStream,
+                    duplex: 'half',
+                  } as RequestInit & { duplex: 'half' })
+                } catch (e) {
+                  return json(res, 502, { ok: false, error: 'Falha ao reenviar o ficheiro ao GitHub: ' + (e instanceof Error ? e.message : String(e)) })
+                }
+                if (!rGh.ok) return ghErro(rGh)
+                const asset = await rGh.json() as Record<string, unknown>
+                const sha = hasher.digest('hex')
+                logAuditoria(vezGh, 'github_asset_enviado', 'software', null, { asset: nome, mb: Math.round(total / 1048576 * 10) / 10, sha256: sha })
+                return json(res, 201, { ok: true, asset: { id: asset.id, nome: asset.name, bytes: total, url: asset.browser_download_url, sha256: sha, estado: asset.state } })
+              }
+
+              // Apagar asset (ficheiro mal carregado, versão desactualizada…)
+              mGh = path.match(/^\/api\/admin\/github\/assets\/(\d+)$/)
+              if (mGh && req.method === 'DELETE') {
+                const r = await fetch(`${GH_API}/repos/${GH_REPO_NOME}/releases/assets/${mGh[1]}`, { method: 'DELETE', headers: ghHeaders() })
+                if (!r.ok && r.status !== 204) return ghErro(r)
+                logAuditoria(vezGh, 'github_asset_apagado', 'software', null, { id: mGh[1] })
+                return json(res, 200, { ok: true })
+              }
+
+              // Apagar release (útil para drafts de teste)
+              mGh = path.match(/^\/api\/admin\/github\/releases\/(\d+)$/)
+              if (mGh && req.method === 'DELETE') {
+                const r = await fetch(`${GH_API}/repos/${GH_REPO_NOME}/releases/${mGh[1]}`, { method: 'DELETE', headers: ghHeaders() })
+                if (!r.ok && r.status !== 204) return ghErro(r)
+                logAuditoria(vezGh, 'github_release_apagada', 'software', null, { id: mGh[1] })
+                return json(res, 200, { ok: true })
+              }
+
+              return json(res, 404, { ok: false, error: 'Rota GitHub não encontrada.' })
             }
 
             if (path === '/api/admin/software/upload-url' && req.method === 'POST') {

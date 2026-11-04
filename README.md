@@ -245,6 +245,15 @@ Fluxo: Release nova com os instaladores → copiar o URL do asset → criar a fi
 software no painel com esse URL (`file_url` externo — o servidor aceita
 `file_url` https no POST/JSON, audit `modo:externo`); o contador de downloads
 e a rota do portal funcionam na mesma, pois devolvem o `file_url` como está.
+
+**Publicação AUTOMÁTICA pelo painel** (Softwares & downloads → botão «GitHub Releases»,
+visível ao Developer/Técnico): modal 3 critérios — ① criar Release (tag/título/descrição),
+② arrastar o ficheiro (o servidor re-streama para `uploads.github.com` — sem guardar
+em disco — e devolve **URL do asset + SHA-256**, ③ gestionar Releases/assets existentes
+(listar, copiar link, apagar asset ou Release). Rotas `/api/admin/github/*`; sem
+`GITHUB_UPLOAD_TOKEN` no `.env` todo o liga fica desligado (501). Audit:
+`github_release_criada` / `github_asset_enviado` (sha256) / `github_asset_apagado` /
+`github_release_apagada`.
 - **Ficha Cliente 360**: junta 6 fontes (portal, licenças, pedidos, recibos, chamados, downloads) num modal.
 - **Log de erros**: capturas client+server com página/detalhe, cartão de resolução no painel.
 

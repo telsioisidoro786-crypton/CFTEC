@@ -97,6 +97,11 @@ async function principal() {
   // Storage — URL de upload assinado (instaladores) também é mutação: só com sessão
   const upUrl = await pedir('/api/admin/software/upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: 'x.exe', size: 10 }) })
   verificar('POST /api/admin/software/upload-url (sem sessão) → 401', upUrl.status === 401 || upUrl.status === 403, `res=${upUrl.status}`)
+  // GitHub Releases — publicação de instaladores: mutações todas exigem sessão
+  const ghRel = await pedir('/api/admin/github/releases', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag: 'x' }) })
+  verificar('POST /api/admin/github/releases (sem sessão) → 401', ghRel.status === 401 || ghRel.status === 403, `res=${ghRel.status}`)
+  const ghAsset = await pedir('/api/admin/github/releases/1/asset?name=x.bin', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' } })
+  verificar('POST /api/admin/github/releases/:id/asset (sem sessão) → 401', ghAsset.status === 401 || ghAsset.status === 403, `res=${ghAsset.status}`)
 
   // 5b. Parte 8.3 — Backups 2.0: mutações e restauro só com sessão developer
   const bg = await pedir('/api/admin/backup/gerar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
