@@ -206,6 +206,13 @@ function getServiceIcon(iconName: string) {
   return Icon
 }
 
+// Data n anos no futuro, formato YYYY-MM-DD (chips de validade rápida da licença)
+function dataFutura(anos: number) {
+  const d = new Date()
+  d.setFullYear(d.getFullYear() + anos)
+  return d.toISOString().slice(0, 10)
+}
+
 function AdminMark() {
   return <a href="/" className="admin-brand"><span className="admin-brand-mark"><span /><span /><span /></span><span><strong>CFTEC</strong><small>Painel Admin</small></span></a>
 }
@@ -3638,6 +3645,35 @@ export default function AdminDashboard() {
 
     {deletingUserId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingUserId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar utilizador</h2></div><button onClick={() => setDeletingUserId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este utilizador? Ele deixará de conseguir entrar no painel. Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingUserId(null)}>Cancelar</Button><Button variant="dark" onClick={handleUserDelete}><Trash2 size={15} /> Eliminar utilizador</Button></div></div></div>}
 
-    {showLicenseForm && <div className="admin-modal-backdrop" onMouseDown={() => setShowLicenseForm(false)}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">PALANCASOFT</span><h2>Nova licença</h2></div><button onClick={() => setShowLicenseForm(false)}><X size={18} /></button></div><form onSubmit={createLicense}><div className="admin-form-grid"><label>Nome do cliente / empresa<input value={licenseForm.clienteNome} onChange={(e) => setLicenseForm(f => ({ ...f, clienteNome: e.target.value }))} placeholder="Ex.: Loja Kwanza" required maxLength={150} autoFocus /></label><label>NIF (opcional)<input value={licenseForm.nif} onChange={(e) => setLicenseForm(f => ({ ...f, nif: e.target.value }))} placeholder="Ex.: 5417234561" maxLength={30} /></label><label>Data de expiração (opcional)<input type="date" value={licenseForm.expiracao} onChange={(e) => setLicenseForm(f => ({ ...f, expiracao: e.target.value }))} /></label></div><p className="admin-field-hint">A chave de activação (PS-XXXX-XXXX-XXXX) é gerada automaticamente e copiada para a área de transferência.</p><div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowLicenseForm(false)}>Cancelar</Button><Button type="submit" disabled={licenseSaving}><Check size={15} /> {licenseSaving ? 'A gerar…' : 'Criar licença'}</Button></div></form></div></div>}
+    {showLicenseForm && <div className="admin-modal-backdrop" onMouseDown={() => setShowLicenseForm(false)}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">PALANCASOFT</span><h2>Nova licença</h2><span style={{ color: '#64748b', fontSize: '.7rem' }}>A chave de activação é emitida automaticamente ao guardar</span></div><button onClick={() => setShowLicenseForm(false)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><form onSubmit={createLicense}>
+      <fieldset className="admin-form-section">
+        <legend><IconUsers size={15} /> Cliente</legend>
+        <div className="admin-form-grid">
+          <label>Nome do cliente / empresa<input value={licenseForm.clienteNome} onChange={(e) => setLicenseForm(f => ({ ...f, clienteNome: e.target.value }))} placeholder="Ex.: Loja Kwanza" required maxLength={150} autoFocus /></label>
+          <label>NIF (opcional)<input value={licenseForm.nif} onChange={(e) => setLicenseForm(f => ({ ...f, nif: e.target.value }))} placeholder="Ex.: 5417234561" maxLength={30} /></label>
+        </div>
+        <p className="admin-field-hint">Nome e NIF são o que aparece na tabela de licenças, na pesquisa e no suporte — preencha pelo menos o nome.</p>
+      </fieldset>
+      <fieldset className="admin-form-section">
+        <legend><IconClock size={15} /> Validade</legend>
+        <div className="admin-form-grid" style={{ gridTemplateColumns: '1fr' }}>
+          <label>Data de expiração (opcional)<input type="date" value={licenseForm.expiracao} onChange={(e) => setLicenseForm(f => ({ ...f, expiracao: e.target.value }))} /></label>
+        </div>
+        <div className="license-quick" role="group" aria-label="Validade rápida">
+          <button type="button" onClick={() => setLicenseForm(f => ({ ...f, expiracao: dataFutura(1) }))}>+1 ano</button>
+          <button type="button" onClick={() => setLicenseForm(f => ({ ...f, expiracao: dataFutura(2) }))}>+2 anos</button>
+          <button type="button" onClick={() => setLicenseForm(f => ({ ...f, expiracao: '' }))}>Sem expiração</button>
+        </div>
+        <p className="admin-field-hint">{licenseForm.expiracao ? `A licença vence a ${new Date(licenseForm.expiracao + 'T00:00:00Z').toLocaleDateString('pt-PT')} — entra na faixa de renovação nos últimos 15 dias.` : 'Sem data = licença perpétua (não entra no aviso de renovação).'}</p>
+      </fieldset>
+      <div className="license-key-note">
+        <KeyRound size={16} />
+        <div>
+          <strong>A chave PS-XXXX-XXXX-XXXX é gerada automaticamente</strong>
+          <span>Ao guardar fica copiada para a área de transferência — pronta para enviar ao cliente por e-mail ou WhatsApp. A activação acontece quando o PalancaSoft a usa pela primeira vez.</span>
+        </div>
+      </div>
+      <div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowLicenseForm(false)}>Cancelar</Button><Button type="submit" disabled={licenseSaving}><Check size={15} /> {licenseSaving ? 'A gerar…' : 'Criar licença'}</Button></div>
+    </form></div></div>}
   </div>
 }

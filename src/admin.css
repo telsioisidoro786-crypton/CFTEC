@@ -1823,3 +1823,17 @@ html[data-theme='dark'] .service-icon-name{color:#7d90ab}
 html[data-theme='dark'] .service-icon-check{background:#0d1730}
 html[data-theme='dark'] .service-icon-tile:has(input:checked){background:#10233f;border-color:#2563eb}
 html[data-theme='dark'] .service-icon-tile:has(input:checked) .service-icon-glyph{background:#2563eb;color:#fff}
+
+/* Modal Nova licença — chips de validade rápida + nota da chave automática */
+.license-quick{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.license-quick button{border:1px solid #e2e8f0;background:#fff;color:#334155;border-radius:9px;padding:8px 13px;font:600 .66rem 'DM Mono',monospace;cursor:pointer;transition:border-color .15s ease,background .15s ease,color .15s ease,transform .15s ease}
+.license-quick button:hover{border-color:#94d4fd;background:#f0f9ff;color:#0369a1;transform:translateY(-1px)}
+.license-key-note{display:flex;align-items:flex-start;gap:10px;margin-top:4px;padding:13px 14px;border:1px solid #e2e8f0;border-radius:12px;background:#fbfdff}
+.license-key-note svg{flex:none;margin-top:2px;color:#2563eb}
+.license-key-note strong{display:block;color:#0f172a;font-size:.74rem;margin-bottom:3px}
+.license-key-note span{display:block;color:#64748b;font-size:.66rem;line-height:1.5}
+html[data-theme='dark'] .license-quick button{background:#0d1730;border-color:#22304e;color:#7d90ab}
+html[data-theme='dark'] .license-quick button:hover{border-color:#2563eb;background:#10233f;color:#67e8f9}
+html[data-theme='dark'] .license-key-note{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .license-key-note strong{color:#e8eefb}
+html[data-theme='dark'] .license-key-note span{color:#7d90ab}
