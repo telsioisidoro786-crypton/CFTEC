@@ -1350,6 +1350,7 @@ export default function AdminDashboard() {
       changelog: item.changelog || '',
       file: null,
       fileName: '',
+      urlExterno: '',
       progress: -1,
       isLoading: false,
       errors: {},
@@ -2614,6 +2615,7 @@ export default function AdminDashboard() {
     changelog: '',
     file: null as File | null,
     fileName: '',
+    urlExterno: '',
     progress: -1,
     isLoading: false,
     errors: {} as Record<string, string>,
@@ -2631,8 +2633,7 @@ export default function AdminDashboard() {
     const file = event.target.files?.[0] || null
     if (file) {
       const validTypes = ['application/zip', 'application/x-zip-compressed', 'application/x-msdownload', 'application/octet-stream']
-      const maxSize = 50 * 1024 * 1024 // 50MB — limite por ficheiro do Supabase (plano Free)
-      
+
       if (!validTypes.includes(file.type) && !file.name.match(/\.(zip|exe)$/i)) {
         setSoftwareFormState(prev => ({
           ...prev,
@@ -2642,13 +2643,37 @@ export default function AdminDashboard() {
         }))
         return
       }
-      if (file.size > maxSize) {
-        setSoftwareFormState(prev => ({
-          ...prev,
-          errors: { ...prev.errors, file: 'O ficheiro excede o limite de 50 MB por ficheiro do Supabase (plano Free). Comprime o instalador ou reduz o pacote.' },
-          fileName: '',
-          file: null,
-        }))
+      if (file.size > 50 * 1024 * 1024) {
+        // acima dos 50 MB da Supabase (plano Free) — o veredito depende do destino:
+        // com R2/S3 activo o upload passa sem problema; sem R2, orienta para o GitHub Releases
+        void (async () => {
+          try {
+            const r = await fetch('/api/admin/software/upload-url', {
+              method: 'POST',
+              credentials: 'include',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filename: file.name, size: file.size }),
+            })
+            const j = await r.json().catch(() => ({}))
+            if (r.ok && j.destino === 's3') {
+              setSoftwareFormState(prev => ({ ...prev, file, fileName: file.name, progress: -1, errors: { ...prev.errors, file: '' } }))
+            } else if (r.ok) {
+              setSoftwareFormState(prev => ({
+                ...prev,
+                file: null,
+                fileName: '',
+                errors: {
+                  ...prev.errors,
+                  file: 'Acima de 50 MB não cabe no armazém actual (Supabase Free). Usa o campo «URL externo» abaixo: publica o ficheiro no GitHub Releases (até 2 GB por ficheiro) e cola aqui o link — o portal distribui do mesmo jeito. Com R2 configurada, este campo volta a aceitar upload directo.',
+                },
+              }))
+            } else {
+              setSoftwareFormState(prev => ({ ...prev, file: null, fileName: '', errors: { ...prev.errors, file: j.error || 'Falha ao validar o tamanho do ficheiro.' } }))
+            }
+          } catch {
+            setSoftwareFormState(prev => ({ ...prev, file: null, fileName: '', errors: { ...prev.errors, file: 'Não foi possível validar o tamanho do ficheiro (rede).' } }))
+          }
+        })()
         return
       }
       setSoftwareFormState(prev => ({
@@ -2666,7 +2691,11 @@ export default function AdminDashboard() {
     if (!softwareFormState.version.trim()) errors.version = 'Versão é obrigatória'
     if (!softwareFormState.price.trim()) errors.price = 'Preço é obrigatório'
     if (!softwareFormState.description.trim()) errors.description = 'Descrição é obrigatória'
-    if (!editingSoftware && !softwareFormState.file) errors.file = 'Ficheiro do instalador é obrigatório'
+    const externo = softwareFormState.urlExterno.trim()
+    if (externo && !/^https:\/\/[^\s]+$/i.test(externo))
+      errors.urlExterno = 'O URL externo tem de começar por https:// (GitHub Releases: o asset literal «Copy link» do ficheiro).'
+    if (!editingSoftware && !softwareFormState.file && !externo)
+      errors.file = 'Ficheiro do instalador é obrigatório — envio directo ou URL externo (GitHub Releases).'
 
     setSoftwareFormState(prev => ({ ...prev, errors }))
     return Object.keys(errors).length === 0
@@ -2709,6 +2738,23 @@ export default function AdminDashboard() {
             description: softwareFormState.description.trim(),
             category: softwareFormState.category.trim() || null,
             changelog: softwareFormState.changelog.trim() || null,
+          }),
+        })
+      } else if (softwareFormState.urlExterno.trim()) {
+        // Modo EXTERNO — o instalador mora fora (GitHub Releases: 2 GB por asset, bandwidth grátis)
+        response = await fetch('/api/admin/software', {
+          method: 'POST',
+          credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: softwareFormState.name.trim(),
+            version: softwareFormState.version.trim(),
+            price: softwareFormState.price.trim().replace(',', '.'),
+            description: softwareFormState.description.trim(),
+            category: softwareFormState.category.trim(),
+            changelog: softwareFormState.changelog.trim(),
+            file_url: softwareFormState.urlExterno.trim(),
+            file_size: softwareFormState.file ? `${(softwareFormState.file.size / 1024 / 1024).toFixed(2)} MB` : '0 MB',
           }),
         })
       } else {
@@ -2789,6 +2835,7 @@ export default function AdminDashboard() {
       changelog: '',
       file: null,
       fileName: '',
+      urlExterno: '',
       progress: -1,
       isLoading: false,
       errors: {},
@@ -2926,13 +2973,30 @@ export default function AdminDashboard() {
                       <>
                         <UploadCloud size={32} className="admin-upload-icon" />
                         <strong>Arraste o ficheiro aqui</strong>
-                        <span>ou clique para seleccionar · .zip, .exe até 50 MB (com barra de progresso)</span>
+                        <span>ou clique para seleccionar · .zip, .exe — envio directo até 50 MB (barra de progresso)</span>
                       </>
                     )}
                   </label>
                   {softwareFormState.errors.file && (
                     <p className="admin-field-error">{softwareFormState.errors.file}</p>
                   )}
+                  {/* Modo EXTERNO — instaladores grandes (GitHub Releases: 2 GB/asset, bandwidth grátis) */}
+                  <div className="admin-form-field admin-form-field--full" style={{ marginTop: 14 }}>
+                    <Label htmlFor="sw-url-externo">URL externo — GitHub Releases <small style={{ color: 'var(--muted, #64748b)' }}>(opcional, alternativa ao envio directo · até 2 GB)</small></Label>
+                    <input
+                      id="sw-url-externo"
+                      type="url"
+                      value={softwareFormState.urlExterno}
+                      onChange={e => handleSoftwareInputChange('urlExterno', e.target.value)}
+                      placeholder="https://github.com/telsioisidoro786-crypton/cftec-instaladores/releases/download/…"
+                      disabled={softwareFormState.isLoading}
+                      className={softwareFormState.errors.urlExterno ? 'admin-input-error' : ''}
+                    />
+                    <p className="admin-field-hint">Publique o ficheiro na repo «cftec-instaladores» → Release nova → botão direito no ficheiro → «Copy link» → cole aqui. O cliente geral o download do mesmo jeito (com contador de eventos).</p>
+                    {softwareFormState.errors.urlExterno && (
+                      <p className="admin-field-error">{softwareFormState.errors.urlExterno}</p>
+                    )}
+                  </div>
                   {softwareFormState.progress >= 0 && softwareFormState.isLoading && (
                     <div className="admin-upload-progress">
                       <div className="admin-upload-progress-bar"><i style={{ width: `${softwareFormState.progress}%` }} /></div>
