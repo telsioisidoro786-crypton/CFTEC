@@ -5037,12 +5037,18 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 const price = String(payload.price || '').replace(',', '.')
                 const description = String(payload.description || '').trim()
                 const storagePath = String(payload.storage_path || '')
+                // modo EXTERNO — ficheiro mora fora dos buckets p/ nós (GitHub Releases:
+                // até 2 GB por asset, bandwidth grátis): o Técnico cola o URL do asset
+                const urlExterno = String((payload as { file_url?: string }).file_url || '').trim()
                 if (!name || !version || !price || !description)
                   return json(res, 400, { ok: false, error: 'Todos os campos são obrigatórios.' })
                 // path pode ser do bucket Supabase ('software/…') ou do S3 ('s3:software/…')
                 const destinoS3 = storagePath.startsWith('s3:')
-                if (!destinoS3 && !storagePath.startsWith('software/'))
-                  return json(res, 400, { ok: false, error: 'Caminho de storage inválido.' })
+                if (urlExterno && !/^https:\/\/[^\s/$.?#].[^\s]*$/i.test(urlExterno))
+                  return json(res, 400, { ok: false, error: 'URL externo inválido (use https://…).' })
+                if (!urlExterno && !destinoS3 && !storagePath.startsWith('software/'))
+                  return json(res, 400, { ok: false, error: 'Indique o caminho de storage ou o URL externo.' })
+                const modoExterno = !!urlExterno && !storagePath
                 // o objecto no S3 está fora da quota da Supabase (é o destino barato) —
                 // a quota do contrato aplica-se ao que mora na Supabase Storage
                 const pathLimpo = destinoS3 ? storagePath.slice(3) : storagePath
@@ -5056,12 +5062,14 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                     const usado = await usoStorageMb()
                     if (usado > licJ.maxStorageMb) {
                       if (destinoS3) await s3Delete(pathLimpo)
-                      else await supabase.storage.from('software').remove([storagePath])
+                      else if (storagePath) await supabase.storage.from('software').remove([storagePath])
                       return json(res, 413, { ok: false, error: `Limite de armazenamento do contrato: ${licJ.maxStorageMb} MB (em uso ${Math.round(usado)} MB). O ficheiro foi removido — solicite mais espaço à Nexora Systems.` })
                     }
                   }
                 }
-                const fileUrl = destinoS3 ? s3PublicUrl(pathLimpo) : (supabase.storage.from('software').getPublicUrl(storagePath)).data?.publicUrl || ''
+                const fileUrl = destinoS3 ? s3PublicUrl(pathLimpo) : urlExterno
+                  ? urlExterno
+                  : (supabase.storage.from('software').getPublicUrl(storagePath)).data?.publicUrl || ''
                 const { data, error } = await supabase
                   .from('softwares')
                   .insert({
@@ -5079,7 +5087,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   .select('id, name, version, file_size, downloads_count, created_at')
                   .single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
-                logAuditoria(currentAdmin(req), 'software_criado', 'software', data.id, { name, modo: destinoS3 ? 's3' : 'assinado' })
+                logAuditoria(currentAdmin(req), 'software_criado', 'software', data.id, { name, modo: destinoS3 ? 's3' : urlExterno ? 'externo' : 'assinado' })
                 return json(res, 201, { ok: true, software: data })
               }
 
@@ -5222,8 +5230,12 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                     await s3Delete(pathS3.replace(/^\/+/, ''))
                   } else {
                     const url = new URL(item.file_url)
-                    const storagePath = decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\/public\/software\//, ''))
-                    if (storagePath) await supabase.storage.from('software').remove([storagePath])
+                    // só existe "caminho de bucket" se o URL for da storage da Supabase;
+                    // URLs externos (GitHub Releases etc.) não têm nada aqui para limpar
+                    if (url.pathname.startsWith('/storage/')) {
+                      const storagePath = decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\/public\/software\//, ''))
+                      if (storagePath) await supabase.storage.from('software').remove([storagePath])
+                    }
                   }
                 } catch {
                   // URL inválido ou ficheiro local — seguir para a remoção da linha

@@ -221,7 +221,7 @@ graph LR
 | Ficheiro | Onde vive | Notas |
 |---|---|---|
 | Comprovativos de pagamentos | Bucket privado `comprovativos` — **fora da BD** (as rows guardam só o nome) | Uploads novos: `{pedidoId}/{ts}-{nome}`; leitura via storage pelo servidor (dono verificado). Comprovativos antigos em base64 continuam servidos na mesma rota (back-compat) |
-| Instaladores | Bucket `software` — ou **S3 compatível** quando configurado | Upload por URL assinado; com R2/Spaces, o trânsito de downloads fica de graça (zero egress) |
+| Instaladores | Bucket `software` — ou **S3 compatível** (R2/Spaces) ou **URL externo** (GitHub Releases) | Upload por URL assinado; com R2, downloads com egress zero; no GitHub até 2 GB por ficheiro |
 | Média do site | Bucket `media` | Via painel, tabela `media` com metadados |
 | Backups | Bucket `backups` + rotação | JSON quotidien; restauração developer |
 
@@ -237,6 +237,14 @@ S3_REGION=auto                                        # só AWS real precisa de 
 ```
 
 O meter de quota (`maxStorageMb`) soma os buckets da Supabase (software + media + comprovativos), com cache de 2 min; nos **80% da quota** o developer recebe um alerta por e-mail (um por dia, no máximo). *A assinatura SigV4 do driver está calibrada contra o vector oficial da AWS (exemplo presigned da documentação S3 — assinatura reproduzida digito-a-digito).*
+
+**Instaladores no GitHub Releases** (armazém externo, $0): repo pública
+[`cftec-instaladores`](https://github.com/telsioisidoro786-crypton/cftec-instaladores)
+guarda os ficheiros como assets de Releases (até **2 GB por ficheiro**, bandwidth grátis).
+Fluxo: Release nova com os instaladores → copiar o URL do asset → criar a ficha do
+software no painel com esse URL (`file_url` externo — o servidor aceita
+`file_url` https no POST/JSON, audit `modo:externo`); o contador de downloads
+e a rota do portal funcionam na mesma, pois devolvem o `file_url` como está.
 - **Ficha Cliente 360**: junta 6 fontes (portal, licenças, pedidos, recibos, chamados, downloads) num modal.
 - **Log de erros**: capturas client+server com página/detalhe, cartão de resolução no painel.
 
