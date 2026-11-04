@@ -89,6 +89,11 @@ async function principal() {
   verificar('POST /api/portal/pedidos/renovar (sem sessão) → 401', renSemSessao.status === 401 || renSemSessao.status === 403, `res=${renSemSessao.status}`)
   const compSemSessao = await pedir('/api/portal/pedidos/00000000-0000-0000-0000-000000000000/comprovativo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ comprovativo_b64: 'x' }) })
   verificar('POST /api/portal/pedidos/:id/comprovativo (sem sessão) → 401', compSemSessao.status === 401 || compSemSessao.status === 403, `res=${compSemSessao.status}`)
+  // Lote A/C — o comprovativo próprio e o perfil também são dados do cliente: sem sessão nada sai
+  const verCompSemSessao = await pedir('/api/portal/pedidos/00000000-0000-0000-0000-000000000000/comprovativo')
+  verificar('GET /api/portal/pedidos/:id/comprovativo (sem sessão) → 401', verCompSemSessao.status === 401 || verCompSemSessao.status === 403, `res=${verCompSemSessao.status}`)
+  const perfilSemSessao = await pedir('/api/portal/perfil', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome_responsavel: 'x', telefone_whatsapp: '+244900000000' }) })
+  verificar('PATCH /api/portal/perfil (sem sessão) → 401', perfilSemSessao.status === 401 || perfilSemSessao.status === 403, `res=${perfilSemSessao.status}`)
 
   // 5b. Parte 8.3 — Backups 2.0: mutações e restauro só com sessão developer
   const bg = await pedir('/api/admin/backup/gerar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })

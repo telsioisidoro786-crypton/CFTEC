@@ -1764,6 +1764,52 @@ ${emailLinha('E-mail', escHtml(email))}</table>
             return json(res, 201, { ok: true, message: 'Registo recebido! A equipa CFTEC vai aprovar a sua conta — falamos com você por e-mail e WhatsApp.' })
           }
 
+          // RECUPERAÇÃO DE PASSWORD (sem sessão) — token JWT de 30 min por e-mail,
+          // zero tabelas novas: o próprio e-mail carrega o cupão subscrito com o
+          // segredo do servidor e o link abre o formulário de nova password.
+          if (path === '/api/portal/recuperar' && req.method === 'POST') {
+            if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'Recuperação não configurada no servidor.' })
+            if (await throttlePublico(req, 'recuperar')) return json(res, 429, { ok: false, error: 'Demasiadas tentativas. Tente novamente daqui a alguns minutos.' })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const payloadRec = await readBody(req) as { email?: string }
+            const emailRec = String(payloadRec.email || '').trim().toLowerCase()
+            if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailRec)) return json(res, 400, { ok: false, error: 'E-mail inválido.' })
+            const { data: contaRec } = await supabase.from('clientes_portal').select('id, nome_empresa, email').eq('email', emailRec).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; email: string } | null }
+            // resposta idêntica com ou sem conta — não espiamos quais e-mails existem
+            if (contaRec) {
+              const tokenRec = jwt.sign({ sub: contaRec.id, email: contaRec.email, role: 'cliente-reset', jti: crypto.randomUUID() }, JWT_SECRET, { algorithm: 'HS256', expiresIn: '30m' })
+              const protoRec = String(req.headers['x-forwarded-proto'] || 'https').split(',')[0].trim() || 'https'
+              const hostRec = String(req.headers['x-forwarded-host'] || req.headers.host || 'cftec.co')
+              const linkRec = `${protoRec}://${hostRec}/cliente?reset=${tokenRec}`
+              await sendEmailRaw(contaRec.email, 'Nova password do portal do cliente · CFTEC', emailShell('Recuperação de password',
+                `<p style="margin:0 0 14px">Olá <b>${escHtml(contaRec.nome_empresa)}</b>,</p><p style="margin:0 0 14px">Recebemos o pedido de recuperação da password da sua conta do portal do cliente (e-mail <b>${escHtml(contaRec.email)}</b>).</p><p style="margin:0 0 14px"><a href="${linkRec}" style="display:inline-block;padding:11px 20px;border-radius:10px;background:#0284c7;color:#fff;font-weight:700;text-decoration:none">Definir uma nova password</a></p><p style="margin:0 0 14px">Ou copie este link para o browser (válido por <b>30 minutos</b>, uma única utilização):<br /><code style="font-size:.75rem;word-break:break-all">${linkRec}</code></p><p style="margin:0">Se não foi você que pediu, ignore este e-mail — a sua password continua válida.</p>`))
+              logAuditoria(null, 'portal_recuperar', 'portal', contaRec.id, { email: emailRec })
+            }
+            return json(res, 200, { ok: true, message: 'Se este e-mail tiver conta, o link de recuperação chega em 1-2 minutos — veja o spam por garantia.' })
+          }
+
+          // CONFIRMAÇÃO DA RECUPERAÇÃO — define a nova password com o token do e-mail
+          if (path === '/api/portal/recuperar/confirmar' && req.method === 'POST') {
+            if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'Recuperação não configurada no servidor.' })
+            if (await throttlePublico(req, 'recuperar')) return json(res, 429, { ok: false, error: 'Demasiadas tentativas. Tente novamente daqui a alguns minutos.' })
+            if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
+            const payloadConf = await readBody(req) as { token?: string; password_nova?: string }
+            const novaConf = String(payloadConf.password_nova || '')
+            if (novaConf.length < 8) return json(res, 400, { ok: false, error: 'A password nova precisa de pelo menos 8 caracteres.' })
+            let tokenConf: { sub?: string; role?: string } | null = null
+            try { tokenConf = jwt.verify(String(payloadConf.token || ''), JWT_SECRET, { algorithms: ['HS256'] }) as { sub?: string; role?: string } } catch { /* expirado, malformado ou reutilizado */ }
+            if (!tokenConf || tokenConf.role !== 'cliente-reset' || !tokenConf.sub)
+              return json(res, 400, { ok: false, error: 'O link de recuperação é inválido ou expirou — peça outro na entrada do portal.' })
+            const { data: contaConf } = await supabase.from('clientes_portal').select('id, nome_empresa, email, estado').eq('id', tokenConf.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; email: string; estado: ClienteEstado } | null }
+            if (!contaConf) return json(res, 404, { ok: false, error: 'A conta deste link já não existe — contacte a CFTEC.' })
+            const passwordConf = await bcrypt.hash(novaConf, 12)
+            const { error: errConf } = await supabase.from('clientes_portal').update({ password_hash: passwordConf, updated_at: new Date().toISOString() }).eq('id', contaConf.id)
+            if (errConf) return json(res, 500, { ok: false, error: errConf.message })
+            fireAdminEmail('Portal — password recuperada', emailShell('Recuperação de password concluída', `<p>O cliente <b>${escHtml(contaConf.nome_empresa)}</b> (${escHtml(contaConf.email)}) definiu uma nova password pelo link de recuperação.</p>`))
+            logAuditoria(null, 'portal_recuperar_confirmada', 'portal', contaConf.id, { email: contaConf.email })
+            return json(res, 200, { ok: true, message: 'Password actualizada — já pode entrar com a nova password.' })
+          }
+
           // LOGIN DO CLIENTE (sem auth) — só contas 'Activo' entram
           if (path === '/api/portal/login' && req.method === 'POST') {
             if (!JWT_SECRET) return json(res, 503, { ok: false, error: 'Sessões não configuradas.' })
@@ -1817,7 +1863,7 @@ ${emailLinha('E-mail', escHtml(email))}</table>
 
           // DADOS DO PORTAL — cada rota devolve somente o que pertence ao próprio cliente
           const clienteSessao = currentCliente(req)
-          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados') || path.startsWith('/api/portal/downloads') || path.startsWith('/api/portal/software/') || path.startsWith('/api/portal/faq')) {
+          if (path.startsWith('/api/portal/pedidos') || path.startsWith('/api/portal/licencas') || path.startsWith('/api/portal/chamados') || path.startsWith('/api/portal/downloads') || path.startsWith('/api/portal/software/') || path.startsWith('/api/portal/faq') || path.startsWith('/api/portal/perfil')) {
             if (!clienteSessao) return json(res, 401, { ok: false, error: 'Entre no portal (ou faça o registo).' })
             if (!supabase) return json(res, 503, { ok: false, error: 'Base de dados não disponível.' })
             const { data: conta } = await supabase.from('clientes_portal').select('id, nome_empresa, nif, email, estado').eq('id', clienteSessao.sub).maybeSingle() as unknown as { data: { id: string; nome_empresa: string; nif: string; email: string; estado: ClienteEstado } | null }
@@ -1832,7 +1878,11 @@ ${emailLinha('E-mail', escHtml(email))}</table>
                 for (const p of lote) if (!juntos.has(String(p.id))) juntos.set(String(p.id), p)
               const lista = Array.from(juntos.values()) as Record<string, unknown>[]
               lista.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')))
-              return json(res, 200, { ok: true, pedidos: lista })
+              // instruções de pagamento do painel (mesmas do checkout) — o cliente do portal
+              // também precisa da ref correcta no descritivo/MCX Faturas
+              const { data: cfgPag } = await supabase.from('settings').select('key, value').in('key', ['iban_cftec', 'whatsapp_comercial'])
+              const cfgV = (k: string) => (cfgPag || []).find((c: { key: string; value: string }) => c.key === k)?.value || ''
+              return json(res, 200, { ok: true, pedidos: lista, pagamento: { iban: cfgV('iban_cftec'), whatsapp: cfgV('whatsapp_comercial') } })
             }
 
             // PROFORMA PDF (portal do cliente) — só documentos da própria conta
@@ -2111,6 +2161,37 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               if (errTicket) return json(res, 500, { ok: false, error: errTicket.message })
               logAuditoria({ email: conta.email, level: 'portal' }, 'portal_faq_ajudou', 'wiki', idFaq, { titulo: artFaq.titulo })
               return json(res, 200, { ok: true, ajudou: novoCount })
+            }
+
+            // VER O PRÓPRIO COMPROVATIVO (o cliente reimprime o que anexou) — MIME correcto
+            if (path.match(/^\/api\/portal\/pedidos\/([a-f0-9-]+)\/comprovativo$/) && req.method === 'GET') {
+              const pidCx = path.split('/')[4]
+              const { data: pedCx } = await supabase.from('pedidos_licencas').select('nif, email, comprovativo_b64, comprovativo_nome').eq('id', pidCx).maybeSingle()
+              const donoCx = pedCx && (pedCx.nif === conta.nif || String(pedCx.email || '').toLowerCase() === String(conta.email).toLowerCase())
+              if (!pedCx || !donoCx) return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
+              if (!pedCx.comprovativo_b64) return json(res, 404, { ok: false, error: 'Este pedido ainda não tem comprovativo anexado.' })
+              const extCx = String(pedCx.comprovativo_nome || '').split('.').pop()?.toLowerCase() || ''
+              const mimeCx = extCx === 'pdf' ? 'application/pdf' : extCx === 'png' ? 'image/png' : extCx === 'webp' ? 'image/webp' : (extCx === 'jpg' || extCx === 'jpeg') ? 'image/jpeg' : 'application/octet-stream'
+              const bufCx = Buffer.from(String(pedCx.comprovativo_b64), 'base64')
+              res.writeHead(200, { 'Content-Type': mimeCx, 'Cache-Control': 'no-store', 'Content-Disposition': `inline; filename="${String(pedCx.comprovativo_nome || 'comprovativo').replace(/["\\]/g, '')}"` })
+              return res.end(bufCx)
+            }
+
+            // PERFIL DO PRÓPRIO CLIENTE — ler / editar dados de contacto (e-mail e empresa ficam)
+            if (path === '/api/portal/perfil' && req.method === 'GET') {
+              const { data: perfilP } = await supabase.from('clientes_portal').select('nome_empresa, nome_responsavel, telefone_whatsapp, email').eq('id', conta.id).maybeSingle()
+              return json(res, 200, { ok: true, perfil: perfilP || { nome_empresa: conta.nome_empresa, nome_responsavel: null, telefone_whatsapp: null, email: conta.email } })
+            }
+            if (path === '/api/portal/perfil' && req.method === 'PATCH') {
+              const payloadPerfil = await readBody(req) as { nome_responsavel?: string; telefone_whatsapp?: string }
+              const respPerfil = String(payloadPerfil.nome_responsavel || '').trim()
+              const telPerfil = String(payloadPerfil.telefone_whatsapp || '').trim()
+              if (respPerfil.length > 120) return json(res, 400, { ok: false, error: 'Nome do responsável demasiado longo (máx. 120).' })
+              if (!/^[\d+\s()-]{9,20}$/.test(telPerfil)) return json(res, 400, { ok: false, error: 'Telefone/WhatsApp inválido (mín. 9 dígitos).' })
+              const { error: errPerfil } = await supabase.from('clientes_portal').update({ nome_responsavel: respPerfil || null, telefone_whatsapp: telPerfil.slice(0, 20), updated_at: new Date().toISOString() }).eq('id', conta.id)
+              if (errPerfil) return json(res, 500, { ok: false, error: errPerfil.message })
+              logAuditoria({ email: conta.email, level: 'portal' }, 'portal_perfil_actualizado', 'portal', conta.id, { campos: ['nome_responsavel', 'telefone_whatsapp'] })
+              return json(res, 200, { ok: true, message: 'Perfil actualizado — os chamados passam a usar o novo contacto.' })
             }
           }
 

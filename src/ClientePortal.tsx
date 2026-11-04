@@ -5,12 +5,13 @@
 // ============================================================
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  Activity, BadgeCheck, Building2, CheckCircle2, Download, FileText, HelpCircle, KeyRound, LifeBuoy,
+  Activity, BadgeCheck, Building2, Check, CheckCircle2, Copy, Download, FileText, HelpCircle, KeyRound, LifeBuoy,
   Lock, LogIn, LogOut, Mail, MessageCircle, MessageSquare, Phone, Receipt, RefreshCw, Search, Send, ShieldCheck, Star, ThumbsUp, Timer, Upload, UserPlus, Users,
 } from 'lucide-react'
 import { IconChat, IconRepeat, IconThumb, IconUsers } from './components/animIcons'
 
 type Sessao = { empresa: string; email: string }
+type Perfil = { nome_empresa: string; nome_responsavel: string | null; telefone_whatsapp: string | null; email: string }
 type Pedido = { id: string; created_at: string; software_nome: string; status: string; forma_pagamento: string | null; provincia: string | null; observacoes: string | null; tipo?: string | null; comprovativo_nome?: string | null; utilizadores_extra?: number | null }
 type Licenca = { id: string; chave_licenca: string; data_ativacao: string | null; data_expiracao: string | null; status: string; created_at: string }
 type RenovacaoInfo = { software: string | null; preco: number | null; preco_bi: string }
@@ -26,6 +27,10 @@ const statusTone = (s: string) =>
         : 'text-slate-300 border-slate-500/30 bg-slate-500/10'
 
 const fmt = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('pt-PT', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—')
+
+// Referência curta do pedido (espelha refPedido do servidor) — é a que o cliente
+// escreve no descritivo do banco / MCX Faturas para casar extracto ↔ painel
+const refPed = (id: string) => 'CF-' + String(id || '').replace(/-/g, '').slice(0, 6).toUpperCase()
 
 // Pílula de SLA tal como o cliente vê no portal
 const slaDoCliente = (c: { estado: string; prazo_sla?: string | null; resolvido_em?: string | null; escalonado?: boolean | null; created_at: string }): { texto: string; classe: string } => {
@@ -52,7 +57,7 @@ export default function ClientePortal() {
   const [vista, setVista] = useState<'a-ler' | 'porta' | 'dentro'>('a-ler')
   const [sessao, setSessao] = useState<Sessao | null>(null)
   const [aviso, setAviso] = useState('')
-  const [modoAlt, setModoAlt] = useState<'login' | 'registo'>('login')
+  const [modoAlt, setModoAlt] = useState<'login' | 'registo' | 'recuperar'>('login')
   const [tab, setTab] = useState<'resumo' | 'pedidos' | 'licencas' | 'downloads' | 'ajuda' | 'chamados'>('resumo')
   const [registoOk, setRegistoOk] = useState(false)
   const [whats, setWhats] = useState('244933609090') // reforçado pela settings abaixo
@@ -66,6 +71,18 @@ export default function ClientePortal() {
   const [fChamado, setFChamado] = useState({ software: '', descricao_problema: '' })
   const [fSenha, setFSenha] = useState({ password_actual: '', password_nova: '' })
   const [ocupado, setOcupado] = useState(false)
+
+  // Lote A — pagamento alinhado com o checkout + ver o próprio comprovativo
+  const [pagamento, setPagamento] = useState<{ iban: string; whatsapp: string }>({ iban: '', whatsapp: '' })
+  const [copiado, setCopiado] = useState<{ id: string; tipo: 'ref' | 'chave' | 'iban' } | null>(null)
+
+  // Lote C — conta self-service: perfil editável + recuperação de password
+  const [perfil, setPerfil] = useState<Perfil | null>(null)
+  const [fPerfil, setFPerfil] = useState({ nome_responsavel: '', telefone_whatsapp: '' })
+  const [recuperarOk, setRecuperarOk] = useState(false)
+  const [resetToken, setResetToken] = useState<string | null>(null)
+  const [fReset, setFReset] = useState({ password_nova: '', password_confirma: '' })
+  const [fRecuperar, setFRecuperar] = useState('')
   // Conversa do chamado + CSAT (parte 3)
   const [conversaId, setConversaId] = useState<string | null>(null)
   const [mensagens, setMensagens] = useState<Mensagem[]>([])
@@ -117,6 +134,9 @@ export default function ClientePortal() {
       if (w.length >= 9) setWhats(w)
     }).catch(() => {})
     void (async () => {
+      // link de recuperação (?reset=…) — aberto do e-mail: vai directo ao formulário de nova password
+      const tokenUrl = new URLSearchParams(window.location.search).get('reset')
+      if (tokenUrl) { setResetToken(tokenUrl); window.history.replaceState({}, '', '/cliente') }
       const { status, body } = await apiJson<{ ok: boolean; user?: Sessao }>('/api/portal/session')
       if (status === 200 && body.ok && body.user) {
         setSessao(body.user)
@@ -128,15 +148,21 @@ export default function ClientePortal() {
   }, [])
 
   const carregarTudo = useCallback(async () => {
-    const [p, l, c] = await Promise.all([
-      apiJson<{ ok: boolean; pedidos?: Pedido[] }>('/api/portal/pedidos'),
+    const [p, l, c, pf] = await Promise.all([
+      apiJson<{ ok: boolean; pedidos?: Pedido[]; pagamento?: { iban: string; whatsapp: string } }>('/api/portal/pedidos'),
       apiJson<{ ok: boolean; licencas?: Licenca[] } & { renovacao?: RenovacaoInfo }>('/api/portal/licencas'),
       apiJson<{ ok: boolean; chamados?: Chamado[] }>('/api/portal/chamados'),
+      apiJson<{ ok: boolean; perfil?: Perfil }>('/api/portal/perfil'),
     ])
     setPedidos(p.body.pedidos || [])
+    if (p.body.pagamento) setPagamento(p.body.pagamento)
     setLicencas(l.body.licencas || [])
     setRenovacao(l.body.renovacao || null)
     setChamados(c.body.chamados || [])
+    if (pf.body.perfil) {
+      setPerfil(pf.body.perfil)
+      setFPerfil({ nome_responsavel: pf.body.perfil.nome_responsavel || '', telefone_whatsapp: pf.body.perfil.telefone_whatsapp || '' })
+    }
   }, [])
 
   // ─── acções ───
@@ -300,6 +326,57 @@ export default function ClientePortal() {
     setTab('chamados')
   }
 
+  // ─── Lote C · conta self-service ───
+  const guardarPerfil = async (e: React.FormEvent) => {
+    e.preventDefault(); setOcupado(true); setAviso('')
+    const { status, body } = await apiJson<{ message?: string }>('/api/portal/perfil', { method: 'PATCH', body: JSON.stringify(fPerfil) })
+    setOcupado(false)
+    if (status === 200) { setAviso(body.message || 'Perfil actualizado.'); window.setTimeout(() => setAviso(''), 5000) }
+    else setAviso(body.error || 'Não foi possível guardar o perfil.')
+  }
+
+  const pedirRecuperacao = async (e: React.FormEvent) => {
+    e.preventDefault(); setOcupado(true); setAviso('')
+    const { status, body } = await apiJson<{ message?: string }>('/api/portal/recuperar', { method: 'POST', body: JSON.stringify({ email: fRecuperar }) })
+    setOcupado(false)
+    if (status === 200) { setRecuperarOk(true); setAviso(body.message || '') }
+    else setAviso(body.error || 'Não foi possível pedir a recuperação.')
+  }
+
+  const confirmarReset = async (e: React.FormEvent) => {
+    e.preventDefault(); setOcupado(true); setAviso('')
+    if (fReset.password_nova !== fReset.password_confirma) { setOcupado(false); setAviso('As passwords não coincidem.'); return }
+    const { status, body } = await apiJson<{ message?: string }>('/api/portal/recuperar/confirmar', { method: 'POST', body: JSON.stringify({ token: resetToken, password_nova: fReset.password_nova }) })
+    setOcupado(false)
+    if (status === 200) {
+      setResetToken(null); setFReset({ password_nova: '', password_confirma: '' }); setModoAlt('login')
+      setAviso(body.message || 'Password actualizada — entre com a nova password.')
+    } else setAviso(body.error || 'O link de recuperação é inválido ou expirou — peça outro.')
+  }
+
+  // copia ref/chave/IBAN para o prancheta com feedback visível de 2 s
+  const copiar = async (id: string, tipo: 'ref' | 'chave' | 'iban', texto: string) => {
+    try {
+      await navigator.clipboard.writeText(texto)
+      setCopiado({ id, tipo })
+      window.setTimeout(() => setCopiado(null), 2000)
+    } catch { /* sem clipboard (http não-seguro) — o select-all da chave e o texto visível continuam a servir */ }
+  }
+
+  // WhatsApp do pedido — deep-link com a ref e o estado no texto (sem API paga)
+  const waPedido = (p: Pedido) => {
+    const ref = refPed(p.id)
+    const num = String(pagamento.whatsapp || whats || '').replace(/\D/g, '')
+    const full = num.startsWith('244') ? num : num ? '244' + num : ''
+    const txt = p.status === 'Em Verificação' ? `Já anexei o comprovativo do pedido ${ref} — validam e respondem?`
+      : p.status === 'Aprovado' ? `Estamos prontos para liquidar o pedido ${ref} — em conta-nos quando a proforma for gerada.`
+      : p.status === 'Pago' ? `Pedido ${ref} pago — aguardamos a FT e a extensão/activação da licença.`
+      : p.status === 'Rejeitado' ? `Falamos sobre o pedido ${ref} — é so responder que resolvemos.`
+      : p.tipo === 'usuarios' ? `Sobre a proposta de utilizadores extra do pedido ${ref}.`
+      : `Vou pagar o pedido ${ref} (${p.software_nome}) por Multicaixa Express «Faturas» ou transferência com a ref no descritivo — o comprovativo anexa no portal.`
+    return `https://wa.me/${full}?text=${encodeURIComponent(`Olá CFTEC! ${txt}`)}`
+  }
+
   const trocarSenha = async (e: React.FormEvent) => {
     e.preventDefault(); setOcupado(true); setAviso('')
     const { status, body } = await apiJson('/api/portal/password', { method: 'POST', body: JSON.stringify(fSenha) })
@@ -346,14 +423,35 @@ export default function ClientePortal() {
               ))}
             </div>
 
-            {modoAlt === 'login' ? (
+            {resetToken ? (
+              <form onSubmit={confirmarReset} className="mt-5 bg-white/[.03] border border-cyan-400/30 rounded-2xl p-6 space-y-4">
+                <h2 className="text-lg font-extrabold flex items-center gap-2"><KeyRound size={18} className="text-cyan-400" /> Definir uma nova password</h2>
+                {aviso && <div className="text-sm bg-rose-500/10 border border-rose-500/30 text-rose-300 rounded-xl px-4 py-3">{aviso}</div>}
+                <label className="block"><span className="text-xs font-semibold text-slate-400">Password nova (mín. 8 caracteres)</span>
+                  <input className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" type="password" required minLength={8} value={fReset.password_nova} onChange={e => setFReset({ ...fReset, password_nova: e.target.value })} autoComplete="new-password" placeholder="••••••••" /></label>
+                <label className="block"><span className="text-xs font-semibold text-slate-400">Confirmar a password nova</span>
+                  <input className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" type="password" required minLength={8} value={fReset.password_confirma} onChange={e => setFReset({ ...fReset, password_confirma: e.target.value })} autoComplete="new-password" placeholder="••••••••" /></label>
+                <button type="submit" disabled={ocupado} className="w-full inline-flex items-center justify-center gap-2 bg-cyan-400 text-slate-950 font-bold rounded-lg px-4 py-3 text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50"><Check size={16} /> {ocupado ? 'A guardar…' : 'Guardar nova password'}</button>
+                <p className="text-xs text-slate-500 text-center">O link vale 30 minutos — se expirar, peça outro pelo «Recuperar por e-mail».</p>
+              </form>
+            ) : modoAlt === 'login' ? (
               <form onSubmit={entrar} className="mt-5 bg-white/[.03] border border-white/10 rounded-2xl p-6 space-y-4">
                 <label className="block"><span className="text-xs font-semibold text-slate-400">E-mail da conta</span>
                   <input className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" type="email" required value={fLogin.email} onChange={e => setFLogin({ ...fLogin, email: e.target.value })} placeholder="empresa@exemplo.co" autoComplete="email" /></label>
                 <label className="block"><span className="text-xs font-semibold text-slate-400">Password</span>
                   <input className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" type="password" required value={fLogin.password} onChange={e => setFLogin({ ...fLogin, password: e.target.value })} placeholder="••••••••" autoComplete="current-password" /></label>
                 <button type="submit" disabled={ocupado} className="w-full inline-flex items-center justify-center gap-2 bg-cyan-400 text-slate-950 font-bold rounded-lg px-4 py-3 text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50"><LogIn size={16} /> {ocupado ? 'A entrar…' : 'Entrar no portal'}</button>
-                <p className="text-xs text-slate-500 text-center">Esqueceu a password? Contacte a equipa CFTEC por WhatsApp ou <a href="/#suporte" className="text-cyan-400 hover:underline">formulário do site</a> — enviamos uma nova com segurança.</p>
+                <p className="text-xs text-slate-500 text-center">Esqueceu a password? <button type="button" onClick={() => { setModoAlt('recuperar'); setRecuperarOk(false); setFRecuperar(''); setAviso('') }} className="text-cyan-400 hover:underline font-semibold">Recuperar por e-mail</button> — ou contacte a equipa por WhatsApp.</p>
+              </form>
+            ) : modoAlt === 'recuperar' ? (
+              <form onSubmit={pedirRecuperacao} className="mt-5 bg-white/[.03] border border-white/10 rounded-2xl p-6 space-y-4">
+                <h2 className="text-lg font-extrabold flex items-center gap-2"><KeyRound size={18} className="text-cyan-400" /> Recuperar password por e-mail</h2>
+                <p className="text-sm text-slate-400 leading-relaxed">Escreva o e-mail da conta do portal — enviamos um link de um uso só, válido por 30 minutos, para definir uma password nova.</p>
+                {aviso && <div className="text-sm bg-cyan-400/10 border border-cyan-400/30 text-cyan-300 rounded-xl px-4 py-3">{aviso}</div>}
+                <label className="block"><span className="text-xs font-semibold text-slate-400">E-mail da conta</span>
+                  <input className="mt-1.5 w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" type="email" required value={fRecuperar} onChange={e => setFRecuperar(e.target.value)} placeholder="empresa@exemplo.co" autoComplete="email" autoFocus /></label>
+                <button type="submit" disabled={ocupado} className="w-full inline-flex items-center justify-center gap-2 bg-cyan-400 text-slate-950 font-bold rounded-lg px-4 py-3 text-sm hover:bg-cyan-300 transition-colors disabled:opacity-50"><Mail size={16} /> {ocupado ? 'A enviar…' : 'Enviar link de recuperação'}</button>
+                <p className="text-xs text-slate-500 text-center"><button type="button" onClick={() => { setModoAlt('login'); setRecuperarOk(false); setAviso('') }} className="text-cyan-400 hover:underline font-semibold">← voltar à entrada</button></p>
               </form>
             ) : registoOk ? (
               <div className="mt-5 bg-white/[.03] border border-emerald-400/30 rounded-2xl p-7 text-center">
@@ -430,6 +528,15 @@ export default function ClientePortal() {
                   <div className="flex justify-between gap-4"><dt className="text-slate-500">Empresa</dt><dd className="text-slate-200 text-right">{sessao?.empresa}</dd></div>
                   <div className="flex justify-between gap-4"><dt className="text-slate-500">E-mail</dt><dd className="text-slate-200 text-right">{sessao?.email}</dd></div>
                 </dl>
+                <form onSubmit={guardarPerfil} className="mt-5 border-t border-white/10 pt-4 space-y-3">
+                  <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5"><Building2 size={13} /> Dados de contacto</span>
+                  <div className="grid gap-2.5">
+                    <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" required maxLength={120} placeholder="Nome do responsável" value={fPerfil.nome_responsavel} onChange={e => setFPerfil({ ...fPerfil, nome_responsavel: e.target.value })} />
+                    <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" required pattern="[0-9+()\\s\\-]{9,20}" title="Telefone com 9 a 20 caracteres (ex.: +244 9xx xxx xxx)" placeholder="Telefone / WhatsApp (ex.: +244 9xx…)" value={fPerfil.telefone_whatsapp} onChange={e => setFPerfil({ ...fPerfil, telefone_whatsapp: e.target.value })} />
+                    <button type="submit" disabled={ocupado} className="inline-flex items-center gap-2 border border-cyan-400/40 text-cyan-400 font-semibold rounded-lg px-4 py-2 text-sm hover:bg-cyan-400/10 transition-colors disabled:opacity-50"><BadgeCheck size={15} /> {ocupado ? 'A guardar…' : 'Guardar contacto'}</button>
+                    <p className="text-[11px] text-slate-600 leading-relaxed">A empresa e o e-mail são fixos (dados de facturação) — mudou algo? Fale connosco por WhatsApp.</p>
+                  </div>
+                </form>
                 <form onSubmit={trocarSenha} className="mt-5 border-t border-white/10 pt-4 space-y-3">
                   <span className="text-xs font-semibold text-slate-400 flex items-center gap-1.5"><Lock size={13} /> Alterar password</span>
                   <input className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm outline-none focus:border-cyan-400/60" type="password" required placeholder="Password actual" value={fSenha.password_actual} onChange={e => setFSenha({ ...fSenha, password_actual: e.target.value })} autoComplete="current-password" />
@@ -463,9 +570,29 @@ export default function ClientePortal() {
                     {p.tipo === 'renovacao' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-sky-400/30 bg-sky-400/10 text-sky-300"><IconRepeat size={11} /> Renovação</span>}
                     {p.tipo === 'usuarios' && <span className="text-[11px] font-bold px-2 py-0.5 rounded-full border border-violet-400/30 bg-violet-400/10 text-violet-300"><IconUsers size={11} /> +{p.utilizadores_extra || '?'} utilizadores</span>}
                   </div>
-                  <p className="mt-1.5 text-xs text-slate-500">#{p.id.slice(0, 8).toUpperCase()} · {fmt(p.created_at)} · {p.forma_pagamento || 'forma de pagamento por definir'}{p.provincia ? ` · ${p.provincia}` : ''}</p>
+                  <div className="mt-1.5 flex items-center gap-1.5 flex-wrap text-xs text-slate-500">
+                    <span className="text-slate-300 font-bold text-[12px] tracking-wide">{refPed(p.id)}</span>
+                    <button onClick={() => void copiar(p.id, 'ref', refPed(p.id))} title="Copiar referência" className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-cyan-300 border border-white/10 rounded-md px-1.5 py-0.5 hover:border-cyan-400/30 transition-colors">{copiado?.id === p.id && copiado?.tipo === 'ref' ? <><Check size={11} /> copiada</> : <><Copy size={11} /> copiar</>}</button>
+                    <span>·</span>
+                    <span>{fmt(p.created_at)} · {p.forma_pagamento || 'forma de pagamento por definir'}{p.provincia ? ` · ${p.provincia}` : ''}</span>
+                  </div>
                   {p.observacoes && <p className="mt-2 text-sm text-slate-300 bg-white/5 border border-white/10 rounded-lg px-3 py-2"><b className="text-slate-400 text-xs">Nota da equipa:</b> {p.observacoes}</p>}
-                  {p.comprovativo_nome && <p className="mt-2 text-xs text-emerald-400/90 flex items-center gap-1.5"><Receipt size={13} /> Comprovativo anexado: {p.comprovativo_nome} — à espera da confirmação da equipa.</p>}
+                  {p.comprovativo_nome && (
+                    <p className="mt-2 text-xs text-emerald-400/90 flex items-center gap-1.5 flex-wrap">
+                      <Receipt size={13} /> <span>Comprovativo anexado: {p.comprovativo_nome} — à espera da confirmação da equipa.</span>
+                      <a href={`/api/portal/pedidos/${p.id}/comprovativo`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center gap-1 text-emerald-300 hover:underline"><FileText size={12} /> Ver comprovativo</a>
+                    </p>
+                  )}
+                  {p.tipo !== 'usuarios' && (p.status === 'Pendente' || p.status === 'Em Verificação' || p.status === 'Aprovado') && pagamento.iban && (
+                    <div className="mt-3 bg-cyan-400/[.06] border border-cyan-400/20 rounded-xl p-4 space-y-2">
+                      <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5"><Receipt size={13} /> Como pagar este pedido</span>
+                      <div className="flex items-center gap-2 flex-wrap text-sm">
+                        <code className="bg-white/5 border border-white/10 rounded-lg px-2.5 py-1.5 text-cyan-200 tracking-wide select-all">{pagamento.iban}</code>
+                        <button onClick={() => void copiar(p.id, 'iban', pagamento.iban)} className="inline-flex items-center gap-1 text-[11px] font-semibold text-slate-400 hover:text-cyan-300 border border-white/10 rounded-md px-2 py-1 hover:border-cyan-400/30 transition-colors">{copiado?.id === p.id && copiado?.tipo === 'iban' ? <><Check size={11} /> IBAN copiado</> : <><Copy size={11} /> Copiar IBAN</>}</button>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">Transferência bancária: escreva <b className="text-slate-300">{refPed(p.id)}</b> no descritivo · ou <b className="text-slate-300">Multicaixa Express «Faturas»</b> com a mesma referência. Depois anexe o comprovativo aqui — a equipa valida e activa.</p>
+                    </div>
+                  )}
                 </div>
                 <div className="shrink-0 flex flex-col gap-2 min-w-[170px]">
                   {p.tipo !== 'usuarios' && <a href={`/api/portal/pedidos/${p.id}/proforma.pdf`} target="_blank" rel="noreferrer noopener" className="inline-flex items-center justify-center gap-2 text-sm border border-white/15 text-slate-200 rounded-lg px-3.5 py-2 hover:bg-white/5 transition-colors"><Download size={15} /> Proforma PDF</a>}
@@ -476,7 +603,7 @@ export default function ClientePortal() {
                       <input type="file" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.webp" onChange={e => { const f = e.target.files?.[0]; if (f) void anexarComprovativo(p.id, f); e.currentTarget.value = '' }} />
                     </label>
                   )}
-                  <a href={`https://wa.me/${whats}`} target="_blank" rel="noreferrer noopener" className={`text-center text-[11px] ${whats ? 'text-slate-500 hover:text-slate-300' : 'pointer-events-none opacity-50'} transition-colors`}>Dúvidas — falar com o comercial →</a>
+                  <a href={waPedido(p)} target="_blank" rel="noreferrer noopener" className="text-center text-[11px] text-slate-500 hover:text-emerald-400 transition-colors">Dúvidas sobre este pedido — falar com o comercial (com a ref já no texto) →</a>
                 </div>
               </div>
             ))}</div>
@@ -496,7 +623,10 @@ export default function ClientePortal() {
                       {dias !== null && dias <= 15 && dias >= 0 && <span className="text-[11px] font-bold text-amber-400">expira {dias === 0 ? 'hoje' : `em ${dias} dia(s)`}</span>}
                       {dias !== null && dias < 0 && <span className="text-[11px] font-bold text-rose-400">expirada</span>}
                     </div>
-                    <code className="mt-2 block text-cyan-300 text-base tracking-wider select-all">{l.chave_licenca}</code>
+                    <div className="mt-2 flex items-center gap-2">
+                      <code className="text-cyan-300 text-base tracking-wider select-all">{l.chave_licenca}</code>
+                      <button onClick={() => void copiar(l.id, 'chave', l.chave_licenca)} title="Copiar chave de activação" className="inline-flex items-center gap-1 text-[11px] text-slate-500 hover:text-cyan-300 border border-white/10 rounded-md px-2 py-1 hover:border-cyan-400/30 transition-colors shrink-0">{copiado?.id === l.id && copiado?.tipo === 'chave' ? <><Check size={11} /> copiada</> : <><Copy size={11} /> copiar</>}</button>
+                    </div>
                     <p className="mt-1.5 text-xs text-slate-500">activada {fmt(l.data_ativacao)} · expira {fmt(l.data_expiracao)}</p>
                   </div>
                   {(l.status === 'activa' || dias !== null && dias < 0) ? (
@@ -512,17 +642,25 @@ export default function ClientePortal() {
         )}
 
         {tab === 'downloads' && (
-          softDL.length === 0 && softDLLoaded === false
-            ? <Empty ic={<KeyRound size={44} />} t="A carregar catálogo…" d="Os instaladores oficiais aparecem aqui." />
-            : softDL.length === 0
-              ? <Empty ic={<Download size={44} />} t="Sem instaladores publicados" d="Assim que a equipa publicar instaladores, ficam aqui para sempre." />
-              : <div className="space-y-3">{softDL.map(s => (
+          <>
+            {licencas.length > 0 && licenciasActivas === 0 && (
+              <div className="mb-4 bg-amber-400/[.08] border border-amber-400/30 rounded-2xl px-4 py-3 flex items-center gap-2 flex-wrap text-sm text-amber-300">
+                <Lock size={15} /> <span>Os downloads oficiais fazem sentido com uma <b>licença activa</b> — a sua conta já instalou tudo antes? Renove para voltar a ter acesso garantido.</span>
+                <button onClick={() => setTab('licencas')} className="ml-auto inline-flex items-center gap-1.5 text-xs font-bold border border-amber-400/40 rounded-lg px-3 py-1.5 text-amber-300 hover:bg-amber-400/10 transition-colors"><KeyRound size={12} /> Ver licenças</button>
+              </div>
+            )}
+            {softDL.length === 0 && softDLLoaded === false
+              ? <Empty ic={<KeyRound size={44} />} t="A carregar catálogo…" d="Os instaladores oficiais aparecem aqui." />
+              : softDL.length === 0
+                ? <Empty ic={<Download size={44} />} t="Sem instaladores publicados" d="Assim que a equipa publicar instaladores, ficam aqui para sempre." />
+                : <div className="space-y-3">{softDL.map(s => (
                 <div key={s.id} className="bg-white/[.03] border border-white/10 rounded-2xl p-5 flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <strong className="text-[15px]">{s.name}</strong>
                       {s.version && <span className="text-[11px] text-cyan-300 bg-cyan-400/10 border border-cyan-400/20 px-2 py-0.5 rounded-full">v{String(s.version).replace(/^v\s*/i, '')}</span>}
                       {s.category && <span className="text-[11px] text-slate-400 border border-white/10 px-2 py-0.5 rounded-full">{s.category}</span>}
+                      {licenciasActivas === 0 && <span className="text-[11px] text-amber-300 border border-amber-400/30 bg-amber-400/10 px-2 py-0.5 rounded-full">requer licença activa</span>}
                     </div>
                     {s.description && <p className="mt-1.5 text-sm text-slate-400 max-w-2xl">{s.description}</p>}
                     <p className="mt-1 text-[11px] text-slate-600">{s.file_size ? `${String(s.file_size).trim()}` : ''}{s.file_size ? ' · ' : ''}instalador oficial — nada de ficheiros de terceiros</p>
@@ -531,7 +669,8 @@ export default function ClientePortal() {
                     <Download size={15} /> {baixando === s.id ? 'A preparar…' : 'Descarregar'}
                   </button>
                 </div>
-              ))}</div>
+              ))}</div>}
+          </>
         )}
 
         {tab === 'ajuda' && (
