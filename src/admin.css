@@ -1804,3 +1804,22 @@ html[data-theme='dark'] .admin-auth-shield{color:#bef264}
 @media (prefers-reduced-motion:reduce){.admin-auth-shield,.admin-auth-brand{animation:none}}
 html[data-theme='dark'] .lote-bar .lote-nota{color:#8ba0b9}
 html[data-theme='dark'] .lote-th input,html[data-theme='dark'] .lote-check{accent-color:#22d3ee}
+
+/* Grid visual de ícones — modal Novo/Editar serviço (AdminDashboard) */
+.service-icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-top:4px}
+.service-icon-tile{position:relative;display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 6px 9px;border:1px solid #e2e8f0;border-radius:12px;background:#fbfdff;cursor:pointer;transition:border-color .15s ease,background .15s ease,transform .15s ease,box-shadow .15s ease}
+.service-icon-tile input{position:absolute;opacity:0;pointer-events:none}
+.service-icon-glyph{width:38px;height:38px;display:grid;place-items:center;border-radius:11px;background:#eef2f7;color:#475569;transition:background .15s ease,color .15s ease}
+.service-icon-name{color:#64748b;font:600 .57rem/1.25 'DM Mono',monospace;text-align:center;letter-spacing:.01em}
+.service-icon-check{position:absolute;top:6px;right:6px;opacity:0;color:#2563eb;transition:opacity .15s ease;background:#fff;border-radius:50%;padding:1px}
+.service-icon-tile:hover{border-color:#bfdbfe;transform:translateY(-1px)}
+.service-icon-tile:has(input:checked){border-color:#2563eb;background:#eff6ff;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
+.service-icon-tile:has(input:checked) .service-icon-glyph{background:#2563eb;color:#fff}
+.service-icon-tile:has(input:checked) .service-icon-name{color:#2563eb}
+.service-icon-tile:has(input:checked) .service-icon-check{opacity:1}
+html[data-theme='dark'] .service-icon-tile{background:#0d1730;border-color:#22304e}
+html[data-theme='dark'] .service-icon-glyph{background:#16224a;color:#c3cfdf}
+html[data-theme='dark'] .service-icon-name{color:#7d90ab}
+html[data-theme='dark'] .service-icon-check{background:#0d1730}
+html[data-theme='dark'] .service-icon-tile:has(input:checked){background:#10233f;border-color:#2563eb}
+html[data-theme='dark'] .service-icon-tile:has(input:checked) .service-icon-glyph{background:#2563eb;color:#fff}

@@ -92,25 +92,10 @@ import { GitHubReleaseModal } from './admin/modals/GitHubReleaseModal'
 import { GlobalSearch, SECCAO_BUSCA } from './admin/GlobalSearch'
 import type { ItemBusca } from './admin/GlobalSearch'
 import { IconAlert, IconBell, IconChat, IconClock, IconDownload, IconGear, IconHourglass, IconKey, IconLock, IconPen, IconPhone, IconRepeat, IconTarget, IconThumb, IconUnlock, IconUsers } from './components/animIcons'
+import { serviceIcons, serviceIconDefs } from './serviceIcons'
 import SystemTour, { marcarTour, tourFeito } from './SystemTour'
 // Code-splitting: o pop-up de upgrade só carrega motion quando abre (a lib sai do chunk do painel e o aviso de 500kb morre)
 const Pricing = lazy(() => import('./components/ui/pricing-9').then(m => ({ default: m.Pricing })))
-
-// Icon mapping for services
-const serviceIcons: Record<string, React.ComponentType<{ size?: number }>> = {
-  Code2: Code2 as any,
-  Network: Network as any,
-  BarChart3: BarChart3 as any,
-  Headphones: Headphones as any,
-  Cpu: Cpu as any,
-  Database: Database as any,
-  Globe2: Globe2 as any,
-  Layers3: Layers3 as any,
-  ShieldCheck: ShieldCheck as any,
-  Zap: Zap as any,
-  Sparkles: Sparkles as any,
-  UsersRound: UsersRound as any,
-}
 
 type AdminSection = 'dashboard' | 'services' | 'media' | 'software' | 'licencas' | 'pedidos' | 'destaques' | 'blog' | 'parceiros' | 'contactos' | 'chamados' | 'portal' | 'wiki' | 'relatorios' | 'settings' | 'developer' | 'auditoria'
 type ClientePortalRow = { id: string; created_at: string; updated_at: string; nome_empresa: string; nif: string; nome_responsavel: string | null; telefone_whatsapp: string; email: string; estado: string; aprovado_em: string | null; observacoes_admin: string | null }
@@ -3580,7 +3565,50 @@ export default function AdminDashboard() {
 
     {deletingDestaqueId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingDestaqueId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar destaque</h2></div><button onClick={() => setDeletingDestaqueId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este destaque? Ele desaparece do carrossel do site imediatamente. Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingDestaqueId(null)}>Cancelar</Button><Button variant="dark" onClick={handleDestaqueDelete}><Trash2 size={15} /> Eliminar destaque</Button></div></div></div>}
 
-    {showServiceForm !== false && <div className="admin-modal-backdrop" onMouseDown={() => setShowServiceForm(false)}><div className="admin-modal" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">NOVO REGISTO</span><h2>{showServiceForm ? 'Editar serviço' : 'Novo serviço'}</h2></div><button onClick={() => setShowServiceForm(false)}><X size={18} /></button></div><form onSubmit={(e) => handleServiceSubmit(e, showServiceForm)}><div className="admin-form-grid"><label>Título<input name="title" placeholder="Ex.: Desenvolvimento à medida" defaultValue={showServiceForm?.title || ''} required autoFocus /></label><label>Slug (URL)<input name="slug" placeholder="Gerado automaticamente" defaultValue={showServiceForm?.slug || ''} disabled /></label><label>Ícone<select name="icon" defaultValue={showServiceForm?.icon || 'Code2'}>{Object.keys(serviceIcons).map((key) => <option key={key} value={key}>{key}</option>)}</select></label><label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={showServiceForm?.is_active !== false} /> Activo no site público</label></div><label>Descrição curta<input name="short_description" placeholder="Descrição breve para listagens" defaultValue={showServiceForm?.short_description || ''} required /></label><label>Descrição completa<textarea name="full_description" rows={4} placeholder="Descrição detalhada para a página do serviço" defaultValue={showServiceForm?.full_description || ''} /></label><div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowServiceForm(false)}>Cancelar</Button><Button type="submit"><Check size={15} /> {showServiceForm ? 'Actualizar serviço' : 'Criar serviço'}</Button></div></form></div></div>}
+    {showServiceForm !== false && <div className="admin-modal-backdrop" onMouseDown={() => setShowServiceForm(false)}><div className="admin-modal admin-modal--lg" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><div><span className="admin-panel-kicker">{showServiceForm ? 'EDITAR REGISTO' : 'NOVO REGISTO'}</span><h2>{showServiceForm ? 'Editar serviço' : 'Novo serviço'}</h2><span style={{ color: '#64748b', fontSize: '.7rem' }}>O que aparece na secção «Serviços» do site público</span></div><button onClick={() => setShowServiceForm(false)} className="admin-modal-close" aria-label="Fechar"><X size={18} /></button></div><form className="admin-modal-body" onSubmit={(e) => handleServiceSubmit(e, showServiceForm)}>
+      <fieldset className="admin-form-section">
+        <legend><Hash size={15} /> Identificação</legend>
+        <div className="admin-form-grid">
+          <label>Título<input name="title" placeholder="Ex.: Desenvolvimento à medida" defaultValue={showServiceForm?.title || ''} required autoFocus /></label>
+          <label>Slug (URL)<input name="slug" placeholder="Gerado automaticamente" defaultValue={showServiceForm?.slug || ''} disabled /></label>
+        </div>
+        <p className="admin-field-hint">O slug é derivado do título ao guardar — não precisa de ser preenchido.</p>
+      </fieldset>
+      <fieldset className="admin-form-section">
+        <legend><Sparkles size={15} /> Aparência no site</legend>
+        <div className="service-icon-grid" role="radiogroup" aria-label="Ícone do serviço">
+          {Object.entries(serviceIconDefs).map(([key, def]) => {
+            const TileIcon = def.icon
+            const selected = (showServiceForm?.icon || 'Code2') === key
+            return (
+              <label key={key} className="service-icon-tile" title={def.label}>
+                <input type="radio" name="icon" value={key} defaultChecked={selected} />
+                <span className="service-icon-glyph"><TileIcon size={17} /></span>
+                <span className="service-icon-name">{def.label}</span>
+                <Check size={11} className="service-icon-check" />
+              </label>
+            )
+          })}
+        </div>
+        <p className="admin-field-hint">Este ícone aparece no cartão do site e no modal «Saber mais» do serviço. Clique para escolher — o seleccionado fica destacado.</p>
+      </fieldset>
+      <fieldset className="admin-form-section">
+        <legend><FileText size={15} /> Conteúdo</legend>
+        <div className="admin-form-grid" style={{ gridTemplateColumns: '1fr' }}>
+          <label>Descrição curta<input name="short_description" placeholder="Descrição breve para listagens" defaultValue={showServiceForm?.short_description || ''} required /></label>
+          <label>Descrição completa<textarea name="full_description" rows={4} placeholder="Descrição detalhada — cada frase vira um destaque no modal «Saber mais»" defaultValue={showServiceForm?.full_description || ''} /></label>
+        </div>
+        <p className="admin-field-hint">No site, a 1.ª frase da descrição completa abre o «Saber mais»; as restantes viram a lista «O que inclui». Só com descrição curta? Ela própria aparece como destaque.</p>
+      </fieldset>
+      <fieldset className="admin-form-section">
+        <legend><Power size={15} /> Publicação</legend>
+        <div className="admin-form-grid" style={{ gridTemplateColumns: '1fr' }}>
+          <label className="checkbox-label"><input type="checkbox" name="is_active" defaultChecked={showServiceForm?.is_active !== false} /> Activo no site público</label>
+        </div>
+        <p className="admin-field-hint">Desligado = o serviço sai do site (fica no painel, pronto a reactivar).</p>
+      </fieldset>
+      <div className="admin-modal-actions"><Button variant="outline" type="button" onClick={() => setShowServiceForm(false)}>Cancelar</Button><Button type="submit"><Check size={15} /> {showServiceForm ? 'Actualizar serviço' : 'Criar serviço'}</Button></div>
+    </form></div></div>}
 
     {deletingServiceId && <div className="admin-modal-backdrop" onMouseDown={() => setDeletingServiceId(null)}><div className="admin-modal admin-modal--confirm" onMouseDown={(event) => event.stopPropagation()}><div className="admin-modal-head"><span className="admin-modal-warn"><AlertTriangle size={20} /></span><div><span className="admin-panel-kicker">CONFIRMAÇÃO</span><h2>Eliminar serviço</h2></div><button onClick={() => setDeletingServiceId(null)}><X size={18} /></button></div><p>Tem a certeza que quer eliminar este serviço? Esta acção não pode ser desfeita.</p><div className="admin-modal-actions"><Button variant="outline" onClick={() => setDeletingServiceId(null)}>Cancelar</Button><Button variant="dark" onClick={handleServiceDelete}><Trash2 size={15} /> Eliminar permanentemente</Button></div></div></div>}
 

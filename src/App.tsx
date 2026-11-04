@@ -40,6 +40,7 @@ import {
   X,
   Zap,
 } from 'lucide-react'
+import { serviceIcons } from './serviceIcons'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
 import OrderModal from './components/OrderModal'
@@ -60,26 +61,8 @@ const fallbackServices = [
 // nada de produtos fictícios.
 const fallbackProducts: SiteProduct[] = []
 
-// Icon mapping for services
+// Icon mapping for services — fonte única em src/serviceIcons.ts (painel + site)
 type SiteProduct = { id: string; name: string; version: string; file_size: string; downloads_count: number; created_at: string; description?: string | null; price?: number | null; category?: string | null; file_url?: string | null; changelog?: string | null }
-
-const serviceIcons: Record<string, typeof Code2> = {
-  Code2,
-  Network,
-  Server,
-  BarChart3,
-  Headphones,
-  Cpu,
-  Database,
-  Globe2,
-  Layers3,
-  ShieldCheck,
-  Zap,
-  Sparkles,
-  UsersRound,
-  Package,
-  DollarSign,
-}
 
 function getServiceIcon(iconName: string) {
   const Icon = serviceIcons[iconName] || serviceIcons['Code2']
