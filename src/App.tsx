@@ -86,6 +86,52 @@ function getServiceIcon(iconName: string) {
   return Icon
 }
 
+// ── MODAL «SABER MAIS» DOS SERVIÇOS (site público) ─────────────────
+// Abre ao clicar «Saber mais» no cartão: detalhe completo, estruturado
+// e com a mesma linguagem visual do cartão (ícone, eyebrow, accent).
+type ServicoPublico = { id: string; title: string; slug: string; short_description: string; full_description?: string | null; icon: string }
+type ServicoDetalhe = { service: ServicoPublico; accent: string; eyebrow: string }
+type ServicoModalProps = { detalhe: ServicoDetalhe; whatsappHREF: string; onClose: () => void }
+
+function ServicoModal({ detalhe, whatsappHREF, onClose }: ServicoModalProps) {
+  const { service, accent, eyebrow } = detalhe
+  const Icon = getServiceIcon(service.icon)
+  // descrição completa → 1.ª frase como lead, restantes como «o que inclui»
+  const texto = (service.full_description || '').trim() || service.short_description
+  const frases = texto.split(/(?<=[.!?])\s+(?=[A-ZÀ-Ú¿¡«”"0-9])/).map(f => f.trim()).filter(Boolean)
+  const lead = frases[0] || service.short_description
+  const inclui = (frases.slice(1).length > 0 ? frases.slice(1) : [service.short_description]).filter((f, i, a) => a.indexOf(f) === i)
+  const waLink = `${whatsappHREF}?text=${encodeURIComponent(`Olá CFTEC! Tenho interesse no serviço «${service.title}» (${eyebrow}) — podiam explicar melhor?`)}`
+  return (
+    <div className="servico-modal-overlay" onMouseDown={onClose} role="dialog" aria-modal="true" aria-label={service.title}>
+      <div className={`servico-modal servico-modal--${accent}`} onMouseDown={e => e.stopPropagation()}>
+        <button className="servico-modal-close" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
+        <div className="servico-top">
+          <div className="service-icon servico-modal-icon"><Icon size={26} /></div>
+          <span className="servico-eyebrow">{eyebrow}</span>
+        </div>
+        <h3 className="servico-modal-title">{service.title}</h3>
+        <p className="servico-modal-lead">{lead}</p>
+        <div className="servico-sec">
+          <span className="servico-sec-label">O que inclui</span>
+          <ul className="servico-lista">
+            {inclui.map((f, i) => (
+              <li key={i}><Check size={13} /> <span>{f}</span></li>
+            ))}
+          </ul>
+        </div>
+        <div className="servico-sec">
+          <span className="servico-sec-label">Próximo passo</span>
+          <div className="servico-cta">
+            <a className="servico-btn servico-btn--wa" href={waLink} target="_blank" rel="noreferrer noopener"><MessageCircle size={15} /> Falar com o comercial</a>
+            <a className="servico-btn servico-btn--form" href="#contacto" onClick={onClose}><Send size={14} /> Formulário de contacto</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 const pillars = [
   { icon: Zap, title: 'Pragmáticos', text: 'Tecnologia que resolve primeiro, impressiona depois.' },
   { icon: UsersRound, title: 'Próximos', text: 'Falamos claro e trabalhamos lado a lado.' },
@@ -216,6 +262,7 @@ function App() {
   const [formSent, setFormSent] = useState(false)
   const [toast, setToast] = useState('')
   const [servicesData, setServicesData] = useState(fallbackServices)
+  const [servicoModal, setServicoModal] = useState<ServicoDetalhe | null>(null)
   const [softwareData, setSoftwareData] = useState(fallbackProducts)
   const [contactOptions, setContactOptions] = useState<string[]>(['Pedido geral', 'Serviço à medida', 'CFTEC Flow', 'CFTEC Insight', 'CFTEC Desk'])
   const [loadingServices, setLoadingServices] = useState(true)
@@ -440,6 +487,12 @@ function App() {
     }
   }
 
+  // modal de serviço no ecrã → bloqueia o scroll da página por debaixo
+  useEffect(() => {
+    document.body.style.overflow = servicoModal ? 'hidden' : ''
+    return () => { document.body.style.overflow = '' }
+  }, [servicoModal])
+
   return (
     <div className={`site-shell ${banner.active && banner.message ? 'site-shell--banner' : ''}`}>
       {toast && <div className="toast" role="status"><BadgeCheck size={18} />{toast}</div>}
@@ -515,6 +568,8 @@ function App() {
 
         <NewsSlider />
 
+        {servicoModal && <ServicoModal detalhe={servicoModal} whatsappHREF={siteWhatsHREF} onClose={() => setServicoModal(null)} />}
+
         <section className="section section-about" id="sobre">
           <div className="container">
             <div className="section-heading split-heading reveal"><div><span className="section-kicker">01 / Sobre nós</span><h2>Menos ruído.<br /><em>Mais movimento.</em></h2></div><p>Somos uma equipa de produto e tecnologia que acredita que a melhor solução é aquela que as pessoas adoptam sem precisar de um manual.</p></div>
@@ -548,7 +603,7 @@ function App() {
                     </div>
                     <h3>{service.title}</h3>
                     <p>{service.short_description}</p>
-                    <a href="#contacto" className="text-link">Saber mais <ChevronRight size={15} /></a>
+                    <button type="button" className="text-link text-link--btn" onClick={() => setServicoModal({ service, accent, eyebrow })}>Saber mais <ChevronRight size={15} /></button>
                   </Card>
                 )
               })}
