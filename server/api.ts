@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
-import { createHmac, randomBytes as cryptoRandomBytes } from 'node:crypto'
+import { createHmac, createHash as sha256Hash, randomBytes as cryptoRandomBytes } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import dotenv from 'dotenv'
 import webpush from 'web-push'
@@ -1144,8 +1144,12 @@ async function licencaAtual(): Promise<EstadoLicenca> {
   }
 }
 
-// ---- Quota de storage (instaladores + mídia) — soma real dos buckets ----
+// ---- Quota de storage (instaladores + mídia + comprovativos) — soma real dos buckets ----
+const BUCKET_COMP = 'comprovativos'
+// cache de 2 min na soma (o storage list custa chamadas e o meter corre em polling)
+let _usoCache: { mb: number; quando: number } | null = null
 async function usoStorageMb(): Promise<number> {
+  if (_usoCache && Date.now() - _usoCache.quando < 120_000) return _usoCache.mb
   if (!supabase) return 0
   let total = 0
   for (const [bucket, prefix] of [['software', 'software'], ['media', 'uploads']] as const) {
@@ -1154,16 +1158,152 @@ async function usoStorageMb(): Promise<number> {
       for (const f of (data || []) as { metadata?: { size?: number } }[]) total += Number(f.metadata?.size || 0)
     } catch { /* bucket pode não existir ainda — ignora */ }
   }
-  return total / (1024 * 1024)
+  // comprovativos: uploads/{nif}/{ts}-nome — a raiz devolve pastas, o tamanho só existe dentro
+  try {
+    const { data: pastas } = await supabase.storage.from(BUCKET_COMP).list('', { limit: 1000 })
+    const nomes = (pastas || []).slice(0, 400).map(f => f.name) as string[]
+    for (const pasta of nomes) {
+      const { data: ficheiros } = await supabase.storage.from(BUCKET_COMP).list(pasta, { limit: 100 })
+      for (const f of (ficheiros || []) as { metadata?: { size?: number } }[]) total += Number(f.metadata?.size || 0)
+    }
+  } catch { /* bucket ainda não criado — ignora */ }
+  const mb = total / (1024 * 1024)
+  _usoCache = { mb, quando: Date.now() }
+  return mb
+}
+// MIME a partir da extensão do nome — o mesmo mapa que os GET de comprovativo usavam
+function mimePorExt(nome: string): string {
+  const ext = String(nome || '').split('.').pop()?.toLowerCase() || ''
+  return ext === 'pdf' ? 'application/pdf' : ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : (ext === 'jpg' || ext === 'jpeg') ? 'image/jpeg' : 'application/octet-stream'
+}
+// caminho do objecto: comprovativos/{pedidoId}/{ts}-{nomeOriginal}
+function pathComprovativo(pedidoId: string, nome: string, quando = Date.now()): string {
+  const safe = String(nome).replace(/[^a-zA-Z0-9-_.]/g, '_').slice(0, 80) || 'comprovativo'
+  return `${pedidoId}/${quando}-${safe}`
+}
+// guarda o comprovativo no bucket privado; cria o bucket em falta on-the-fly.
+// devolve null (ok) ou uma mensagem de erro
+async function guardarComprovativoStorage(pedidoId: string, nome: string, buf: Buffer): Promise<string | null> {
+  if (!supabase) return null // sem BD não há storage — o chamador usa o fallback base64
+  const caminho = pathComprovativo(pedidoId, nome)
+  const { error } = await supabase.storage.from(BUCKET_COMP).upload(caminho, buf, { contentType: mimePorExt(nome), upsert: false })
+  if (!error) { _usoCache = null; return null }
+  if (/not found|does not exist|não existe/i.test(String(error.message))) {
+    const { error: errCriar } = await supabase.storage.createBucket(BUCKET_COMP, { public: false, fileSizeLimit: 2 * 1024 * 1024 })
+    if (!errCriar) {
+      const { error: errTentar } = await supabase.storage.from(BUCKET_COMP).upload(caminho, buf, { contentType: mimePorExt(nome), upsert: false })
+      if (!errTentar) { _usoCache = null; return null }
+      return `Erro a guardar o comprovativo: ${errTentar.message}`
+    }
+  }
+  return `Erro a guardar o comprovativo: ${error.message}`
+}
+// lê o comprovativo de um pedido: storage (uploads novos) primeiro, base64 na row (antigos) depois
+async function lerComprovativo(row: { comprovativo_b64?: string | null; comprovativo_nome?: string | null }, pedidoId?: string): Promise<{ buf: Buffer; nome: string } | null> {
+  if (supabase && pedidoId && !row.comprovativo_b64 && row.comprovativo_nome) {
+    try {
+      const { data } = await supabase.storage.from(BUCKET_COMP).list(pedidoId, { limit: 50, sortBy: { column: 'created_at', order: 'desc' } })
+      const alvo = (data || [])[0]
+      if (alvo) {
+        const { data: blob, error } = await supabase.storage.from(BUCKET_COMP).download(`${pedidoId}/${alvo.name}`)
+        if (blob && !error) return { buf: Buffer.from(await blob.arrayBuffer()), nome: String(row.comprovativo_nome) }
+      }
+    } catch { /* cai para o base64 abaixo */ }
+  }
+  if (row.comprovativo_b64) return { buf: Buffer.from(String(row.comprovativo_b64), 'base64'), nome: String(row.comprovativo_nome || 'comprovativo') }
+  return null
+}
+// cleanup: apaga os comprovativos de um pedido (DELETE do pedido no painel)
+async function apagarComprovativos(pedidoId: string): Promise<void> {
+  if (!supabase) return
+  try {
+    const { data } = await supabase.storage.from(BUCKET_COMP).list(pedidoId, { limit: 100 })
+    const nomes = (data || []).map(f => `${pedidoId}/${f.name}`)
+    if (nomes.length) { await supabase.storage.from(BUCKET_COMP).remove(nomes); _usoCache = null }
+  } catch { /* bucket inexistente — nada a limpar */ }
+}
+// escreve o comprovativo na resposta HTTP (MIME a partir do nome)
+function respostaComprovativo(res: import('http').ServerResponse, item: { buf: Buffer; nome: string }): void {
+  const mimeType = mimePorExt(item.nome)
+  const nomeF = String(item.nome).replace(/["\\]/g, '')
+  res.writeHead(200, { 'Content-Type': mimeType, 'Cache-Control': 'no-store', 'Content-Disposition': `inline; filename="${nomeF}"` })
+  res.end(item.buf)
 }
 // verifica a quota do contrato antes de um upload; devolve a mensagem de erro ou null
-async function verificaQuotaStorage(nivelActual: string | undefined, extraBytes: number): Promise<string | null> {
-  if (nivelActual === 'developer') return null // o developer (Nexora) gerencia o próprio sistema
+async function verificaQuotaStorage(nivelActual: string | undefined, extraBytes: number): Promise<string | null> {  if (nivelActual === 'developer') return null // o developer (Nexora) gerencia o próprio sistema
   const lic = await licencaAtual()
   if (lic.maxStorageMb <= 0) return null // 0 = ilimitado
   const usado = await usoStorageMb()
+  // coscuvilha a 80%: um único e-mail por dia — sem spam, sem silêncio
+  if (usado >= lic.maxStorageMb * 0.8) void avisarQuotaStorage(usado, lic.maxStorageMb)
   if (usado + extraBytes / (1024 * 1024) <= lic.maxStorageMb) return null
   return `Limite de armazenamento do contrato: ${lic.maxStorageMb} MB (em uso ${Math.round(usado)} MB + ${Math.round(extraBytes / 1024)} KB a enviar). Solicite mais espaço à Nexora Systems.`
+}
+let _ultimoAvisoQuota = 0
+async function avisarQuotaStorage(usado: number, max: number): Promise<void> {
+  if (Date.now() - _ultimoAvisoQuota < 24 * 3600 * 1000) return
+  _ultimoAvisoQuota = Date.now()
+  fireAdminEmail('Storage da plataforma a 80%', emailShell('Alerta de armazenamento', `<p style="margin:0">O storage da plataforma ocupa <b>${Math.round(usado)} MB</b> de um contrato de <b>${Math.round(max)} MB</b> (${Math.round(usado / max * 100)}%). Abaixo de 20% de folga, os uploads começam a recusar cedo.</p><p style="margin:12px 0 0">Considerar despejo de instaladores antigos ou upgrade de contrato.</p>`))
+}
+
+// ─── DRIVE S3 COMPATÍVEL (Cloudflare R2 / DigitalOcean Spaces / Backblaze B2) ──
+// Activa-se com 5 variáveis no .env (S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY,
+// S3_SECRET_KEY e S3_PUBLIC_BASE). Sem elas, tudo continua na Supabase Storage.
+// O gancho principal: os instaladores (ficheiros grandes com MUITOS downloads)
+// saem da Supabase — egress custa lá — para a R2, onde o trânsito é de graça.
+// As assinaturas são SigV4 feitas à mão com o crypto do Node — zero SDK novo.
+const S3 = {
+  endpoint: (process.env.S3_ENDPOINT || '').trim(),      // ex.: https://<acc>.r2.cloudflarestorage.com
+  bucket: (process.env.S3_BUCKET || '').trim(),
+  region: (process.env.S3_REGION || 'auto').trim(),      // R2 usa 'auto'
+  access: (process.env.S3_ACCESS_KEY || '').trim(),
+  secret: (process.env.S3_SECRET_KEY || '').trim(),
+  publicBase: (process.env.S3_PUBLIC_BASE || '').trim(), // ex.: https://pub-<hash>.r2.dev ou o domínio próprio
+}
+function s3Activo(): boolean {
+  return !!(S3.endpoint && S3.bucket && S3.access && S3.secret)
+}
+// assina uma request SigV4 (query-string presigned, path-style)
+function s3Presign(metodo: 'GET' | 'PUT' | 'DELETE', objectPath: string, expSeg = 900): string {
+  const url = new URL(S3.endpoint.endsWith('/') ? S3.endpoint.slice(0, -1) : S3.endpoint)
+  const host = url.host
+  const caminho = `${S3.bucket}/${objectPath.replace(/^\/+/, '')}`
+  const agora = Math.floor(Date.now() / 1000)
+  const amzDate = new Date(agora * 1000).toISOString().replace(/[:-]|\.\d{3}/g, '')
+  const dataCurta = amzDate.slice(0, 8)
+  const escopo = `${dataCurta}/${S3.region}/s3/aws4_request`
+  const params = new URLSearchParams({
+    'X-Amz-Algorithm': 'AWS4-HMAC-SHA256',
+    'X-Amz-Credential': `${S3.access}/${escopo}`,
+    'X-Amz-Date': amzDate,
+    'X-Amz-Expires': String(expSeg),
+    'X-Amz-SignedHeaders': 'host',
+  })
+  const query = [...Array.from(params.entries())].sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${encodeURIComponent(v).replace(/[!'()*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'))}`).join('&')
+  const requestCanónica = [metodo, caminho, query, `host:${host}`, '', 'host', 'UNSIGNED-PAYLOAD'].join('\n')
+  const escopoString = ['AWS4-HMAC-SHA256', amzDate, escopo, sha256Hash('sha256').update(requestCanónica).digest('hex')].join('\n')
+  const hmac = (k: string | Buffer, d: string) => createHmac('sha256', k).update(d).digest()
+  const sig = hmac(hmac(hmac(hmac(hmac('AWS4' + S3.secret, dataCurta), S3.region), 's3'), 'aws4_request'), escopoString).toString('hex')
+  return `${S3.endpoint}/${caminho}?${query}&X-Amz-Signature=${sig}`
+}
+// URL público de distribuição (R2 pub / domínio próprio) para pôr na coluna file_url
+function s3PublicUrl(objectPath: string): string {
+  const base = S3.publicBase || `${S3.endpoint}/${S3.bucket}`
+  return `${base.replace(/\/+$/, '')}/${objectPath.replace(/^\/+/, '')}`
+}
+async function s3Put(objectPath: string, buf: Buffer, mime: string): Promise<boolean> {
+  if (!s3Activo()) return false
+  try {
+    const r = await fetch(s3Presign('PUT', objectPath, 3600), { method: 'PUT', body: new Uint8Array(buf), headers: { 'Content-Type': mime } })
+    return r.ok
+  } catch { return false }
+}
+async function s3Delete(objectPath: string): Promise<boolean> {
+  if (!s3Activo()) return false
+  try {
+    const r = await fetch(s3Presign('DELETE', objectPath, 600), { method: 'DELETE' })
+    return r.ok || r.status === 404
+  } catch { return false }
 }
 
 
@@ -2108,13 +2248,19 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               const nomeComp = String(payloadComp.comprovativo_nome || 'comprovativo.pdf').slice(0, 200)
               if (!b64Comp) return json(res, 400, { ok: false, error: 'Falta o ficheiro do comprovativo.' })
               if (b64Comp.length > 2_800_000) return json(res, 413, { ok: false, error: 'Comprovativo demasiado grande (máximo ~2 MB).' })
+              const bufComp = Buffer.from(b64Comp, 'base64')
               const { data: pedComp } = await supabase.from('pedidos_licencas').select('id, nif, email, status, tipo, comprovativo_nome, nome_empresa').eq('id', pidComp).maybeSingle()
               const donoComp = pedComp && (pedComp.nif === conta.nif || String(pedComp.email || '').toLowerCase() === String(conta.email).toLowerCase())
               if (!pedComp || !donoComp) return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
               if (pedComp.tipo === 'nova') return json(res, 409, { ok: false, error: 'Este pedido não foi criado no portal — anexe o comprovativo com o comercial.' })
               if (!['Pendente', 'Em Verificação', 'Aprovado'].includes(pedComp.status))
                 return json(res, 409, { ok: false, error: 'Este pedido já não aceita comprovativo (estado atual: ' + pedComp.status + ').' })
-              const { error: errComp } = await supabase.from('pedidos_licencas').update({ comprovativo_b64: b64Comp, comprovativo_nome: nomeComp }).eq('id', pidComp)
+              // novo fluxo: o ficheiro mora no bucket privado (a BD guarda só o nome) —
+              // se o storage falhar, o base64 na row mantém o pedido a funcionar
+              const errStorageComp = await guardarComprovativoStorage(pidComp, nomeComp, bufComp)
+              const errComp = errStorageComp
+                ? (await supabase.from('pedidos_licencas').update({ comprovativo_b64: b64Comp, comprovativo_nome: nomeComp }).eq('id', pidComp)).error
+                : (await supabase.from('pedidos_licencas').update({ comprovativo_b64: null, comprovativo_nome: nomeComp }).eq('id', pidComp)).error
               if (errComp) return json(res, 500, { ok: false, error: errComp.message })
               fireAdminAlert(`📎 Comprovativo anexado — ${pedComp.nome_empresa || clienteSessao?.name || 'Cliente'} anexou ${nomeComp} ao pedido ${pidComp.slice(0, 8).toUpperCase()} (${pedComp.tipo === 'renovacao' ? 'renovação' : 'utilizadores'}). Pronto para liquidação.`)
               logAuditoria({ email: clienteSessao?.email || (pedComp.email as string) || 'portal', level: 'portal' }, 'portal_comprovativo', 'pedido', pidComp, { nome: nomeComp })
@@ -2169,12 +2315,10 @@ ${emailLinha('E-mail', escHtml(email))}</table>
               const { data: pedCx } = await supabase.from('pedidos_licencas').select('nif, email, comprovativo_b64, comprovativo_nome').eq('id', pidCx).maybeSingle()
               const donoCx = pedCx && (pedCx.nif === conta.nif || String(pedCx.email || '').toLowerCase() === String(conta.email).toLowerCase())
               if (!pedCx || !donoCx) return json(res, 404, { ok: false, error: 'Pedido não encontrado para a sua conta.' })
-              if (!pedCx.comprovativo_b64) return json(res, 404, { ok: false, error: 'Este pedido ainda não tem comprovativo anexado.' })
-              const extCx = String(pedCx.comprovativo_nome || '').split('.').pop()?.toLowerCase() || ''
-              const mimeCx = extCx === 'pdf' ? 'application/pdf' : extCx === 'png' ? 'image/png' : extCx === 'webp' ? 'image/webp' : (extCx === 'jpg' || extCx === 'jpeg') ? 'image/jpeg' : 'application/octet-stream'
-              const bufCx = Buffer.from(String(pedCx.comprovativo_b64), 'base64')
-              res.writeHead(200, { 'Content-Type': mimeCx, 'Cache-Control': 'no-store', 'Content-Disposition': `inline; filename="${String(pedCx.comprovativo_nome || 'comprovativo').replace(/["\\]/g, '')}"` })
-              return res.end(bufCx)
+              const itemCx = await lerComprovativo(pedCx, pidCx)
+              if (!itemCx) return json(res, 404, { ok: false, error: 'Este pedido ainda não tem comprovativo anexado.' })
+              respostaComprovativo(res, itemCx)
+              return
             }
 
             // PERFIL DO PRÓPRIO CLIENTE — ler / editar dados de contacto (e-mail e empresa ficam)
@@ -2359,7 +2503,11 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
             if (!pedComp) return json(res, 404, { ok: false, error: 'Pedido não encontrado — confirme a referência do comprovativo.' })
             if (!(pedComp.status === 'Pendente' || pedComp.status === 'Em Verificação'))
               return json(res, 409, { ok: false, error: 'Este pedido já não aceita comprovativo (estado atual: ' + pedComp.status + ').' })
-            const updatesComp: Record<string, unknown> = { comprovativo_b64: b64Comp, comprovativo_nome: nomeComp }
+            // ficheiro mora no bucket privado; base64 na row só se o storage falhar
+            const errStorageComp = await guardarComprovativoStorage(idComp, nomeComp, Buffer.from(b64Comp, 'base64'))
+            const updatesComp: Record<string, unknown> = errStorageComp
+              ? { comprovativo_b64: b64Comp, comprovativo_nome: nomeComp }
+              : { comprovativo_b64: null, comprovativo_nome: nomeComp }
             if (pedComp.status === 'Pendente') updatesComp.status = 'Em Verificação'
             const { error: errComp } = await supabase.from('pedidos_licencas').update(updatesComp).eq('id', idComp)
             if (errComp) {
@@ -2974,12 +3122,11 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
             const comprovMatch = path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)\/comprovativo$/)
             if (comprovMatch && req.method === 'GET') {
               const { data: rowCx } = await supabase.from('pedidos_licencas').select('comprovativo_b64, comprovativo_nome').eq('id', comprovMatch[1]).maybeSingle()
-              if (!rowCx?.comprovativo_b64) return json(res, 404, { ok: false, error: 'Este pedido ainda não tem comprovativo anexado.' })
-              const extCx = String(rowCx.comprovativo_nome || '').split('.').pop()?.toLowerCase() || ''
-              const mimeCx = extCx === 'pdf' ? 'application/pdf' : extCx === 'png' ? 'image/png' : extCx === 'webp' ? 'image/webp' : (extCx === 'jpg' || extCx === 'jpeg') ? 'image/jpeg' : 'application/octet-stream'
-              const bufCx = Buffer.from(String(rowCx.comprovativo_b64), 'base64')
-              res.writeHead(200, { 'Content-Type': mimeCx, 'Cache-Control': 'no-store', 'Content-Disposition': `inline; filename="${String(rowCx.comprovativo_nome || 'comprovativo').replace(/["\\]/g, '')}"` })
-              return res.end(bufCx)
+              if (!rowCx) return json(res, 404, { ok: false, error: 'Pedido não encontrado.' })
+              const itemCx = await lerComprovativo(rowCx, comprovMatch[1])
+              if (!itemCx) return json(res, 404, { ok: false, error: 'Este pedido ainda não tem comprovativo anexado.' })
+              respostaComprovativo(res, itemCx)
+              return
             }
 
             // CONFIRMAR LIQUIDAÇÃO (Ponto 5): proforma → Paga, com comprovativo + IBAN + nº FT automático
@@ -2997,10 +3144,14 @@ ${emailLinha('Problema', escHtml(descricao).slice(0, 800))}</table>`),
               if (reciboExistPg)
                 return json(res, 409, { ok: false, error: `Este pedido já foi liquidado — Fatura Definitiva ${reciboExistPg.numero} emitida.` })
               // comprovativo: base64 opcional, máx. ~2 MB (evita linhas gigantes na DB).
-              // Se o admin não anexar nada, usa o comprovativo que o CLIENTE subiu no portal (Parte 7.1)
+              // Se o admin não anexar nada, usa o comprovativo que o CLIENTE subiu
+              // (bucket privado primeiro — uploads novos; base64 na row para os antigos)
               const b64AdminPg = String(bodyPg.comprovativo_b64 || '').trim()
-              const b64ClientePg = String((orderPg as { comprovativo_b64?: string | null }).comprovativo_b64 || '').trim()
-              const b64Pg = (b64AdminPg || b64ClientePg)
+              let b64Pg = b64AdminPg
+              if (!b64Pg) {
+                const itemPg = await lerComprovativo(orderPg as { comprovativo_b64?: string | null; comprovativo_nome?: string | null }, idPg)
+                if (itemPg) b64Pg = itemPg.buf.toString('base64')
+              }
               if (b64Pg.length > 2_800_000)
                 return json(res, 413, { ok: false, error: 'Comprovativo demasiado grande (máximo ~2 MB).' })
               // nº FT sequencial (settings.ft_seq) com tentativa segura contra duplicados
@@ -3175,9 +3326,13 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
 
             if (path.match(/^\/api\/admin\/license-orders\/([a-f0-9-]+)$/) && req.method === 'DELETE') {
               const id = path.split('/').pop()
+              // rasto honesto no audit: o que foi apagado (empresa/NIF/software) —
+              // o episódio de espera deixou claro que detalhe:null deixa o audit cego
+              const { data: pedAp } = await supabase.from('pedidos_licencas').select('nome_empresa, nif, software_nome, status').eq('id', id).maybeSingle() as unknown as { data: Record<string, unknown> | null }
               const { error } = await supabase.from('pedidos_licencas').delete().eq('id', id)
               if (error) return json(res, 500, { ok: false, error: error.message })
-              logAuditoria(currentAdmin(req), 'pedido_apagado', 'pedido', id)
+              void apagarComprovativos(String(id))
+              logAuditoria(currentAdmin(req), 'pedido_apagado', 'pedido', id, pedAp ? { empresa: pedAp.nome_empresa, nif: pedAp.nif, software: pedAp.software_nome, estado: pedAp.status } : null)
               return json(res, 200, { ok: true })
             }
 
@@ -3200,8 +3355,9 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 logAuditoria(adminLote, 'pedido_estado', 'pedido', null, { em_massa: true, total: (afetados || []).length, estado: novoEstado })
                 return json(res, 200, { ok: true, total: (afetados || []).length })
               }
-              const { error, data: apagados } = await supabase.from('pedidos_licencas').delete().in('id', IDS).select('id')
-              if (error) return json(res, 500, { ok: false, error: error.message })
+              const { error: errLotePag, data: apagados } = await supabase.from('pedidos_licencas').delete().in('id', IDS).select('id')
+              if (errLotePag) return json(res, 500, { ok: false, error: errLotePag.message })
+              for (const ap of (apagados || []) as { id: string }[]) void apagarComprovativos(ap.id)
               logAuditoria(adminLote, 'pedido_apagado', 'pedido', null, { em_massa: true, total: (apagados || []).length })
               return json(res, 200, { ok: true, total: (apagados || []).length })
             }
@@ -3564,7 +3720,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               const licenca = await licencaAtual()
               // uso de storage só para o developer (custa 2 chamadas ao storage — não vale em cada polling)
               const storageUsadoMb = currentAdmin(req)?.level === 'developer' ? Math.round((await usoStorageMb()) * 10) / 10 : null
-              return json(res, 200, { ok: true, ...licenca, storageUsadoMb, bypassActivo: cookieBypassValido(req) })
+              return json(res, 200, { ok: true, ...licenca, storageUsadoMb, s3Activo: s3Activo(), bypassActivo: cookieBypassValido(req) })
             }
             if (path === '/api/admin/system-license' && req.method === 'PATCH') {
               const vez = currentAdmin(req)
@@ -4859,10 +5015,15 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               }
               const safe = String(filename || 'instalador.zip').replace(/[^a-zA-Z0-9-_.() ]/g, '_').slice(-80)
               const objectPath = `software/upload-${Date.now()}-${safe.replace(/\s+/g, '-')}`
+              // destino S3 (R2/Spaces) quando configurado — o browser faz PUT directo ao object storage,
+              // a Supabase só fica com os metadados; sem config, segue-se o fluxo Supabase como sempre
+              if (s3Activo()) {
+                return json(res, 200, { ok: true, signedUrl: s3Presign('PUT', objectPath, 3600), path: `s3:${objectPath}`, publicUrl: s3PublicUrl(objectPath), destino: 's3' })
+              }
               const { data: signed, error } = await supabase.storage.from('software').createSignedUploadUrl(objectPath)
               if (error || !signed) return json(res, 500, { ok: false, error: error?.message || 'Falha ao gerar o URL de upload.' })
               const { data: pub } = supabase.storage.from('software').getPublicUrl(objectPath)
-              return json(res, 200, { ok: true, signedUrl: signed.signedUrl, path: objectPath, publicUrl: pub.publicUrl })
+              return json(res, 200, { ok: true, signedUrl: signed.signedUrl, path: objectPath, publicUrl: pub.publicUrl, destino: 'supabase' })
             }
 
             if (path === '/api/admin/software' && req.method === 'POST') {
@@ -4878,8 +5039,13 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                 const storagePath = String(payload.storage_path || '')
                 if (!name || !version || !price || !description)
                   return json(res, 400, { ok: false, error: 'Todos os campos são obrigatórios.' })
-                if (!storagePath.startsWith('software/'))
+                // path pode ser do bucket Supabase ('software/…') ou do S3 ('s3:software/…')
+                const destinoS3 = storagePath.startsWith('s3:')
+                if (!destinoS3 && !storagePath.startsWith('software/'))
                   return json(res, 400, { ok: false, error: 'Caminho de storage inválido.' })
+                // o objecto no S3 está fora da quota da Supabase (é o destino barato) —
+                // a quota do contrato aplica-se ao que mora na Supabase Storage
+                const pathLimpo = destinoS3 ? storagePath.slice(3) : storagePath
                 const filedSize = String(payload.file_size || '').match(/^\d+(\.\d{1,2})? MB$/)
                   ? String(payload.file_size)
                   : `${Number(payload.file_size || 0) > 0 ? Number(payload.file_size).toFixed(2) + ' MB' : '0 MB'}`
@@ -4889,12 +5055,13 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   if (licJ.maxStorageMb > 0) {
                     const usado = await usoStorageMb()
                     if (usado > licJ.maxStorageMb) {
-                      await supabase.storage.from('software').remove([storagePath])
+                      if (destinoS3) await s3Delete(pathLimpo)
+                      else await supabase.storage.from('software').remove([storagePath])
                       return json(res, 413, { ok: false, error: `Limite de armazenamento do contrato: ${licJ.maxStorageMb} MB (em uso ${Math.round(usado)} MB). O ficheiro foi removido — solicite mais espaço à Nexora Systems.` })
                     }
                   }
                 }
-                const { data: pub } = supabase.storage.from('software').getPublicUrl(storagePath)
+                const fileUrl = destinoS3 ? s3PublicUrl(pathLimpo) : (supabase.storage.from('software').getPublicUrl(storagePath)).data?.publicUrl || ''
                 const { data, error } = await supabase
                   .from('softwares')
                   .insert({
@@ -4904,7 +5071,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                     price: parseFloat(price),
                     category: String(payload.category || '').trim() || null,
                     changelog: String(payload.changelog || '').trim() || null,
-                    file_url: pub.publicUrl,
+                    file_url: fileUrl,
                     file_size: filedSize,
                     downloads_count: 0,
                     is_active: true,
@@ -4912,7 +5079,7 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                   .select('id, name, version, file_size, downloads_count, created_at')
                   .single()
                 if (error) return json(res, 500, { ok: false, error: error.message })
-                logAuditoria(currentAdmin(req), 'software_criado', 'software', data.id, { name, modo: 'assinado' })
+                logAuditoria(currentAdmin(req), 'software_criado', 'software', data.id, { name, modo: destinoS3 ? 's3' : 'assinado' })
                 return json(res, 201, { ok: true, software: data })
               }
 
@@ -5048,9 +5215,16 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
 
               if (item?.file_url) {
                 try {
-                  const url = new URL(item.file_url)
-                  const storagePath = decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\/public\/software\//, ''))
-                  if (storagePath) await supabase.storage.from('software').remove([storagePath])
+                  // ficheiro pode morar no S3 (base própria da R2/Spaces) ou no bucket Supabase
+                  const baseS3 = S3.publicBase ? item.file_url.startsWith(S3.publicBase.replace(/\/+$/, '')) : false
+                  if (baseS3) {
+                    const pathS3 = decodeURIComponent(item.file_url.slice(S3.publicBase.replace(/\/+$/, '').length))
+                    await s3Delete(pathS3.replace(/^\/+/, ''))
+                  } else {
+                    const url = new URL(item.file_url)
+                    const storagePath = decodeURIComponent(url.pathname.replace(/^\/storage\/v1\/object\/public\/software\//, ''))
+                    if (storagePath) await supabase.storage.from('software').remove([storagePath])
+                  }
                 } catch {
                   // URL inválido ou ficheiro local — seguir para a remoção da linha
                 }

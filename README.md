@@ -213,6 +213,30 @@ graph LR
 - **Automático**: rotina diária grava cópia no bucket privado (rotação automática das cópias antigas) — lista clicável no painel com data/tamanho/acção.
 - **Restauração assistida 2.0**: pré-visualização de diferenças (cópia vs base por tabela) + dois modos — **«só faltam»** (nunca apaga) e **«substituir»** com confirmação `SUBSTITUIR` obrigatória.
 - **Licenciamento da plataforma**: developer Master administra licença activa/suspensa + 5 módulos; suspensão fecha o painel (excepto developer) e os formulários públicos com mensagem editável; chaves de bypass para emergências.
+
+---
+
+## 10b. Armazenamento de ficheiros
+
+| Ficheiro | Onde vive | Notas |
+|---|---|---|
+| Comprovativos de pagamentos | Bucket privado `comprovativos` — **fora da BD** (as rows guardam só o nome) | Uploads novos: `{pedidoId}/{ts}-{nome}`; leitura via storage pelo servidor (dono verificado). Comprovativos antigos em base64 continuam servidos na mesma rota (back-compat) |
+| Instaladores | Bucket `software` — ou **S3 compatível** quando configurado | Upload por URL assinado; com R2/Spaces, o trânsito de downloads fica de graça (zero egress) |
+| Média do site | Bucket `media` | Via painel, tabela `media` com metadados |
+| Backups | Bucket `backups` + rotação | JSON quotidien; restauração developer |
+
+**Configuração opcional do destino S3** (`.env`; sem elas tudo fica na Supabase, sem behavioral change):
+
+```
+S3_ENDPOINT=https://<conta>.r2.cloudflarestorage.com   # Cloudflare R2 (region auto), Spaces ou B2 S3
+S3_BUCKET=cftec-installers
+S3_ACCESS_KEY=...
+S3_SECRET_KEY=...
+S3_PUBLIC_BASE=https://pub-....r2.dev                 # base de distribuição pública (file_url)
+S3_REGION=auto                                        # só AWS real precisa de uma região própria
+```
+
+O meter de quota (`maxStorageMb`) soma os buckets da Supabase (software + media + comprovativos), com cache de 2 min; nos **80% da quota** o developer recebe um alerta por e-mail (um por dia, no máximo). *A assinatura SigV4 do driver está calibrada contra o vector oficial da AWS (exemplo presigned da documentação S3 — assinatura reproduzida digito-a-digito).*
 - **Ficha Cliente 360**: junta 6 fontes (portal, licenças, pedidos, recibos, chamados, downloads) num modal.
 - **Log de erros**: capturas client+server com página/detalhe, cartão de resolução no painel.
 

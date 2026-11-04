@@ -94,6 +94,9 @@ async function principal() {
   verificar('GET /api/portal/pedidos/:id/comprovativo (sem sessão) → 401', verCompSemSessao.status === 401 || verCompSemSessao.status === 403, `res=${verCompSemSessao.status}`)
   const perfilSemSessao = await pedir('/api/portal/perfil', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome_responsavel: 'x', telefone_whatsapp: '+244900000000' }) })
   verificar('PATCH /api/portal/perfil (sem sessão) → 401', perfilSemSessao.status === 401 || perfilSemSessao.status === 403, `res=${perfilSemSessao.status}`)
+  // Storage — URL de upload assinado (instaladores) também é mutação: só com sessão
+  const upUrl = await pedir('/api/admin/software/upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: 'x.exe', size: 10 }) })
+  verificar('POST /api/admin/software/upload-url (sem sessão) → 401', upUrl.status === 401 || upUrl.status === 403, `res=${upUrl.status}`)
 
   // 5b. Parte 8.3 — Backups 2.0: mutações e restauro só com sessão developer
   const bg = await pedir('/api/admin/backup/gerar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
