@@ -66,11 +66,11 @@ type SettingsSectionProps = {
 export function SettingsSection({ adminUser, ehDev, upgradePedidos, setShowUpgrade, users, ROLES, labelRole, updateUser, setShowUserForm, setDeletingUserId, setPwResetUser, setPwResetForm, portalSettings, setPortalSettings, savingPortal, handlePortalSave, testarWhatsapp, logErrosVer, setLogErrosVer, carregarLogErros, logErros, logErrosAResolvidos, resolverLogErros, profileName, setProfileName, savingProfile, handleProfileSave, pwCurrent, setPwCurrent, pwNew, setPwNew, pwConfirm, setPwConfirm, savingPassword, handlePasswordChange, twofaEstado, busy2fa, setup2fa, setSetup2fa, codigo2fa, setCodigo2fa, pw2fa, setPw2fa, desactivar2fa, activar2fa, iniciar2fa, sessoes, revogando, revogarOutras, revogarSessao, formatDate }: SettingsSectionProps) {
   return (
     <div className="settings-grid">
-          {adminUser?.level === 'super_admin' && <Card className="admin-panel settings-card settings-card--upg">
+          {['super_admin', 'developer'].includes(adminUser?.level || '') && <Card className="admin-panel settings-card settings-card--upg">
             <div className="admin-panel-head"><div><span className="admin-panel-kicker">PAGAMENTO · MANUTENÇÃO</span><h2>Pagamento para a Manutenção</h2></div>
               <Button type="button" size="sm" onClick={() => setShowUpgrade(true)}><Sparkles size={14} /> Ver planos & solicitar</Button>
             </div>
-            <p>Escolha os módulos, utilizadores ou armazenamento extra de que precisa e envie o pedido — a Nexora Systems (Developer) autoriza e activa por cá.</p>
+            <p>Escolha os módulos, utilizadores ou armazenamento extra de que precisa e envie o pedido — a Nexora Systems (Developer) autoriza e activa por cá. Add-on já pago aparece trancado.</p>
             {upgradePedidos.length > 0 && <div className="upg-lista">
               {upgradePedidos.map(p => (
                 <div className="upg-row" key={p.id}>

@@ -50,6 +50,8 @@ export type FeatureToggle = {
   icon?: React.ReactNode
   price: number
   enabled: boolean
+  /** Já está activo no contrato (pago) — aparece trancado e não volta a cobrar. */
+  pago?: boolean
 }
 
 const defaultFeatures: FeatureToggle[] = [
@@ -117,33 +119,45 @@ const kz = (n: number) => n.toLocaleString("pt-PT").replace(/\u00a0/g, " ");
 type PricingProps = {
   /** Envia o pedido real à Nexora — devolve true se foi aceite. */
   onRequest?: (itensTexto: string, totalTexto: string) => Promise<boolean> | boolean
+  /** Módulos já autorizados pelo Developer (sysLic) — ficam trancados + «Pago». */
+  modulosPagos?: Record<string, boolean>
 }
 
-export function Pricing({ onRequest }: PricingProps) {
-  const [features, setFeatures] = useState<FeatureToggle[]>(defaultFeatures)
+export function Pricing({ onRequest, modulosPagos }: PricingProps) {
+  const [features, setFeatures] = useState<FeatureToggle[]>(() =>
+    defaultFeatures.map((f) => ({
+      ...f,
+      pago: modulosPagos?.[f.id] === true,
+      enabled: modulosPagos?.[f.id] === true || f.enabled,
+    }))
+  )
   const [enviando, setEnviando] = useState(false)
   const [enviado, setEnviado] = useState(false)
 
-  const totalPedido = features.filter((f) => f.enabled).reduce((sum, f) => sum + f.price, 0);
+  const totalPedido = features.filter((f) => f.enabled && !f.pago).reduce((sum, f) => sum + f.price, 0);
   const totalPreco = basePrice + totalPedido;
 
   const priceChars = kz(totalPreco).split("");
 
   const toggleFeature = (id: string) => {
-    setFeatures((prev) => prev.map((f) => (f.id === id ? { ...f, enabled: !f.enabled } : f)));
+    setFeatures((prev) => prev.map((f) => (f.id === id && !f.pago ? { ...f, enabled: !f.enabled } : f)));
   };
 
-  const itensActivos = features.filter((f) => f.enabled)
+  const itensActivos = features.filter((f) => f.enabled && !f.pago)
+  const itensPagos = features.filter((f) => f.pago)
 
   const solicitar = async () => {
     if (enviando || enviado || !onRequest) return
     setEnviando(true)
     try {
-      const itens =
+      let itens =
         itensActivos.length > 0
           ? itensActivos.map((f) => `• ${f.label} (+Kz ${kz(f.price)}/mês)`).join("\n")
           : "• Apenas o plano base (sem add-ons adicionais)"
-      const total = `Kz ${kz(totalPreco)}/mês (Plano Base Kz ${kz(basePrice)} + Add-ons Kz ${kz(totalPedido)})`
+      if (itensPagos.length > 0) {
+        itens += `\n\nJá no vosso plano (pagos anteriormente, não voltam a cobrar): ${itensPagos.map((f) => f.label).join(" · ")}`
+      }
+      const total = `Kz ${kz(totalPreco)}/mês (Plano Base Kz ${kz(basePrice)} + Add-ons novos Kz ${kz(totalPedido)}${itensPagos.length > 0 ? ` · ${itensPagos.length} módulo(s) já pago(s)` : ''})`
       const ok = await onRequest(itens, total)
       if (ok) {
         setEnviado(true)
@@ -183,13 +197,14 @@ export function Pricing({ onRequest }: PricingProps) {
               {features.map((feature) => (
                 <div
                   key={feature.id}
-                  className="flex items-center justify-between gap-4 rounded-lg p-2"
+                  className={`flex items-center justify-between gap-4 rounded-lg p-2 ${feature.pago ? "opacity-80" : ""}`}
                 >
                   <Button
                     type="button"
                     variant="ghost"
                     onClick={() => toggleFeature(feature.id)}
-                    className="h-auto flex-1 justify-start rounded-lg px-0 py-0 hover:bg-transparent"
+                    disabled={feature.pago}
+                    className="h-auto flex-1 justify-start rounded-lg px-0 py-0 hover:bg-transparent aria-disabled:cursor-default"
                   >
                     <div className="flex items-center gap-3 text-left">
                       <div
@@ -199,22 +214,29 @@ export function Pricing({ onRequest }: PricingProps) {
                             : "bg-muted text-muted-foreground"
                         }`}
                       >
-                        {feature.icon}
+                        {feature.pago ? <LockIcon className="size-4" /> : feature.icon}
                       </div>
                       <div className="flex flex-col">
                         <span className="text-sm font-medium text-foreground">
                           {feature.label}
                         </span>
                         <span className="text-start text-xs text-muted-foreground">
-                          +Kz {kz(feature.price)}/mês
+                          {feature.pago ? "Já no vosso plano — activo e pago" : `+Kz ${kz(feature.price)}/mês`}
                         </span>
                       </div>
                     </div>
                   </Button>
-                  <Switch
-                    checked={feature.enabled}
-                    onCheckedChange={() => toggleFeature(feature.id)}
-                  />
+                  {feature.pago ? (
+                    <span className="flex shrink-0 items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      <LockIcon className="size-3" />
+                      Pago
+                    </span>
+                  ) : (
+                    <Switch
+                      checked={feature.enabled}
+                      onCheckedChange={() => toggleFeature(feature.id)}
+                    />
+                  )}
                 </div>
               ))}
             </div>
@@ -224,8 +246,13 @@ export function Pricing({ onRequest }: PricingProps) {
             <div className="flex flex-col gap-2">
               <h3 className="text-xl font-medium text-foreground">O vosso plano</h3>
               <p className="text-sm text-muted-foreground">
-                Plano base + {itensActivos.length} add-on(s) seleccionado(s)
+                Plano base + {itensActivos.length} add-on(s) a activar agora
               </p>
+              {itensPagos.length > 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Já pagos (mantidos): {itensPagos.map((f) => f.label).join(" · ")}
+                </p>
+              )}
             </div>
 
             <div className="flex flex-col gap-1">
@@ -249,7 +276,8 @@ export function Pricing({ onRequest }: PricingProps) {
                 <span key="period" className="text-xl text-muted-foreground">/mês</span>
               </div>
               <p className="text-sm text-muted-foreground">
-                Base: Kz {kz(basePrice)} · Add-ons: Kz {kz(totalPedido)}
+                Base: Kz {kz(basePrice)} · Add-ons novos: Kz {kz(totalPedido)}
+                {itensPagos.length > 0 && <> · módulos já pagos: Kz {kz(itensPagos.reduce((s, f) => s + f.price, 0))}/mês (já incluídos)</>}
               </p>
             </div>
 

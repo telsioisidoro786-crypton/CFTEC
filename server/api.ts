@@ -3872,13 +3872,14 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
               if (okAutorizado) {
                 try {
                   const escolha = String(atual.itens || '')
-                  const temSuporte = /M[oó]dulo de Suporte T[eé]cnico/i.test(escolha)
-                  const temNovidades = /Novidades/i.test(escolha)
-                  const temFaturacao = /Fatura[çc][ãa]o/i.test(escolha)
-                  const temRelatorios = /Relat[oó]rios/i.test(escolha)
+                  const licAgora = await licencaAtual()
+                  // a escolha liga; o que já estava activo/pago NÃO se desliga — autorizar só acrescenta
+                  const temSuporte = /M[oó]dulo de Suporte T[eé]cnico/i.test(escolha) || licAgora.moduloTecnico === true
+                  const temNovidades = /Novidades/i.test(escolha) || licAgora.moduloNovidades === true
+                  const temFaturacao = /Fatura[çc][ãa]o/i.test(escolha) || licAgora.moduloFaturacao === true
+                  const temRelatorios = /Relat[oó]rios/i.test(escolha) || licAgora.moduloRelatorios === true
                   const mais5Usuarios = /\+\s*5\s*utilizadores/i.test(escolha)
                   const mais25Gb = /\+\s*25\s*GB/i.test(escolha)
-                  const licAgora = await licencaAtual()
                   const hojeStr = new Date().toISOString().slice(0, 10)
                   // validade: prorroga 30 dias a partir do vencimento actual (ou de hoje, se vencido/vazio)
                   const baseExpira = /^\d{4}-\d{2}-\d{2}$/.test(licAgora.expiraEm) && licAgora.expiraEm >= hojeStr ? licAgora.expiraEm : hojeStr
@@ -3889,10 +3890,10 @@ ${obsAr ? `<p style="background:#fef2f2;border-radius:8px;padding:10px 12px"><b>
                     { key: 'licenca_ativa', value: 'true', description: 'Licença da plataforma — restaurada pela autorização do pedido de upgrade' },
                     { key: 'modo_somente_leitura', value: 'false', description: 'Modo somente leitura — desligado pela autorização do pedido de upgrade' },
                     { key: 'modulo_comercial', value: 'true', description: 'Módulo Comercial: pedidos B2B, proformas, faturas internas, relatórios e revenda Negomil' },
-                    { key: 'modulo_tecnico', value: temSuporte ? 'true' : 'false', description: 'Módulo Técnico: chamados de suporte e wiki técnica — reflete a escolha do cliente' },
-                    { key: 'modulo_novidades', value: temNovidades ? 'true' : 'false', description: 'Módulo Novidades: blog/CMS e destaques — reflete a escolha do cliente' },
-                    { key: 'modulo_faturacao', value: temFaturacao ? 'true' : 'false', description: 'Módulo de Faturação: auto-serviço no portal do cliente — reflete a escolha' },
-                    { key: 'modulo_relatorios', value: temRelatorios ? 'true' : 'false', description: 'Módulo de Relatórios avançados & Metas — reflete a escolha' },
+                    { key: 'modulo_tecnico', value: temSuporte ? 'true' : 'false', description: 'Módulo Técnico: chamados de suporte e wiki técnica — só liga (o que já estava pago mantém-se)' },
+                    { key: 'modulo_novidades', value: temNovidades ? 'true' : 'false', description: 'Módulo Novidades: blog/CMS e destaques — só liga (o que já estava pago mantém-se)' },
+                    { key: 'modulo_faturacao', value: temFaturacao ? 'true' : 'false', description: 'Módulo de Faturação: auto-serviço no portal do cliente — só liga (o que já estava pago mantém-se)' },
+                    { key: 'modulo_relatorios', value: temRelatorios ? 'true' : 'false', description: 'Módulo de Relatórios avançados & Metas — só liga (o que já estava pago mantém-se)' },
                     { key: 'licenca_expira_em', value: novaValidade, description: 'Validade prorrogada +30 dias pela autorização do pedido de upgrade' },
                   ]
                   autoAplicado.push('Licença activa', 'Modo somente leitura desligado', 'Módulo Comercial ligado', temSuporte ? 'Módulo de Suporte Técnico ligado' : 'Módulo de Suporte Técnico desligado', temNovidades ? 'Módulo Novidades ligado' : 'Módulo Novidades desligado', temFaturacao ? 'Módulo de Faturação ligado' : 'Módulo de Faturação desligado', temRelatorios ? 'Módulo de Relatórios ligado' : 'Módulo de Relatórios desligado', `Validade até ${novaValidade}`)

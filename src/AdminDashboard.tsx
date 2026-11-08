@@ -857,10 +857,24 @@ export default function AdminDashboard() {
   }
 
   // PEDIDOS DE PAGAMENTO/MANUTENÇÃO — lista para Definições (super) e Painel do Developer
+  // ping quando chega pedido de pagamento novo (polling de 20 s) — o lado do
+  // Developer vê o aviso no momento, sem depender de abrir a secção
+  const upgradeAvisadosRef = useRef<Set<string>>(new Set())
   const loadUpgradePedidos = async () => {
     try {
       const r = await fetch('/api/admin/upgrade-requests', { credentials: 'include' })
-      if (r.ok) setUpgradePedidos(await r.json())
+      if (r.ok) {
+        const lista = await r.json() as Array<{ id: string; estado: string; empresa: string; total: string }>
+        const pendentes = (Array.isArray(lista) ? lista : []).filter(p => p.estado === 'pendente')
+        const novos = pendentes.filter(p => !upgradeAvisadosRef.current.has(p.id) && upgradeAvisadosRef.current.size > 0)
+        pendentes.forEach(p => upgradeAvisadosRef.current.add(p.id))
+        setUpgradePedidos((Array.isArray(lista) ? lista : []) as typeof upgradePedidos)
+        if (novos.length > 0) {
+          notify(novos.length === 1
+            ? `Novo pedido de pagamento · ${novos[0].empresa}: ${novos[0].total}`
+            : `${novos.length} novos pedidos de pagamento à espera da decisão no Painel do Developer`)
+        }
+      }
     } catch { /* silencioso — repete no ciclo de 20 s */ }
   }
 
@@ -3236,7 +3250,7 @@ export default function AdminDashboard() {
                 aria-label="Fechar"
                 className="absolute right-3 top-3 z-20 flex size-9 items-center justify-center rounded-full bg-background/80 text-foreground shadow-md transition-colors hover:bg-muted"
               ><X size={17} /></button>
-              <Suspense fallback={<div className="sk-panel sk-panel--tall" />}><Pricing onRequest={solicitarUpgrade} /></Suspense>
+              <Suspense fallback={<div className="sk-panel sk-panel--tall" />}><Pricing onRequest={solicitarUpgrade} modulosPagos={{ faturacao: sysLic.moduloFaturacao, suporte: sysLic.moduloTecnico, novidades: sysLic.moduloNovidades, relatorios: sysLic.moduloRelatorios }} /></Suspense>
             </div>
           </div>
         )}
