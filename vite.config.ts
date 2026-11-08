@@ -15,7 +15,11 @@ const adminApi = (): Plugin => ({
 
 export default defineConfig({
   plugins: [react(), adminApi()],
-  server: { port: 3000, host: '0.0.0.0', hmr: { protocol: 'wss', clientPort: 443 } },
+  // HMR: sem override — Vite infere ws/wss pelo protocolo da página
+  // (http local: ws://localhost:3000; https através de proxy: wss na porta da página).
+  // O override antigo { protocol: 'wss', clientPort: 443 } era para um preview
+  // por proxy e partia o WebSocket em dev local (connection failed).
+  server: { port: 3000, host: '0.0.0.0' },
   build: {
     chunkSizeWarningLimit: 700,
     // three.module (689kb) sai do bundle do site por dyn import e só carrega
