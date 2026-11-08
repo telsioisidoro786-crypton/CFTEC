@@ -476,6 +476,14 @@ function App() {
     return () => { document.body.style.overflow = '' }
   }, [servicoModal])
 
+  // ESC fecha o modal de serviço (a11y — teclado em paridade com os outros modais)
+  useEffect(() => {
+    if (!servicoModal) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setServicoModal(null) }
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('keydown', onKey) }
+  }, [servicoModal])
+
   return (
     <div className={`site-shell ${banner.active && banner.message ? 'site-shell--banner' : ''}`}>
       {toast && <div className="toast" role="status"><BadgeCheck size={18} />{toast}</div>}
@@ -483,7 +491,7 @@ function App() {
 
       {showSupport && <SupportModal onClose={() => setShowSupport(false)} />}
 
-      {blogPost && <div className="blog-modal-backdrop" onMouseDown={() => setBlogPost(null)}><article className="blog-modal" onMouseDown={(e) => e.stopPropagation()}>
+      {blogPost && <div className="blog-modal-backdrop" onMouseDown={() => setBlogPost(null)}><article className="blog-modal" role="dialog" aria-modal="true" aria-label={blogPost.title} onMouseDown={(e) => e.stopPropagation()}>
         <button className="blog-modal-close" onClick={() => setBlogPost(null)} aria-label="Fechar artigo"><X size={20} /></button>
         {blogPost.cover_url && <div className="blog-modal-cover"><img src={blogPost.cover_url} alt={blogPost.title} /></div>}
         <div className="blog-modal-body">

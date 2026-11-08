@@ -25,7 +25,18 @@ const supabase = supabaseUrl && supabaseServiceKey
   ? createClient(supabaseUrl, supabaseServiceKey)
   : null
 
-const JWT_SECRET = process.env.CFTEC_JWT_SECRET || process.env.MANUS_JWT_SECRET || 'dev-secret-key-min-32-chars-long-for-testing-do-not-use-in-production'
+// Env CFTEC_JWT_SECRET obrigatória em produção: sem ela qualquer um pode
+// forjar sessões admin com o fallback conhecido (P0-3 da auditoria).
+// Em prod (Vercel): process.exit impede o boot. Em dev: só avisa no console.
+const isProdApi = process.env.VERCEL_ENV !== undefined && process.env.VERCEL_ENV !== 'development'
+const JWT_SECRET = process.env.CFTEC_JWT_SECRET || process.env.MANUS_JWT_SECRET || (!isProdApi ? 'dev-secret-key-min-32-chars-long-for-testing-do-not-use-in-production' : undefined)
+if (!JWT_SECRET) {
+  console.error('[FATAL] CFTEC_JWT_SECRET ausente — recusando arranjar a API (sessões admin ficariam forjáveis)')
+  process.exit(1)
+}
+if (!process.env.CFTEC_JWT_SECRET && !process.env.MANUS_JWT_SECRET) {
+  console.warn('[JTI/SEC] DEV sem CFTEC_JWT_SECRET — a usar fallback temporário de dev (nunca rodar assim em prod)')
+}
 
 const authCookieName = 'cftec_admin_session'
 const sessionMaxAge = 60 * 60 * 8

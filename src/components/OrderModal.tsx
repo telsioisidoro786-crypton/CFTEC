@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react'
+import { type FormEvent, useEffect, useRef, useState } from 'react'
 import { ArrowRight, BadgeCheck, Building2, Check, CircleCheck, Copy, Landmark, Loader2, LockKeyhole, Paperclip, Smartphone, UserRound, X } from 'lucide-react'
 import { Button } from './ui/button'
 
@@ -30,6 +30,17 @@ export default function OrderModal({ product, onClose }: { product: OrderProduct
   const [copied, setCopied] = useState(false)
   const [compEstado, setCompEstado] = useState<UploadState>('idle')
   const [compErro, setCompErro] = useState('')
+  const fechaRef = useRef<HTMLButtonElement>(null)
+
+  // ESC fecha · scroll da página bloqueia ao abrir · foco vai ao botão fechar (a11y)
+  useEffect(() => {
+    if (!product) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    document.body.style.overflow = 'hidden'
+    fechaRef.current?.focus()
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = '' }
+  }, [product, onClose])
 
   if (!product) return null
 
@@ -106,9 +117,9 @@ export default function OrderModal({ product, onClose }: { product: OrderProduct
     : ''
 
   return (
-    <div className="order-backdrop" onMouseDown={onClose}>
+    <div className="order-backdrop" onMouseDown={onClose} role="dialog" aria-modal="true" aria-label={product.name}>
       <div className="order-modal" onMouseDown={(e) => e.stopPropagation()}>
-        <button className="order-close" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
+        <button ref={fechaRef} className="order-close" onClick={onClose} aria-label="Fechar"><X size={18} /></button>
 
         {confirmed ? (
           <div className="order-success">

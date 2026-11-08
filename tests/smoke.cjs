@@ -81,8 +81,8 @@ async function principal() {
   // 5. Validações dos públicos de escrita
   const contatoVazio = await pedir('/api/contact', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) })
   verificar('POST /api/contact (vazio) → 400', contatoVazio.status === 400, `res=${contatoVazio.status}`)
-  const pedidoLixo = await pedir('/api/license-order', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-  verificar('POST /api/license-order (sem dados) → 400', pedidoLixo.status >= 400 && pedidoLixo.status < 500, `res=${pedidoLixo.status}`)
+  const pedidoLixo = await pedir('/api/license-orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+  verificar('POST /api/license-orders (sem dados) → 400', pedidoLixo.status === 400, `res=${pedidoLixo.status}`)
 
   // 5b. Parte 7.1 — auto-serviço: sem sessão não se pede renovação nem anexam comprovativos
   const renSemSessao = await pedir('/api/portal/pedidos/renovar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ licenca_id: '00000000-0000-0000-0000-000000000000' }) })
